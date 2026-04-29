@@ -1,0 +1,132 @@
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trustscan-backend
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trustscan
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: trustscan
+        component: backend
+    spec:
+      containers:
+      - name: fastapi
+        image: ajayshankar96/trustscan-backend:latest  # Update with your registry
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: TRINO_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_HOST
+        - name: TRINO_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_PORT
+        - name: TRINO_HTTP_SCHEME
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_HTTP_SCHEME
+        - name: TRINO_CATALOG
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_CATALOG
+        - name: TRINO_SCHEMA
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_SCHEMA
+        - name: TRINO_USER
+          valueFrom:
+            secretKeyRef:
+              name: trustscan-secrets
+              key: TRINO_USER
+        - name: TRINO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: trustscan-secrets
+              key: TRINO_PASSWORD
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trustscan-frontend
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trustscan
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: trustscan
+        component: frontend
+    spec:
+      containers:
+      - name: nginx
+        image: ajayshankar96/trustscan-frontend:latest  # Update with your registry
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
