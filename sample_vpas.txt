@@ -1,8 +1,0 @@
-# Sample VPA List
-# One VPA per line (lines starting with # are ignored)
-
-merchant1@paytm
-merchant2@upi
-merchant3@ybl
-testmerchant@paytm
-example@okhdfcbank
