@@ -1,0 +1,136 @@
+---
+# ConfigMap for Streamlit App Code
+# This allows updating the app without rebuilding Docker images
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trustscan-app-code
+  namespace: analytics-tools
+data:
+  trustscan_streamlit.py: |
+    # App code will be loaded from file when deployed
+---
+# Streamlit Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trustscan-streamlit
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: streamlit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trustscan
+      component: streamlit
+  template:
+    metadata:
+      labels:
+        app: trustscan
+        component: streamlit
+    spec:
+      containers:
+      - name: streamlit
+        image: python:3.9-slim  # Public image - no Harbor credentials needed!
+        command:
+          - /bin/bash
+          - -c
+          - |
+            pip install --no-cache-dir streamlit trino pandas &&
+            streamlit run /app/trustscan_streamlit.py \
+              --server.port=8501 \
+              --server.address=0.0.0.0 \
+              --server.headless=true \
+              --server.enableCORS=false \
+              --server.enableXsrfProtection=true
+        ports:
+        - containerPort: 8501
+          name: http
+        env:
+        - name: TRINO_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: trustscan-config
+              key: TRINO_HOST
+        - name: TRINO_USER
+          valueFrom:
+            secretKeyRef:
+              name: trustscan-secrets
+              key: TRINO_USER
+        - name: TRINO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: trustscan-secrets
+              key: TRINO_PASSWORD
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: app-code
+        configMap:
+          name: trustscan-app-code
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustscan-streamlit
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: streamlit
+spec:
+  type: ClusterIP
+  selector:
+    app: trustscan
+    component: streamlit
+  ports:
+  - name: http
+    port: 8501
+    targetPort: 8501
+    protocol: TCP
+---
+# Internal-Only Ingress (Secure!)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trustscan-streamlit
+  namespace: analytics-tools
+  annotations:
+    kubernetes.io/ingress.class: "nginx"  # Internal nginx, not public
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Whitelist only internal IP ranges (optional additional security)
+    # nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+spec:
+  rules:
+  - host: trustscan.internal.razorpay.com  # Internal domain - only accessible from Razorpay network
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: trustscan-streamlit
+            port:
+              number: 8501

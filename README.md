@@ -1,13 +1,31 @@
 # TrustScan Analytics App
 
-Internal Razorpay tool for querying Trino trust/credit scoring data with a FastAPI backend and React frontend.
+Internal Razorpay tool for querying Trino trust/credit scoring data.
+
+## 🎯 Two Deployment Options
+
+### Option 1: Streamlit (Recommended! ⭐)
+
+**Simple single-file app** - No Docker registry needed!
+
+- ✅ Easy to deploy and update
+- ✅ Uses public Python image (no Harbor credentials)
+- ✅ Interactive UI with built-in widgets
+- ✅ See: [STREAMLIT_DEPLOYMENT.md](STREAMLIT_DEPLOYMENT.md)
+
+### Option 2: FastAPI + React (Advanced)
+
+**Production microservices architecture** - Requires Harbor registry access
+
+- Backend: FastAPI REST API
+- Frontend: React SPA
+- See: [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 
 ## 🏗️ Architecture
 
-- **Backend**: FastAPI service exposing REST APIs to query Trino
-- **Frontend**: React SPA for user interface
 - **Database**: Trino (queries `aggregate_ba` schema)
 - **Deployment**: Kubernetes on Razorpay's internal cluster
+- **Access**: Internal-only (office network or VPN required)
 
 ## 📦 Features
 
