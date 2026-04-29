@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: fastapi
-        image: ajayshankar96/trustscan-backend:latest  # Update with your registry
+        image: c.rzp.io/razorpay/trustscan-backend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -106,7 +106,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: ajayshankar96/trustscan-frontend:latest  # Update with your registry
+        image: c.rzp.io/razorpay/trustscan-frontend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 80
