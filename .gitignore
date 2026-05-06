@@ -65,3 +65,7 @@ docker-compose.override.yml
 
 # Logs
 *.log
+
+# Intentionally track React build for K8s deployment (no Docker/CI)
+!frontend/build/
+!frontend/build/**
