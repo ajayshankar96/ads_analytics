@@ -39,10 +39,15 @@ body {
 .hero-sub { font-size: 16px; color: #6366f1; }
 
 /* ── Tabs ────────────────────────────────────────────────────── */
+/* ── Tabs row (tabs left + mode toggle right) ────────────────── */
+.tabs-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 24px;
+}
 .tabs {
-  display: flex; gap: 6px; margin-bottom: 24px;
+  display: flex; gap: 6px;
   background: white; padding: 6px; border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(30,58,138,.08); width: 100%;
+  box-shadow: 0 2px 12px rgba(30,58,138,.08);
+  flex: 1;
 }
 .tab {
   flex: 1; padding: 10px 12px; border: none; border-radius: 8px;
@@ -53,6 +58,24 @@ body {
 .tab.active {
   background: linear-gradient(135deg, #4f46e5, #1d4ed8);
   color: white; box-shadow: 0 2px 8px rgba(79,70,229,.35);
+}
+
+/* ── Bands / Full Scan toggle ────────────────────────────────── */
+.mode-toggle {
+  display: flex; gap: 0;
+  background: white; padding: 5px; border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(30,58,138,.08);
+  flex-shrink: 0;
+}
+.mode-btn {
+  padding: 9px 18px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  color: #6b7280; background: transparent; transition: all .2s;
+  white-space: nowrap;
+}
+.mode-btn.mode-active {
+  background: linear-gradient(135deg, #059669, #047857);
+  color: white; box-shadow: 0 2px 8px rgba(5,150,105,.35);
 }
 
 /* ── Search box ──────────────────────────────────────────────── */

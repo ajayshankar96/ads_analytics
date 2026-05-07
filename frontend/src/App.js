@@ -675,14 +675,8 @@ function BatchScanBands() {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab] = useState('single');
-
-  const tabs = [
-    { id: 'single',       label: 'Single Scan' },
-    { id: 'batch',        label: 'Batch Scan' },
-    { id: 'singleBands',  label: 'Single Scan (Bands)' },
-    { id: 'batchBands',   label: 'Batch Scan (Bands)' },
-  ];
+  const [tab,  setTab]  = useState('single'); // 'single' | 'batch'
+  const [mode, setMode] = useState('full');   // 'full'   | 'bands'
 
   return (
     <div className="app">
@@ -705,18 +699,29 @@ export default function App() {
           <p className="hero-sub">Instant risk profiling & income prediction for any customer</p>
         </div>
 
-        <div className="tabs">
-          {tabs.map(t => (
-            <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
-              {t.label}
+        {/* Tab row: left = Single/Batch, right = Bands/Full Scan toggle */}
+        <div className="tabs-row">
+          <div className="tabs">
+            {[{ id: 'single', label: 'Single Scan' }, { id: 'batch', label: 'Batch Scan' }].map(t => (
+              <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="mode-toggle">
+            <button className={`mode-btn ${mode === 'bands' ? 'mode-active' : ''}`} onClick={() => setMode('bands')}>
+              Bands
             </button>
-          ))}
+            <button className={`mode-btn ${mode === 'full'  ? 'mode-active' : ''}`} onClick={() => setMode('full')}>
+              Full Scan
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: tab === 'single'      ? 'block' : 'none' }}><SingleScan /></div>
-        <div style={{ display: tab === 'batch'       ? 'block' : 'none' }}><BatchScan /></div>
-        <div style={{ display: tab === 'singleBands' ? 'block' : 'none' }}><SingleScanBands /></div>
-        <div style={{ display: tab === 'batchBands'  ? 'block' : 'none' }}><BatchScanBands /></div>
+        <div style={{ display: tab === 'single' && mode === 'full'  ? 'block' : 'none' }}><SingleScan /></div>
+        <div style={{ display: tab === 'single' && mode === 'bands' ? 'block' : 'none' }}><SingleScanBands /></div>
+        <div style={{ display: tab === 'batch'  && mode === 'full'  ? 'block' : 'none' }}><BatchScan /></div>
+        <div style={{ display: tab === 'batch'  && mode === 'bands' ? 'block' : 'none' }}><BatchScanBands /></div>
       </main>
 
       <footer className="footer">
