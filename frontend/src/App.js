@@ -18,25 +18,17 @@ function formatINR(amount) {
   }).format(amount);
 }
 
-// Parse probability string (e.g. "1.391E-1") → percentage string "13.91"
-function formatProb(val) {
-  if (val == null || val === '') return null;
-  const num = parseFloat(val);
-  if (isNaN(num)) return null;
-  return (num * 100).toFixed(2);
-}
-
 // Weighted average of available default probabilities → Trust Score 0-100
 function computeTrustScore(data) {
   const slots = [
-    { val: parseFloat(data?.dpd30_probability), w: 35 },
-    { val: parseFloat(data?.dpd90_probability), w: 35 },
-    { val: parseFloat(data?.cd_probability),    w: 30 },
-  ].filter(s => !isNaN(s.val));
+    { val: data?.dpd30_probability, w: 35 },
+    { val: data?.dpd90_probability, w: 35 },
+    { val: data?.cd_probability,    w: 30 },
+  ].filter(s => s.val != null);
   if (!slots.length) return null;
   const totalW = slots.reduce((s, x) => s + x.w, 0);
   const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW;
-  return Math.round(100 - avgProb * 100);
+  return Math.round(100 - avgProb);
 }
 
 function trustVerdict(score) {
@@ -173,13 +165,11 @@ function RiskCard({ title, band, creditScore, probability }) {
       <div className="prob-section">
         <div className="prob-row">
           <div className="prob-label">Default Probability</div>
-          <div className="prob-value" style={{ color: info.color }}>
-            {formatProb(probability) != null ? `${formatProb(probability)}%` : '—'}
-          </div>
+          <div className="prob-value" style={{ color: info.color }}>{probability}%</div>
         </div>
         <div className="prob-bar-bg">
           <div className="prob-bar-fill"
-            style={{ width: `${Math.min(parseFloat(formatProb(probability)) ?? 0, 100)}%`, background: info.color }} />
+            style={{ width: `${Math.min(probability ?? 0, 100)}%`, background: info.color }} />
         </div>
       </div>
     </div>
@@ -699,7 +689,6 @@ export default function App() {
           <p className="hero-sub">Instant risk profiling & income prediction for any customer</p>
         </div>
 
-        {/* Tab row: left = Single/Batch, right = Bands/Full Scan toggle */}
         <div className="tabs-row">
           <div className="tabs">
             {[{ id: 'single', label: 'Single Scan' }, { id: 'batch', label: 'Batch Scan' }].map(t => (
@@ -709,12 +698,8 @@ export default function App() {
             ))}
           </div>
           <div className="mode-toggle">
-            <button className={`mode-btn ${mode === 'bands' ? 'mode-active' : ''}`} onClick={() => setMode('bands')}>
-              Bands
-            </button>
-            <button className={`mode-btn ${mode === 'full'  ? 'mode-active' : ''}`} onClick={() => setMode('full')}>
-              Full Scan
-            </button>
+            <button className={`mode-btn ${mode === 'bands' ? 'mode-active' : ''}`} onClick={() => setMode('bands')}>Bands</button>
+            <button className={`mode-btn ${mode === 'full'  ? 'mode-active' : ''}`} onClick={() => setMode('full')}>Full Scan</button>
           </div>
         </div>
 
