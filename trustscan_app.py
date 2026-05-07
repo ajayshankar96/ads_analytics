@@ -30,7 +30,14 @@ TRINO_HTTP_SCHEME = os.getenv("TRINO_HTTP_SCHEME", "https")
 
 
 def get_trino_connection():
-    auth = BasicAuthentication(TRINO_USER, TRINO_PASSWORD) if TRINO_PASSWORD else None
+    # Internal coordinator (trino-coordinator.int.stage.razorpay.in) uses HTTPS
+    # but does not require password auth from within the cluster.
+    # verify=False is needed because it uses an internal TLS certificate.
+    # TRINO_USE_BASIC_AUTH=true enables BasicAuthentication (for gateway URLs).
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    use_basic_auth = os.getenv("TRINO_USE_BASIC_AUTH", "false").lower() == "true"
+    auth = BasicAuthentication(TRINO_USER, TRINO_PASSWORD) if (TRINO_PASSWORD and use_basic_auth) else None
     return trino.dbapi.connect(
         host=TRINO_HOST,
         port=TRINO_PORT,
@@ -39,6 +46,7 @@ def get_trino_connection():
         auth=auth,
         catalog=TRINO_CATALOG,
         schema=TRINO_SCHEMA,
+        verify=False,
     )
 
 
