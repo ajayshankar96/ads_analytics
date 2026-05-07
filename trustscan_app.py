@@ -23,7 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── S3 Config ─────────────────────────────────────────────────────────────────
+# ── Data Config ───────────────────────────────────────────────────────────────
+# Primary: local CSV bundled in the repo (cloned to /tmp/repo at startup)
+_REPO_DATA_CSV = Path("/tmp/repo/data/trustscan_sample.csv")
+# Fallback: S3 (requires pod IAM access)
 S3_BUCKET = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
 S3_PREFIX = os.getenv("S3_PREFIX", "ajayshankar/trustscan_sample/")
 
@@ -45,46 +48,60 @@ CSV_COLUMNS = [
 _DATA: dict = {}
 
 
-def load_data_from_s3():
-    """Download CSV files from S3 on startup and load into memory."""
+def _load_csv_file(path_or_buffer, source_label: str) -> dict:
+    """Parse a CSV (no header) into a dict keyed by contact."""
+    records = {}
+    reader = csv.reader(path_or_buffer)
+    for row in reader:
+        if len(row) < len(CSV_COLUMNS):
+            continue
+        record = dict(zip(CSV_COLUMNS, [v.strip() for v in row]))
+        contact = record.get("contact", "").strip()
+        if contact:
+            records[contact] = record
+    logger.info(f"Loaded {len(records)} contacts from {source_label}")
+    return records
+
+
+def load_data():
+    """Load data on startup: try local repo CSV first, fall back to S3."""
     global _DATA
+
+    # ── Primary: local file bundled in the cloned repo ────────────────────────
+    if _REPO_DATA_CSV.exists():
+        try:
+            with open(_REPO_DATA_CSV, newline="") as f:
+                _DATA = _load_csv_file(f, str(_REPO_DATA_CSV))
+            return
+        except Exception as e:
+            logger.warning(f"Failed to load local CSV ({_REPO_DATA_CSV}): {e}")
+
+    # ── Fallback: S3 ──────────────────────────────────────────────────────────
+    logger.info(f"Local CSV not found, trying S3: s3://{S3_BUCKET}/{S3_PREFIX}")
     try:
         import boto3
         s3 = boto3.client("s3", region_name="ap-south-1")
-
         response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=S3_PREFIX)
         files = [
             obj["Key"] for obj in response.get("Contents", [])
             if not obj["Key"].endswith("/") and obj["Size"] > 0
             and not obj["Key"].rsplit("/", 1)[-1].startswith(("_", "."))
         ]
-
         if not files:
             logger.warning(f"No data files found at s3://{S3_BUCKET}/{S3_PREFIX}")
             return
-
         records = {}
         for key in files:
             logger.info(f"Loading s3://{S3_BUCKET}/{key}")
             raw = s3.get_object(Bucket=S3_BUCKET, Key=key)["Body"].read().decode("utf-8")
-            reader = csv.reader(io.StringIO(raw))
-            for row in reader:
-                if len(row) < len(CSV_COLUMNS):
-                    continue
-                record = dict(zip(CSV_COLUMNS, [v.strip() for v in row]))
-                contact = record.get("contact", "").strip()
-                if contact:
-                    records[contact] = record
-
+            records.update(_load_csv_file(io.StringIO(raw), key))
         _DATA = records
-        logger.info(f"Loaded {len(_DATA)} contacts from S3 into memory")
-
     except Exception as e:
         logger.error(f"Failed to load data from S3: {e}")
 
 
 # Load on startup
-load_data_from_s3()
+load_data()
 
 
 # ── Trust Scan endpoint ───────────────────────────────────────────────────────
