@@ -18,17 +18,25 @@ function formatINR(amount) {
   }).format(amount);
 }
 
+// Parse probability string (e.g. "1.391E-1") → percentage string "13.91"
+function formatProb(val) {
+  if (val == null || val === '') return null;
+  const num = parseFloat(val);
+  if (isNaN(num)) return null;
+  return (num * 100).toFixed(2);
+}
+
 // Weighted average of available default probabilities → Trust Score 0-100
 function computeTrustScore(data) {
   const slots = [
-    { val: data?.dpd30_probability, w: 35 },
-    { val: data?.dpd90_probability, w: 35 },
-    { val: data?.cd_probability,    w: 30 },
-  ].filter(s => s.val != null);
+    { val: parseFloat(data?.dpd30_probability), w: 35 },
+    { val: parseFloat(data?.dpd90_probability), w: 35 },
+    { val: parseFloat(data?.cd_probability),    w: 30 },
+  ].filter(s => !isNaN(s.val));
   if (!slots.length) return null;
   const totalW = slots.reduce((s, x) => s + x.w, 0);
   const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW;
-  return Math.round(100 - avgProb);
+  return Math.round(100 - avgProb * 100);
 }
 
 function trustVerdict(score) {
@@ -65,9 +73,9 @@ function exportCSV(rows) {
 
 // ── Scan steps loading animation ─────────────────────────────────────────────
 const SCAN_STEPS = [
-  { text: 'Finding from 544mn users', duration: 1200 },
-  { text: 'Hashing and Unhashing',    duration: 1400 },
-  { text: 'Getting predicted results', duration: null },  // stays until done
+  { text: 'Scanning from Razorpay universe', duration: 700  },
+  { text: 'Hashing · Unhashing',             duration: 700  },
+  { text: 'Getting predicted values',        duration: null },  // stays until done
 ];
 
 function ScanSteps({ active }) {
@@ -165,11 +173,13 @@ function RiskCard({ title, band, creditScore, probability }) {
       <div className="prob-section">
         <div className="prob-row">
           <div className="prob-label">Default Probability</div>
-          <div className="prob-value" style={{ color: info.color }}>{probability}%</div>
+          <div className="prob-value" style={{ color: info.color }}>
+            {formatProb(probability) != null ? `${formatProb(probability)}%` : '—'}
+          </div>
         </div>
         <div className="prob-bar-bg">
           <div className="prob-bar-fill"
-            style={{ width: `${Math.min(probability ?? 0, 100)}%`, background: info.color }} />
+            style={{ width: `${Math.min(parseFloat(formatProb(probability)) ?? 0, 100)}%`, background: info.color }} />
         </div>
       </div>
     </div>
@@ -219,7 +229,10 @@ function SingleScan() {
     if (phone.length !== 10) return;
     setLoading(true); setError(null); setResult(null); setNotFound(false);
     try {
-      const res = await fetch(`http://localhost:8000/api/trust-scan/${phone}`);
+      const [res] = await Promise.all([
+        fetch(`/api/trust-scan/${phone}`),
+        new Promise(r => setTimeout(r, 2000)),
+      ]);
       if (res.status === 404) { setNotFound(true); return; }
       if (!res.ok) throw new Error((await res.json()).detail || 'Scan failed');
       setResult(await res.json());
@@ -319,7 +332,7 @@ function BatchScan() {
     setLoading(true); setError(null); setRows(null);
     setProgress(`Scanning ${phones.length} numbers…`);
     try {
-      const res = await fetch('http://localhost:8000/api/batch-trust-scan', {
+      const res = await fetch('/api/batch-trust-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phones }),
@@ -461,7 +474,10 @@ function SingleScanBands() {
     if (phone.length !== 10) return;
     setLoading(true); setError(null); setResult(null); setNotFound(false);
     try {
-      const res = await fetch(`http://localhost:8000/api/bands-scan/${phone}`);
+      const [res] = await Promise.all([
+        fetch(`/api/bands-scan/${phone}`),
+        new Promise(r => setTimeout(r, 2000)),
+      ]);
       if (res.status === 404) { setNotFound(true); return; }
       if (!res.ok) throw new Error((await res.json()).detail || 'Scan failed');
       setResult(await res.json());
@@ -556,7 +572,7 @@ function BatchScanBands() {
     if (!phones.length) { setError('No valid 10-digit numbers found.'); return; }
     setLoading(true); setError(null); setRows(null);
     try {
-      const res = await fetch('http://localhost:8000/api/batch-bands-scan', {
+      const res = await fetch('/api/batch-bands-scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phones }),
