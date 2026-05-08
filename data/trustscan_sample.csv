@@ -1001,3 +1001,7 @@
 8281293744,band_1,band_1,band_1,F1,A1,v1.2,I7,I10,H7,band_1,band_1,1026,1069,1.391E-1,1.109E-1,2026-04-11,band_1,1.56934779E6,F) 15-25L,930,2.398E-1,A) More than 3 annual transactions,2026-04-22
 8086239316,band_1,band_1,band_1,D1,A1,v1.2,H9,I7,H3,band_1,band_1,948,1033,2.204E-1,1.432E-1,2026-04-11,band_1,7.7356114E5,D) 6-10L,906,2.78E-1,A) More than 3 annual transactions,2026-04-22
 8050511775,band_1,band_1,band_1,G1,A1,v1.2,I6,J2,I1,band_1,band_1,1006,1109,1.549E-1,9.1E-2,2026-04-11,band_1,3.20274383E6,G) 25L+,969,1.99E-1,A) More than 3 annual transactions,2026-04-22
+9740892824,band_8,band_7,band_8,A1,B1,v1.2,E2,E6,E8,band_8,band_7,716,719,5.936E-1,5.527E-1,2026-04-09,band_8,2.7960673E5,A) 0-3L,746,5.313E-1,B) Less than or equal to 3 annual transactions,2026-04-21
+9019598028,band_2,band_2,band_4,D1,A1,v1.2,H2,H8,G1,band_2,band_2,897,932,2.86E-1,2.295E-1,2026-04-09,band_4,8.2975055E5,D) 6-10L,820,3.984E-1,A) More than 3 annual transactions,2026-04-21
+9594985398,band_2,band_1,band_3,F1,A1,v1.2,H2,I4,G6,band_2,band_1,894,1001,2.901E-1,1.675E-1,2026-04-10,band_3,2.05182491E6,F) 15-25L,851,3.537E-1,A) More than 3 annual transactions,2026-04-21
+8105194010,band_1,band_1,band_1,F1,A1,v1.2,H9,I5,H2,band_1,band_1,945,1004,2.206E-1,1.624E-1,2026-04-09,band_1,1.96613459E6,F) 15-25L,897,2.904E-1,A) More than 3 annual transactions,2026-04-21
