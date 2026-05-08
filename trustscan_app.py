@@ -117,6 +117,7 @@ def trust_scan(phone: str):
 
     return {
         "phone": phone,
+        # Exact values (Full Scan)
         "dpd30_band":          record["exact_dpd30_band"],
         "dpd90_band":          record["exact_dpd90_band"],
         "dpd30_credit_score":  record["dpd30_credit_score"],
@@ -131,6 +132,16 @@ def trust_scan(phone: str):
         "cd_probability":      record["cd_default_probability"],
         "cohort":              record["cohort"],
         "cd_date":             record["cd_date"],
+        # Bands data (Bands view)
+        "bands_dpd30_band":    record["bands_dpd30_band"],
+        "bands_dpd90_band":    record["bands_dpd90_band"],
+        "bands_cd_band":       record["bands_cd_band"],
+        "bands_income_bucket": record["bands_income_bucket"],
+        "dpd30_prob_band":     record["dpd_30_prob_band"],
+        "dpd90_prob_band":     record["dpd_90_prob_band"],
+        "cd_prob_band":        record["cd_dpd_30_prob_band"],
+        "thick_thin_data":     record["thick_thin_data"],
+        "model_version":       record["model_version"],
     }
 
 

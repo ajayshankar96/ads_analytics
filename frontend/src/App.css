@@ -276,6 +276,22 @@ body {
 }
 .cohort-value { font-size: 15px; color: #374151; font-weight: 500; line-height: 1.6; }
 
+/* ── Income bucket hover tooltip ─────────────────────────────── */
+.income-tooltip {
+  position: absolute; bottom: calc(100% + 8px); left: 50%;
+  transform: translateX(-50%);
+  background: #1e3a8a; color: white;
+  padding: 6px 14px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(30,58,138,.3);
+  pointer-events: none; z-index: 10;
+}
+.income-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #1e3a8a;
+}
+
 /* ── Batch form ──────────────────────────────────────────────── */
 .batch-form {
   background: white; padding: 24px; border-radius: 16px;

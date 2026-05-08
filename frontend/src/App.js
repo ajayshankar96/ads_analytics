@@ -18,16 +18,31 @@ function formatINR(amount) {
   }).format(amount);
 }
 
+// Parse probability string (e.g. "1.391E-1") → percentage number
+function parseProb(val) {
+  if (val == null || val === '') return null;
+  const n = parseFloat(val);
+  return isNaN(n) ? null : +(n * 100).toFixed(2);
+}
+
+// "F) 15-25L" → "₹15 – 25L annual income"
+function incomeBucketTooltip(bucket) {
+  if (!bucket) return null;
+  const m = bucket.match(/\)\s*(.+)/);
+  if (!m) return bucket;
+  return `₹${m[1].replace(/-/g, ' – ')} annual income`;
+}
+
 // Weighted average of available default probabilities → Trust Score 0-100
 function computeTrustScore(data) {
   const slots = [
-    { val: data?.dpd30_probability, w: 35 },
-    { val: data?.dpd90_probability, w: 35 },
-    { val: data?.cd_probability,    w: 30 },
+    { val: parseProb(data?.dpd30_probability), w: 35 },
+    { val: parseProb(data?.dpd90_probability), w: 35 },
+    { val: parseProb(data?.cd_probability),    w: 30 },
   ].filter(s => s.val != null);
   if (!slots.length) return null;
-  const totalW = slots.reduce((s, x) => s + x.w, 0);
-  const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW;
+  const totalW  = slots.reduce((s, x) => s + x.w, 0);
+  const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW; // already 0-100
   return Math.round(100 - avgProb);
 }
 
@@ -165,11 +180,13 @@ function RiskCard({ title, band, creditScore, probability }) {
       <div className="prob-section">
         <div className="prob-row">
           <div className="prob-label">Default Probability</div>
-          <div className="prob-value" style={{ color: info.color }}>{probability}%</div>
+          <div className="prob-value" style={{ color: info.color }}>
+            {parseProb(probability) != null ? `${parseProb(probability)}%` : '—'}
+          </div>
         </div>
         <div className="prob-bar-bg">
           <div className="prob-bar-fill"
-            style={{ width: `${Math.min(probability ?? 0, 100)}%`, background: info.color }} />
+            style={{ width: `${Math.min(parseProb(probability) ?? 0, 100)}%`, background: info.color }} />
         </div>
       </div>
     </div>
@@ -206,8 +223,26 @@ function TrustScoreCard({ data }) {
   );
 }
 
-// ── Single scan tab ───────────────────────────────────────────────────────────
-function SingleScan() {
+// ── Income bucket card with hover tooltip ────────────────────────────────────
+function IncomeBucketCard({ bucket, tooltip }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div className="income-card" style={{ position: 'relative' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}>
+      <div className="income-label">Predicted Income Bucket</div>
+      <div className="cohort-value" style={{ fontSize: 28, fontWeight: 900, color: '#1e3a8a' }}>
+        {bucket}
+      </div>
+      {hovered && tooltip && (
+        <div className="income-tooltip">{tooltip}</div>
+      )}
+    </div>
+  );
+}
+
+// ── Single scan (unified — mode = 'bands' | 'full') ──────────────────────────
+function SingleScan({ mode }) {
   const [phone, setPhone]       = useState('');
   const [result, setResult]     = useState(null);
   const [loading, setLoading]   = useState(false);
@@ -245,6 +280,7 @@ function SingleScan() {
       </form>
 
       <ScanSteps active={loading} />
+
       {notFound && !loading && (
         <div className="status-box not-found">
           <span className="status-icon">🔍</span>
@@ -271,32 +307,63 @@ function SingleScan() {
 
           <TrustScoreCard data={result} />
 
-          <div className="section-label">CREDIT RISK PROFILE</div>
-          <div className="cards-grid">
-            {result.dpd30_band && <RiskCard title="30-Day Default Risk"
-              band={result.dpd30_band} creditScore={result.dpd30_credit_score} probability={result.dpd30_probability} />}
-            {result.dpd90_band && <RiskCard title="90-Day Default Risk"
-              band={result.dpd90_band} creditScore={result.dpd90_credit_score} probability={result.dpd90_probability} />}
-            {result.cd_band && <RiskCard title="Credit Demand Score"
-              band={result.cd_band} creditScore={result.cd_credit_score} probability={result.cd_probability} />}
-          </div>
-
-          {result.predicted_income != null && (
+          {mode === 'bands' ? (
             <>
-              <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
-              <div className="income-grid">
-                <div className="income-card">
-                  <div className="income-label">Predicted Annual Income</div>
-                  <div className="income-amount">{formatINR(result.predicted_income)}</div>
-                  <div className="income-bucket">{result.predicted_income_bucket}</div>
-                </div>
-                {result.cohort && (
-                  <div className="income-card">
-                    <div className="income-label">Customer Cohort</div>
-                    <div className="cohort-value">{result.cohort}</div>
-                  </div>
-                )}
+              <div className="section-label">CREDIT RISK BANDS</div>
+              <div className="cards-grid">
+                {result.bands_dpd30_band && <BandOnlyCard title="30-Day Default Risk"
+                  band={result.bands_dpd30_band} probBand={result.dpd30_prob_band} />}
+                {result.bands_dpd90_band && <BandOnlyCard title="90-Day Default Risk"
+                  band={result.bands_dpd90_band} probBand={result.dpd90_prob_band} />}
+                {result.bands_cd_band && <BandOnlyCard title="CD Default Risk"
+                  band={result.bands_cd_band} probBand={result.cd_prob_band} />}
               </div>
+
+              {result.bands_income_bucket && (
+                <>
+                  <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
+                  <div className="income-grid">
+                    <IncomeBucketCard bucket={result.bands_income_bucket} tooltip={incomeBucketTooltip(result.predicted_income_bucket)} />
+                    {result.cohort && (
+                      <div className="income-card">
+                        <div className="income-label">Customer Cohort</div>
+                        <div className="cohort-value">{result.cohort}</div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="section-label">CREDIT RISK PROFILE</div>
+              <div className="cards-grid">
+                {result.dpd30_band && <RiskCard title="30-Day Default Risk"
+                  band={result.dpd30_band} creditScore={result.dpd30_credit_score} probability={result.dpd30_probability} />}
+                {result.dpd90_band && <RiskCard title="90-Day Default Risk"
+                  band={result.dpd90_band} creditScore={result.dpd90_credit_score} probability={result.dpd90_probability} />}
+                {result.cd_band && <RiskCard title="Credit Demand Score"
+                  band={result.cd_band} creditScore={result.cd_credit_score} probability={result.cd_probability} />}
+              </div>
+
+              {result.predicted_income != null && (
+                <>
+                  <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
+                  <div className="income-grid">
+                    <div className="income-card">
+                      <div className="income-label">Predicted Annual Income</div>
+                      <div className="income-amount">{formatINR(result.predicted_income)}</div>
+                      <div className="income-bucket">{result.predicted_income_bucket}</div>
+                    </div>
+                    {result.cohort && (
+                      <div className="income-card">
+                        <div className="income-label">Customer Cohort</div>
+                        <div className="cohort-value">{result.cohort}</div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -666,7 +733,7 @@ function BatchScanBands() {
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab,  setTab]  = useState('single'); // 'single' | 'batch'
-  const [mode, setMode] = useState('full');   // 'full'   | 'bands'
+  const [mode, setMode] = useState('bands');  // 'bands'  | 'full'
 
   return (
     <div className="app">
@@ -703,8 +770,7 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ display: tab === 'single' && mode === 'full'  ? 'block' : 'none' }}><SingleScan /></div>
-        <div style={{ display: tab === 'single' && mode === 'bands' ? 'block' : 'none' }}><SingleScanBands /></div>
+        <div style={{ display: tab === 'single' ? 'block' : 'none' }}><SingleScan mode={mode} /></div>
         <div style={{ display: tab === 'batch'  && mode === 'full'  ? 'block' : 'none' }}><BatchScan /></div>
         <div style={{ display: tab === 'batch'  && mode === 'bands' ? 'block' : 'none' }}><BatchScanBands /></div>
       </main>
