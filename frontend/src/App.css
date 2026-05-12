@@ -383,51 +383,73 @@ body {
   font-size: 14px; color: #4b5563; line-height: 1.5;
 }
 
-/* ── Trust Scan 1.0 band card ────────────────────────────────── */
-.ts1-band-card {
-  display: flex; gap: 32px; align-items: center;
-  background: white; border-radius: 14px; padding: 32px 28px;
-  border: 2px solid; margin-bottom: 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,.07);
+/* ── Trust Scan 1.0 band grid ────────────────────────────────── */
+.ts1-grid-wrap {
+  margin-bottom: 20px;
 }
-.ts1-band-left {
-  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px;
+.ts1-grid-row {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;
+  margin-bottom: 10px;
 }
-.ts1-band-letter {
-  width: 100px; height: 100px; border-radius: 20px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 64px; font-weight: 900; line-height: 1;
+.ts1-tile {
+  position: relative; border-radius: 12px; border: 2px solid;
+  padding: 18px 10px 14px; text-align: center;
+  cursor: default; transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 8px rgba(0,0,0,.05);
 }
-.ts1-band-label {
-  font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+.ts1-tile:hover {
+  transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.12); z-index: 2;
 }
-.ts1-band-right { flex: 1; }
-.ts1-band-desc-title {
-  font-size: 11px; font-weight: 700; color: #9ca3af;
-  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;
+.ts1-tile-customer {
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
 }
-.ts1-band-desc {
-  font-size: 15px; color: #374151; margin-bottom: 20px; line-height: 1.5;
+.ts1-tile-other {
+  opacity: .55;
 }
-.ts1-band-grid {
-  display: flex; gap: 6px; margin-bottom: 8px;
+.ts1-tile-other:hover {
+  opacity: 1;
 }
-.ts1-grid-cell {
-  width: 36px; height: 36px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 700;
-  background: #f3f4f6; color: #9ca3af; border: 2px solid transparent;
-  transition: all .2s;
+.ts1-tile-letter {
+  font-size: 36px; font-weight: 900; line-height: 1; margin-bottom: 8px;
 }
-.ts1-grid-active {
-  transform: scale(1.15);
+.ts1-tile-name {
+  font-size: 11px; font-weight: 600; line-height: 1.3;
+}
+.ts1-tile-you {
+  display: inline-block; margin-top: 8px;
+  background: #1e3a8a; color: white;
+  font-size: 10px; font-weight: 700; letter-spacing: .5px;
+  padding: 2px 8px; border-radius: 10px;
+}
+/* hover tooltip */
+.ts1-tile-tooltip {
+  position: absolute; top: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%);
+  background: white; border: 2px solid; border-radius: 12px;
+  padding: 14px 16px; min-width: 220px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.14);
+  text-align: left; z-index: 100; pointer-events: none;
+}
+.ts1-tile-tooltip::before {
+  content: ''; position: absolute; bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent; border-bottom-color: white;
+  filter: drop-shadow(0 -2px 2px rgba(0,0,0,.08));
+}
+.ts1-tooltip-header {
+  font-size: 13px; font-weight: 700; margin-bottom: 10px;
+}
+.ts1-tooltip-bullets {
+  list-style: disc; padding-left: 16px;
+  font-size: 12px; color: #374151; line-height: 1.6;
 }
 .ts1-grid-legend {
   display: flex; justify-content: space-between;
-  font-size: 11px; color: #9ca3af;
+  font-size: 11px; color: #9ca3af; padding: 0 4px;
 }
-@media (max-width: 560px) {
-  .ts1-band-card { flex-direction: column; align-items: flex-start; gap: 20px; }
+@media (max-width: 640px) {
+  .ts1-grid-row { grid-template-columns: repeat(4, 1fr); }
+  .ts1-tile-tooltip { min-width: 180px; }
 }
 
 /* ── Footer ──────────────────────────────────────────────────── */

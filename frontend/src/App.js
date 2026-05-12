@@ -14,15 +14,61 @@ function bandInfo(band) {
 // Trust Scan 1.0 — A through G band info
 function ts1BandInfo(band) {
   const map = {
-    'A': { label: 'Elite',            color: '#059669', bg: '#d1fae5', border: '#059669' },
-    'B': { label: 'Prime',            color: '#16a34a', bg: '#dcfce7', border: '#16a34a' },
-    'C': { label: 'Standard',         color: '#65a30d', bg: '#ecfccb', border: '#65a30d' },
-    'D': { label: 'Moderate',         color: '#ca8a04', bg: '#fef9c3', border: '#ca8a04' },
-    'E': { label: 'Elevated Risk',    color: '#ea580c', bg: '#ffedd5', border: '#ea580c' },
-    'F': { label: 'High Risk',        color: '#dc2626', bg: '#fee2e2', border: '#dc2626' },
-    'G': { label: 'New to Razorpay',  color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db' },
+    'A': {
+      label: 'Elite Customers',
+      color: '#166534', bg: '#dcfce7', border: '#16a34a',
+      bullets: [
+        'Good Transactional Behaviour',
+        'Good credit behaviour exhibited on Razorpay\'s platform',
+        'High Affluence',
+      ],
+    },
+    'B': {
+      label: 'Prime Customers',
+      color: '#166534', bg: '#d1fae5', border: '#059669',
+      bullets: [
+        'Good Transactional Behaviour',
+        'Good credit behaviour exhibited on Razorpay\'s platform',
+      ],
+    },
+    'C': {
+      label: 'Power Customers',
+      color: '#3a5c0e', bg: '#ecfccb', border: '#65a30d',
+      bullets: [
+        'Good Transactional Behaviour',
+      ],
+    },
+    'D': {
+      label: 'Sub Prime Customers',
+      color: '#92400e', bg: '#fef3c7', border: '#d97706',
+      bullets: [
+        'Infrequent transactors',
+      ],
+    },
+    'E': {
+      label: 'Dormant Customers',
+      color: '#92400e', bg: '#ffedd5', border: '#ea580c',
+      bullets: [
+        'Digitally inactive with zero engagement on Razorpay\'s platform in last 12 months',
+      ],
+    },
+    'F': {
+      label: 'Risky Customers',
+      color: '#991b1b', bg: '#fee2e2', border: '#dc2626',
+      bullets: [
+        'Negative Engagement in past like chargeback, fraud attempts',
+        'Payments decline due to insufficient balance',
+      ],
+    },
+    'G': {
+      label: 'New to Razorpay',
+      color: '#374151', bg: '#f3f4f6', border: '#9ca3af',
+      bullets: [
+        'Never active on Razorpay\'s platform',
+      ],
+    },
   };
-  return map[band] || { label: 'Unknown', color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db' };
+  return map[band] || { label: 'Unknown', color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db', bullets: [] };
 }
 
 function formatINR(amount) {
@@ -254,8 +300,67 @@ function PhoneForm({ onSubmit, loading }) {
   );
 }
 
-// ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
+// ── TS 1.0 band grid — all 7 bands, customer's band highlighted ───────────────
 const TS1_BANDS = ['A','B','C','D','E','F','G'];
+
+function Ts1BandGrid({ band: customerBand, allBands }) {
+  const [hovered, setHovered] = useState(null);
+
+  return (
+    <div className="ts1-grid-wrap">
+      <div className="ts1-grid-row">
+        {allBands.map(b => {
+          const info = ts1BandInfo(b);
+          const isCustomer = b === customerBand;
+          const isHovered  = hovered === b;
+          return (
+            <div
+              key={b}
+              className={`ts1-tile ${isCustomer ? 'ts1-tile-customer' : 'ts1-tile-other'}`}
+              style={{
+                borderColor: isCustomer ? info.border : '#e5e7eb',
+                background: isCustomer ? info.bg : 'white',
+              }}
+              onMouseEnter={() => setHovered(b)}
+              onMouseLeave={() => setHovered(null)}
+            >
+              {/* Letter + name */}
+              <div className="ts1-tile-letter" style={{ color: isCustomer ? info.color : '#9ca3af' }}>
+                {b}
+              </div>
+              <div className="ts1-tile-name" style={{ color: isCustomer ? info.color : '#6b7280' }}>
+                {info.label}
+              </div>
+              {isCustomer && (
+                <div className="ts1-tile-you">Your Customer</div>
+              )}
+
+              {/* Hover tooltip with bullets */}
+              {isHovered && (
+                <div className="ts1-tile-tooltip" style={{ borderColor: info.border }}>
+                  <div className="ts1-tooltip-header" style={{ color: info.color }}>
+                    Band {b} · {info.label}
+                  </div>
+                  <ul className="ts1-tooltip-bullets">
+                    {info.bullets.map((pt, i) => (
+                      <li key={i}>{pt}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="ts1-grid-legend">
+        <span style={{ color: '#059669' }}>◀ Lower Risk</span>
+        <span style={{ color: '#9ca3af' }}>Higher Risk ▶</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
 
 function TrustScan1View() {
   const [result,   setResult]   = useState(null);
@@ -280,7 +385,6 @@ function TrustScan1View() {
   }
 
   const band = result?.ts1_band?.trim();
-  const info = band ? ts1BandInfo(band) : null;
 
   return (
     <>
@@ -314,39 +418,7 @@ function TrustScan1View() {
           </div>
 
           {band ? (
-            <>
-              {/* Big band letter */}
-              <div className="ts1-band-card" style={{ borderColor: info.border }}>
-                <div className="ts1-band-left">
-                  <div className="ts1-band-letter" style={{ color: info.color, background: info.bg, border: `3px solid ${info.border}` }}>
-                    {band}
-                  </div>
-                  <div className="ts1-band-label" style={{ color: info.color }}>{info.label}</div>
-                </div>
-                <div className="ts1-band-right">
-                  <div className="ts1-band-desc-title">Risk Band</div>
-                  <div className="ts1-band-desc">
-                    This customer falls in the <strong>{info.label}</strong> segment based on the Trust Scan 1.0 model.
-                  </div>
-                  {/* Band reference row */}
-                  <div className="ts1-band-grid">
-                    {TS1_BANDS.map(b => {
-                      const bi = ts1BandInfo(b);
-                      return (
-                        <div key={b} className={`ts1-grid-cell ${b === band ? 'ts1-grid-active' : ''}`}
-                          style={b === band ? { background: bi.bg, border: `2px solid ${bi.border}`, color: bi.color } : {}}>
-                          {b}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="ts1-grid-legend">
-                    <span style={{ color: '#059669' }}>A — Lowest Risk</span>
-                    <span style={{ color: '#9ca3af' }}>G — Thin File</span>
-                  </div>
-                </div>
-              </div>
-            </>
+            <Ts1BandGrid band={band} allBands={TS1_BANDS} />
           ) : (
             <div className="status-box not-found">
               <span className="status-icon">📊</span>
