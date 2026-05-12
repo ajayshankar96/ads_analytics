@@ -356,6 +356,31 @@ body {
 .prob-band-label { font-size: 11px; color: #9ca3af; }
 .prob-band-value { font-size: 13px; font-weight: 700; }
 
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty-state {
+  text-align: center; padding: 48px 24px 32px;
+}
+.empty-title {
+  font-size: 22px; font-weight: 800; color: #1e3a8a; margin-bottom: 12px;
+}
+.empty-sub {
+  font-size: 15px; color: #6b7280; max-width: 560px;
+  margin: 0 auto 32px; line-height: 1.6;
+}
+.empty-cards {
+  display: flex; flex-direction: column; gap: 12px;
+  max-width: 600px; margin: 0 auto; text-align: left;
+}
+.empty-card {
+  background: #f0f4ff; border-radius: 14px; padding: 20px 24px;
+}
+.empty-card-title {
+  font-size: 14px; font-weight: 700; color: #1e3a8a; margin-bottom: 6px;
+}
+.empty-card-body {
+  font-size: 14px; color: #4b5563; line-height: 1.5;
+}
+
 /* ── Trust Scan 1.0 band card ────────────────────────────────── */
 .ts1-band-card {
   display: flex; gap: 32px; align-items: center;

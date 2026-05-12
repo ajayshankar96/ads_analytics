@@ -202,6 +202,33 @@ function TrustScoreCard({ data }) {
   );
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+function EmptyState() {
+  return (
+    <div className="empty-state">
+      <h2 className="empty-title">Run a scan to see the output</h2>
+      <p className="empty-sub">
+        Pick a sample number above, or type any 10-digit number. We'll show you exactly what
+        TS 1.0 and TS 2.0 return for the same input.
+      </p>
+      <div className="empty-cards">
+        <div className="empty-card">
+          <div className="empty-card-title">TS 1.0 will show</div>
+          <div className="empty-card-body">
+            One risk band (A–G), the customer's name &amp; meaning, and where they sit relative to the network.
+          </div>
+        </div>
+        <div className="empty-card">
+          <div className="empty-card-title">TS 2.0 will show</div>
+          <div className="empty-card-body">
+            30/90-day default risk, customer-durable loan score, predicted income, customer cohort, and DE-layer variables.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Shared phone input form ───────────────────────────────────────────────────
 function PhoneForm({ onSubmit, loading }) {
   const [phone, setPhone] = useState('');
@@ -273,6 +300,8 @@ function TrustScan1View() {
           <h3>Something went wrong</h3><p>{error}</p>
         </div>
       )}
+
+      {!result && !loading && !notFound && !error && <EmptyState />}
 
       {result && !loading && (
         <div className="results">
@@ -372,6 +401,8 @@ function TrustScan2View() {
           <h3>Something went wrong</h3><p>{error}</p>
         </div>
       )}
+
+      {!result && !loading && !notFound && !error && <EmptyState />}
 
       {result && !loading && (
         <div className="results">
