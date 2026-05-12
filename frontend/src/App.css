@@ -388,8 +388,15 @@ body {
   margin-bottom: 20px;
 }
 .ts1-grid-row {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;
-  margin-bottom: 10px;
+  display: grid; gap: 12px; margin-bottom: 12px;
+}
+.ts1-row-top {
+  grid-template-columns: repeat(4, 1fr);
+}
+.ts1-row-bottom {
+  grid-template-columns: repeat(3, 1fr);
+  /* centre the 3 tiles under the 4 — each tile is ~25% wide, 3×25 = 75%, offset by 12.5% */
+  padding: 0 12.5%;
 }
 .ts1-tile {
   position: relative; border-radius: 12px; border: 2px solid;

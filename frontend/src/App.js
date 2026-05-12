@@ -306,52 +306,50 @@ const TS1_BANDS = ['A','B','C','D','E','F','G'];
 function Ts1BandGrid({ band: customerBand, allBands }) {
   const [hovered, setHovered] = useState(null);
 
+  const row1 = allBands.slice(0, 4); // A B C D
+  const row2 = allBands.slice(4);    // E F G
+
+  function renderTile(b) {
+    const info = ts1BandInfo(b);
+    const isCustomer = b === customerBand;
+    const isHovered  = hovered === b;
+    return (
+      <div
+        key={b}
+        className={`ts1-tile ${isCustomer ? 'ts1-tile-customer' : 'ts1-tile-other'}`}
+        style={{
+          borderColor: isCustomer ? info.border : '#e5e7eb',
+          background:  isCustomer ? info.bg    : 'white',
+        }}
+        onMouseEnter={() => setHovered(b)}
+        onMouseLeave={() => setHovered(null)}
+      >
+        <div className="ts1-tile-letter" style={{ color: isCustomer ? info.color : '#9ca3af' }}>
+          {b}
+        </div>
+        <div className="ts1-tile-name" style={{ color: isCustomer ? info.color : '#6b7280' }}>
+          {info.label}
+        </div>
+        {isCustomer && <div className="ts1-tile-you">Your Customer</div>}
+
+        {isHovered && (
+          <div className="ts1-tile-tooltip" style={{ borderColor: info.border }}>
+            <div className="ts1-tooltip-header" style={{ color: info.color }}>
+              Band {b} · {info.label}
+            </div>
+            <ul className="ts1-tooltip-bullets">
+              {info.bullets.map((pt, i) => <li key={i}>{pt}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="ts1-grid-wrap">
-      <div className="ts1-grid-row">
-        {allBands.map(b => {
-          const info = ts1BandInfo(b);
-          const isCustomer = b === customerBand;
-          const isHovered  = hovered === b;
-          return (
-            <div
-              key={b}
-              className={`ts1-tile ${isCustomer ? 'ts1-tile-customer' : 'ts1-tile-other'}`}
-              style={{
-                borderColor: isCustomer ? info.border : '#e5e7eb',
-                background: isCustomer ? info.bg : 'white',
-              }}
-              onMouseEnter={() => setHovered(b)}
-              onMouseLeave={() => setHovered(null)}
-            >
-              {/* Letter + name */}
-              <div className="ts1-tile-letter" style={{ color: isCustomer ? info.color : '#9ca3af' }}>
-                {b}
-              </div>
-              <div className="ts1-tile-name" style={{ color: isCustomer ? info.color : '#6b7280' }}>
-                {info.label}
-              </div>
-              {isCustomer && (
-                <div className="ts1-tile-you">Your Customer</div>
-              )}
-
-              {/* Hover tooltip with bullets */}
-              {isHovered && (
-                <div className="ts1-tile-tooltip" style={{ borderColor: info.border }}>
-                  <div className="ts1-tooltip-header" style={{ color: info.color }}>
-                    Band {b} · {info.label}
-                  </div>
-                  <ul className="ts1-tooltip-bullets">
-                    {info.bullets.map((pt, i) => (
-                      <li key={i}>{pt}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <div className="ts1-grid-row ts1-row-top">{row1.map(renderTile)}</div>
+      <div className="ts1-grid-row ts1-row-bottom">{row2.map(renderTile)}</div>
       <div className="ts1-grid-legend">
         <span style={{ color: '#059669' }}>◀ Lower Risk</span>
         <span style={{ color: '#9ca3af' }}>Higher Risk ▶</span>
