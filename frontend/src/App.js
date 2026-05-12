@@ -16,59 +16,55 @@ function ts1BandInfo(band) {
   const map = {
     'A': {
       label: 'Elite Customers',
-      color: '#166534', bg: '#dcfce7', border: '#16a34a',
-      bullets: [
-        'Good Transactional Behaviour',
-        'Good credit behaviour exhibited on Razorpay\'s platform',
-        'High Affluence',
-      ],
+      badgeColor: '#166534', badgeBg: '#dcfce7',
+      heroDesc: "Top 8% of Razorpay's network — strongest signals across transaction reliability, network tenure, and merchant-mix diversity.",
+      cardDesc: 'Top tier — strongest signals across transaction reliability and tenure',
+      pct: '~8%',
     },
     'B': {
       label: 'Prime Customers',
-      color: '#166534', bg: '#d1fae5', border: '#059669',
-      bullets: [
-        'Good Transactional Behaviour',
-        'Good credit behaviour exhibited on Razorpay\'s platform',
-      ],
+      badgeColor: '#065f46', badgeBg: '#d1fae5',
+      heroDesc: 'Strong transactors with a healthy credit profile and consistent engagement on Razorpay\'s platform.',
+      cardDesc: 'Healthy financial profile, consistent transactional behavior',
+      pct: '~22%',
     },
     'C': {
       label: 'Power Customers',
-      color: '#3a5c0e', bg: '#ecfccb', border: '#65a30d',
-      bullets: [
-        'Good Transactional Behaviour',
-      ],
+      badgeColor: '#1e40af', badgeBg: '#dbeafe',
+      heroDesc: 'Active Razorpay users with good transactional behaviour and moderate creditworthiness.',
+      cardDesc: 'High network activity, moderate creditworthiness',
+      pct: '~18%',
     },
     'D': {
-      label: 'Sub Prime Customers',
-      color: '#92400e', bg: '#fef3c7', border: '#d97706',
-      bullets: [
-        'Infrequent transactors',
-      ],
+      label: 'Sub-prime Customers',
+      badgeColor: '#92400e', badgeBg: '#fef9c3',
+      heroDesc: 'Infrequent transactors with mixed credit signals — manual review recommended before extending credit.',
+      cardDesc: 'Mixed signals — caution advised, manual review recommended',
+      pct: '~16%',
     },
     'E': {
       label: 'Dormant Customers',
-      color: '#92400e', bg: '#ffedd5', border: '#ea580c',
-      bullets: [
-        'Digitally inactive with zero engagement on Razorpay\'s platform in last 12 months',
-      ],
+      badgeColor: '#c2410c', badgeBg: '#ffedd5',
+      heroDesc: 'Digitally inactive with zero engagement on Razorpay\'s platform in the last 12 months.',
+      cardDesc: 'Low recent activity on the Razorpay network',
+      pct: '~12%',
     },
     'F': {
       label: 'Risky Customers',
-      color: '#991b1b', bg: '#fee2e2', border: '#dc2626',
-      bullets: [
-        'Negative Engagement in past like chargeback, fraud attempts',
-        'Payments decline due to insufficient balance',
-      ],
+      badgeColor: '#9d174d', badgeBg: '#fce7f3',
+      heroDesc: 'Negative engagement history including chargebacks, fraud attempts, and payment declines due to insufficient balance.',
+      cardDesc: 'Negative signals across multiple risk models',
+      pct: '~9%',
     },
     'G': {
       label: 'New to Razorpay',
-      color: '#374151', bg: '#f3f4f6', border: '#9ca3af',
-      bullets: [
-        'Never active on Razorpay\'s platform',
-      ],
+      badgeColor: '#5b21b6', badgeBg: '#ede9fe',
+      heroDesc: 'No prior activity on Razorpay\'s platform — insufficient signal to score. Recommend richer KYC before extending credit.',
+      cardDesc: 'Insufficient signal — recommend richer KYC',
+      pct: '~15%',
     },
   };
-  return map[band] || { label: 'Unknown', color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db', bullets: [] };
+  return map[band] || { label: 'Unknown', badgeColor: '#6b7280', badgeBg: '#f3f4f6', heroDesc: '', cardDesc: '', pct: '—' };
 }
 
 function formatINR(amount) {
@@ -300,60 +296,59 @@ function PhoneForm({ onSubmit, loading }) {
   );
 }
 
-// ── TS 1.0 band grid — all 7 bands, customer's band highlighted ───────────────
+// ── TS 1.0 band grid — hero card + full 7-band reference row ─────────────────
 const TS1_BANDS = ['A','B','C','D','E','F','G'];
 
 function Ts1BandGrid({ band: customerBand, allBands }) {
-  const [hovered, setHovered] = useState(null);
-
-  const row1 = allBands.slice(0, 4); // A B C D
-  const row2 = allBands.slice(4);    // E F G
-
-  function renderTile(b) {
-    const info = ts1BandInfo(b);
-    const isCustomer = b === customerBand;
-    const isHovered  = hovered === b;
-    return (
-      <div
-        key={b}
-        className={`ts1-tile ${isCustomer ? 'ts1-tile-customer' : 'ts1-tile-other'}`}
-        style={{
-          borderColor: isCustomer ? info.border : '#e5e7eb',
-          background:  isCustomer ? info.bg    : 'white',
-        }}
-        onMouseEnter={() => setHovered(b)}
-        onMouseLeave={() => setHovered(null)}
-      >
-        <div className="ts1-tile-letter" style={{ color: isCustomer ? info.color : '#9ca3af' }}>
-          {b}
-        </div>
-        <div className="ts1-tile-name" style={{ color: isCustomer ? info.color : '#6b7280' }}>
-          {info.label}
-        </div>
-        {isCustomer && <div className="ts1-tile-you">Your Customer</div>}
-
-        {isHovered && (
-          <div className="ts1-tile-tooltip" style={{ borderColor: info.border }}>
-            <div className="ts1-tooltip-header" style={{ color: info.color }}>
-              Band {b} · {info.label}
-            </div>
-            <ul className="ts1-tooltip-bullets">
-              {info.bullets.map((pt, i) => <li key={i}>{pt}</li>)}
-            </ul>
-          </div>
-        )}
-      </div>
-    );
-  }
+  const info = ts1BandInfo(customerBand);
 
   return (
-    <div className="ts1-grid-wrap">
-      <div className="ts1-grid-row ts1-row-top">{row1.map(renderTile)}</div>
-      <div className="ts1-grid-row ts1-row-bottom">{row2.map(renderTile)}</div>
-      <div className="ts1-grid-legend">
-        <span style={{ color: '#059669' }}>◀ Lower Risk</span>
-        <span style={{ color: '#9ca3af' }}>Higher Risk ▶</span>
+    <div className="ts1-wrap">
+
+      {/* ── Hero card ── */}
+      <div className="ts1-hero">
+        <div className="ts1-hero-badge" style={{ background: info.badgeBg, color: info.badgeColor }}>
+          {customerBand}
+        </div>
+        <div className="ts1-hero-body">
+          <div className="ts1-hero-eyebrow">RISK PROFILE BAND</div>
+          <h2 className="ts1-hero-name">{info.label}</h2>
+          <p className="ts1-hero-desc">{info.heroDesc}</p>
+          <div className="ts1-hero-meta">
+            <span>Approx <strong>{info.pct}</strong> of network</span>
+            <span className="ts1-meta-dot">·</span>
+            <span>Confidence <strong>High</strong></span>
+            <span className="ts1-meta-dot">·</span>
+            <span>Model version <strong>TS-1.0.4</strong></span>
+          </div>
+        </div>
       </div>
+
+      {/* ── Reference row header ── */}
+      <div className="ts1-ref-header">
+        <span className="ts1-ref-title">WHERE THIS CUSTOMER SITS — FULL BAND REFERENCE</span>
+        <span className="ts1-ref-note">% of network is illustrative · From Razorpay TrustScan walkthrough</span>
+      </div>
+
+      {/* ── 7-band reference cards ── */}
+      <div className="ts1-ref-row">
+        {allBands.map(b => {
+          const bi = ts1BandInfo(b);
+          const isCurrent = b === customerBand;
+          return (
+            <div key={b} className={`ts1-ref-card ${isCurrent ? 'ts1-ref-current' : ''}`}>
+              {isCurrent && <div className="ts1-current-pill">CURRENT</div>}
+              <div className="ts1-ref-badge" style={{ background: bi.badgeBg, color: bi.badgeColor }}>
+                {b}
+              </div>
+              <div className="ts1-ref-card-name">{bi.label}</div>
+              <div className="ts1-ref-card-desc">{bi.cardDesc}</div>
+              <div className="ts1-ref-card-pct"><strong>{bi.pct}</strong> of network</div>
+            </div>
+          );
+        })}
+      </div>
+
     </div>
   );
 }
