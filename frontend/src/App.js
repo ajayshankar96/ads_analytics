@@ -11,6 +11,20 @@ function bandInfo(band) {
   return           { label: 'HIGH RISK',         color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
 }
 
+// Trust Scan 1.0 — A through G band info
+function ts1BandInfo(band) {
+  const map = {
+    'A': { label: 'Elite',            color: '#059669', bg: '#d1fae5', border: '#059669' },
+    'B': { label: 'Prime',            color: '#16a34a', bg: '#dcfce7', border: '#16a34a' },
+    'C': { label: 'Standard',         color: '#65a30d', bg: '#ecfccb', border: '#65a30d' },
+    'D': { label: 'Moderate',         color: '#ca8a04', bg: '#fef9c3', border: '#ca8a04' },
+    'E': { label: 'Elevated Risk',    color: '#ea580c', bg: '#ffedd5', border: '#ea580c' },
+    'F': { label: 'High Risk',        color: '#dc2626', bg: '#fee2e2', border: '#dc2626' },
+    'G': { label: 'New to Razorpay',  color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db' },
+  };
+  return map[band] || { label: 'Unknown', color: '#9ca3af', bg: '#f3f4f6', border: '#d1d5db' };
+}
+
 function formatINR(amount) {
   if (amount == null) return '—';
   return new Intl.NumberFormat('en-IN', {
@@ -25,14 +39,6 @@ function parseProb(val) {
   return isNaN(n) ? null : +(n * 100).toFixed(2);
 }
 
-// "F) 15-25L" → "₹15 – 25L annual income"
-function incomeBucketTooltip(bucket) {
-  if (!bucket) return null;
-  const m = bucket.match(/\)\s*(.+)/);
-  if (!m) return bucket;
-  return `₹${m[1].replace(/-/g, ' – ')} annual income`;
-}
-
 // Weighted average of available default probabilities → Trust Score 0-100
 function computeTrustScore(data) {
   const slots = [
@@ -42,7 +48,7 @@ function computeTrustScore(data) {
   ].filter(s => s.val != null);
   if (!slots.length) return null;
   const totalW  = slots.reduce((s, x) => s + x.w, 0);
-  const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW; // already 0-100
+  const avgProb = slots.reduce((s, x) => s + x.val * x.w, 0) / totalW;
   return Math.round(100 - avgProb);
 }
 
@@ -52,37 +58,11 @@ function trustVerdict(score) {
   return                  { label: 'DECLINE',  color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
 }
 
-function exportCSV(rows) {
-  const headers = [
-    'Phone','Trust Score','Verdict',
-    'DPD30 Band','DPD30 Score','DPD30 Prob %',
-    'DPD90 Band','DPD90 Score','DPD90 Prob %',
-    'CD Band','CD Score','CD Prob %',
-    'Predicted Income','Income Bucket','Cohort',
-  ];
-  const lines = [headers.join(',')];
-  for (const r of rows) {
-    const score = computeTrustScore(r);
-    const v = score != null ? trustVerdict(score).label : '';
-    lines.push([
-      r.phone, score ?? '', v,
-      r.dpd30_band ?? '', r.dpd30_credit_score ?? '', r.dpd30_probability ?? '',
-      r.dpd90_band ?? '', r.dpd90_credit_score ?? '', r.dpd90_probability ?? '',
-      r.cd_band ?? '', r.cd_credit_score ?? '', r.cd_probability ?? '',
-      r.predicted_income ?? '', r.predicted_income_bucket ?? '', r.cohort ?? '',
-    ].join(','));
-  }
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a'); a.href = url; a.download = 'trust_scan_results.csv'; a.click();
-  URL.revokeObjectURL(url);
-}
-
 // ── Scan steps loading animation ─────────────────────────────────────────────
 const SCAN_STEPS = [
   { text: 'Scanning from Razorpay universe', duration: 700  },
   { text: 'Hashing · Unhashing',             duration: 700  },
-  { text: 'Getting predicted values',        duration: null },  // stays until done
+  { text: 'Getting predicted values',        duration: null },
 ];
 
 function ScanSteps({ active }) {
@@ -176,7 +156,6 @@ function RiskCard({ title, band, creditScore, probability }) {
         </div>
         <CreditGauge score={creditScore} color={info.color} />
       </div>
-
       <div className="prob-section">
         <div className="prob-row">
           <div className="prob-label">Default Probability</div>
@@ -198,7 +177,7 @@ function TrustScoreCard({ data }) {
   const score   = computeTrustScore(data);
   if (score == null) return null;
   const verdict = trustVerdict(score);
-  const pct     = score; // 0-100
+  const pct     = score;
 
   return (
     <div className="trust-card" style={{ borderColor: verdict.border }}>
@@ -223,39 +202,149 @@ function TrustScoreCard({ data }) {
   );
 }
 
-// ── Income bucket card with hover tooltip ────────────────────────────────────
-function IncomeBucketCard({ bucket, tooltip }) {
-  const [hovered, setHovered] = useState(false);
+// ── Shared phone input form ───────────────────────────────────────────────────
+function PhoneForm({ onSubmit, loading }) {
+  const [phone, setPhone] = useState('');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (phone.length !== 10) return;
+    onSubmit(phone);
+  }
+
   return (
-    <div className="income-card" style={{ position: 'relative' }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}>
-      <div className="income-label">Predicted Income Bucket</div>
-      <div className="cohort-value" style={{ fontSize: 28, fontWeight: 900, color: '#1e3a8a' }}>
-        {bucket}
+    <form className="search-box" onSubmit={handleSubmit}>
+      <div className="phone-input-wrap">
+        <span className="phone-prefix">+91</span>
+        <input type="tel" className="phone-input" placeholder="Enter 10-digit phone number"
+          value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+          maxLength={10} autoFocus />
       </div>
-      {hovered && tooltip && (
-        <div className="income-tooltip">{tooltip}</div>
-      )}
-    </div>
+      <button type="submit" className="scan-btn" disabled={loading || phone.length !== 10}>
+        {loading ? <><span className="spinner" /> Scanning…</> : 'SCAN NOW'}
+      </button>
+    </form>
   );
 }
 
-// ── Single scan (unified — mode = 'bands' | 'full') ──────────────────────────
-function SingleScan({ mode }) {
-  const [phone, setPhone]       = useState('');
-  const [result, setResult]     = useState(null);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
-  const [notFound, setNotFound] = useState(false);
+// ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
+const TS1_BANDS = ['A','B','C','D','E','F','G'];
 
-  async function handleScan(e) {
-    e.preventDefault();
-    if (phone.length !== 10) return;
+function TrustScan1View() {
+  const [result,   setResult]   = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState(null);
+  const [notFound, setNotFound] = useState(false);
+  const [phone,    setPhone]    = useState('');
+
+  async function handleScan(ph) {
+    setPhone(ph);
     setLoading(true); setError(null); setResult(null); setNotFound(false);
     try {
       const [res] = await Promise.all([
-        fetch(`/api/trust-scan/${phone}`),
+        fetch(`/api/trust-scan/${ph}`),
+        new Promise(r => setTimeout(r, 2000)),
+      ]);
+      if (res.status === 404) { setNotFound(true); return; }
+      if (!res.ok) throw new Error((await res.json()).detail || 'Scan failed');
+      setResult(await res.json());
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  const band = result?.ts1_band?.trim();
+  const info = band ? ts1BandInfo(band) : null;
+
+  return (
+    <>
+      <PhoneForm onSubmit={handleScan} loading={loading} />
+      <ScanSteps active={loading} />
+
+      {notFound && !loading && (
+        <div className="status-box not-found">
+          <span className="status-icon">🔍</span>
+          <h3>No Profile Found</h3>
+          <p>+91 {phone} is not in our dataset.</p>
+        </div>
+      )}
+      {error && !loading && (
+        <div className="status-box error-box">
+          <span className="status-icon">⚠️</span>
+          <h3>Something went wrong</h3><p>{error}</p>
+        </div>
+      )}
+
+      {result && !loading && (
+        <div className="results">
+          <div className="results-header">
+            <div>
+              <span className="customer-label">Customer</span>
+              <span className="customer-number">+91 {result.phone}</span>
+            </div>
+            <div className="data-date">Trust Scan 1.0</div>
+          </div>
+
+          {band ? (
+            <>
+              {/* Big band letter */}
+              <div className="ts1-band-card" style={{ borderColor: info.border }}>
+                <div className="ts1-band-left">
+                  <div className="ts1-band-letter" style={{ color: info.color, background: info.bg, border: `3px solid ${info.border}` }}>
+                    {band}
+                  </div>
+                  <div className="ts1-band-label" style={{ color: info.color }}>{info.label}</div>
+                </div>
+                <div className="ts1-band-right">
+                  <div className="ts1-band-desc-title">Risk Band</div>
+                  <div className="ts1-band-desc">
+                    This customer falls in the <strong>{info.label}</strong> segment based on the Trust Scan 1.0 model.
+                  </div>
+                  {/* Band reference row */}
+                  <div className="ts1-band-grid">
+                    {TS1_BANDS.map(b => {
+                      const bi = ts1BandInfo(b);
+                      return (
+                        <div key={b} className={`ts1-grid-cell ${b === band ? 'ts1-grid-active' : ''}`}
+                          style={b === band ? { background: bi.bg, border: `2px solid ${bi.border}`, color: bi.color } : {}}>
+                          {b}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="ts1-grid-legend">
+                    <span style={{ color: '#059669' }}>A — Lowest Risk</span>
+                    <span style={{ color: '#9ca3af' }}>G — Thin File</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="status-box not-found">
+              <span className="status-icon">📊</span>
+              <h3>No TS 1.0 Band Available</h3>
+              <p>This contact has no Trust Scan 1.0 data. Try Trust Scan 2.0 for detailed signals.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
+function TrustScan2View() {
+  const [result,   setResult]   = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState(null);
+  const [notFound, setNotFound] = useState(false);
+  const [phone,    setPhone]    = useState('');
+
+  async function handleScan(ph) {
+    setPhone(ph);
+    setLoading(true); setError(null); setResult(null); setNotFound(false);
+    try {
+      const [res] = await Promise.all([
+        fetch(`/api/trust-scan/${ph}`),
         new Promise(r => setTimeout(r, 2000)),
       ]);
       if (res.status === 404) { setNotFound(true); return; }
@@ -267,18 +356,7 @@ function SingleScan({ mode }) {
 
   return (
     <>
-      <form className="search-box" onSubmit={handleScan}>
-        <div className="phone-input-wrap">
-          <span className="phone-prefix">+91</span>
-          <input type="tel" className="phone-input" placeholder="Enter 10-digit phone number"
-            value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-            maxLength={10} autoFocus />
-        </div>
-        <button type="submit" className="scan-btn" disabled={loading || phone.length !== 10}>
-          {loading ? <><span className="spinner" /> Scanning…</> : 'SCAN NOW'}
-        </button>
-      </form>
-
+      <PhoneForm onSubmit={handleScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -307,423 +385,34 @@ function SingleScan({ mode }) {
 
           <TrustScoreCard data={result} />
 
-          {mode === 'bands' ? (
-            <>
-              <div className="section-label">CREDIT RISK BANDS</div>
-              <div className="cards-grid">
-                {result.bands_dpd30_band && <BandOnlyCard title="30-Day Default Risk"
-                  band={result.bands_dpd30_band} probBand={result.dpd30_prob_band} />}
-                {result.bands_dpd90_band && <BandOnlyCard title="90-Day Default Risk"
-                  band={result.bands_dpd90_band} probBand={result.dpd90_prob_band} />}
-                {result.bands_cd_band && <BandOnlyCard title="CD Default Risk"
-                  band={result.bands_cd_band} probBand={result.cd_prob_band} />}
-              </div>
-
-              {result.bands_income_bucket && (
-                <>
-                  <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
-                  <div className="income-grid">
-                    <IncomeBucketCard bucket={result.bands_income_bucket} tooltip={incomeBucketTooltip(result.predicted_income_bucket)} />
-                    {result.cohort && (
-                      <div className="income-card">
-                        <div className="income-label">Customer Cohort</div>
-                        <div className="cohort-value">{result.cohort}</div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="section-label">CREDIT RISK PROFILE</div>
-              <div className="cards-grid">
-                {result.dpd30_band && <RiskCard title="30-Day Default Risk"
-                  band={result.dpd30_band} creditScore={result.dpd30_credit_score} probability={result.dpd30_probability} />}
-                {result.dpd90_band && <RiskCard title="90-Day Default Risk"
-                  band={result.dpd90_band} creditScore={result.dpd90_credit_score} probability={result.dpd90_probability} />}
-                {result.cd_band && <RiskCard title="Credit Demand Score"
-                  band={result.cd_band} creditScore={result.cd_credit_score} probability={result.cd_probability} />}
-              </div>
-
-              {result.predicted_income != null && (
-                <>
-                  <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
-                  <div className="income-grid">
-                    <div className="income-card">
-                      <div className="income-label">Predicted Annual Income</div>
-                      <div className="income-amount">{formatINR(result.predicted_income)}</div>
-                      <div className="income-bucket">{result.predicted_income_bucket}</div>
-                    </div>
-                    {result.cohort && (
-                      <div className="income-card">
-                        <div className="income-label">Customer Cohort</div>
-                        <div className="cohort-value">{result.cohort}</div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </>
-  );
-}
-
-// ── Batch scan tab ────────────────────────────────────────────────────────────
-function BatchScan() {
-  const [input, setInput]     = useState('');
-  const [rows, setRows]       = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
-  const [progress, setProgress] = useState('');
-
-  async function handleBatch(e) {
-    e.preventDefault();
-    const phones = [...new Set(
-      input.split(/[\n,\s]+/).map(p => p.replace(/\D/g, '')).filter(p => p.length === 10)
-    )];
-    if (!phones.length) { setError('No valid 10-digit numbers found.'); return; }
-    setLoading(true); setError(null); setRows(null);
-    setProgress(`Scanning ${phones.length} numbers…`);
-    try {
-      const res = await fetch('/api/batch-trust-scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phones }),
-      });
-      if (!res.ok) throw new Error((await res.json()).detail || 'Batch scan failed');
-      const data = await res.json();
-      setRows(data.results);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); setProgress(''); }
-  }
-
-  const sorted = rows ? [...rows].sort((a, b) => {
-    const sa = computeTrustScore(a) ?? -1;
-    const sb = computeTrustScore(b) ?? -1;
-    return sb - sa; // highest trust score first
-  }) : [];
-
-  return (
-    <>
-      <form className="batch-form" onSubmit={handleBatch}>
-        <label className="batch-label">
-          Paste phone numbers — one per line, comma-separated, or mixed
-        </label>
-        <textarea className="batch-textarea" rows={6}
-          placeholder={"9838433104\n9967010131\n9999554381"}
-          value={input} onChange={e => setInput(e.target.value)} />
-        <div className="batch-actions">
-          <span className="batch-count">
-            {input.split(/[\n,\s]+/).filter(p => p.replace(/\D/g,'').length === 10).length} valid numbers detected
-          </span>
-          <button type="submit" className="scan-btn" disabled={loading}>
-            {loading ? <><span className="spinner" /> {progress}</> : 'RUN BATCH SCAN'}
-          </button>
-        </div>
-      </form>
-
-      {error && <div className="status-box error-box" style={{ marginTop: 16 }}>
-        <span className="status-icon">⚠️</span><h3>Error</h3><p>{error}</p>
-      </div>}
-
-      {rows && (
-        <div className="batch-results">
-          <div className="batch-results-header">
-            <span>{rows.length} results — sorted by Trust Score</span>
-            <button className="export-btn" onClick={() => exportCSV(sorted)}>
-              ↓ Export CSV
-            </button>
-          </div>
-          <div className="table-wrap">
-            <table className="batch-table">
-              <thead>
-                <tr>
-                  <th>Phone</th>
-                  <th>Trust Score</th>
-                  <th>Verdict</th>
-                  <th>DPD30 Band</th>
-                  <th>DPD90 Band</th>
-                  <th>CD Band</th>
-                  <th>Income Bucket</th>
-                  <th>Predicted Income</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(r => {
-                  const score   = computeTrustScore(r);
-                  const verdict = score != null ? trustVerdict(score) : null;
-                  const notFound = !r.dpd30_band && !r.dpd90_band && !r.cd_band;
-                  return (
-                    <tr key={r.phone} className={notFound ? 'row-not-found' : ''}>
-                      <td className="td-phone">+91 {r.phone}</td>
-                      <td className="td-score">
-                        {score != null
-                          ? <span className="score-pill" style={{ background: verdict.bg, color: verdict.color }}>{score}</span>
-                          : <span className="na-pill">N/A</span>}
-                      </td>
-                      <td>
-                        {verdict
-                          ? <span className="verdict-pill" style={{ background: verdict.bg, color: verdict.color, border: `1px solid ${verdict.border}` }}>{verdict.label}</span>
-                          : <span className="na-pill">Not Found</span>}
-                      </td>
-                      <td>{r.dpd30_band ? <BandChip band={r.dpd30_band} /> : '—'}</td>
-                      <td>{r.dpd90_band ? <BandChip band={r.dpd90_band} /> : '—'}</td>
-                      <td>{r.cd_band    ? <BandChip band={r.cd_band}    /> : '—'}</td>
-                      <td>{r.predicted_income_bucket ?? '—'}</td>
-                      <td>{r.predicted_income != null ? formatINR(r.predicted_income) : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function BandChip({ band }) {
-  const info = bandInfo(band);
-  return (
-    <span className="band-chip" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
-      {band?.replace('_', ' ')}
-    </span>
-  );
-}
-
-// ── Band-only card (no gauge, just badge + prob band) ─────────────────────────
-function BandOnlyCard({ title, band, probBand }) {
-  const info = bandInfo(band);
-  const bandNum = band?.replace('band_', '') ?? '';
-  return (
-    <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
-      <div className="card-title">{title}</div>
-      <div className="card-body-center">
-        <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
-          Band {bandNum} · {info.label}
-        </div>
-        {probBand && (
-          <div className="prob-band-row">
-            <span className="prob-band-label">Prob Band</span>
-            <span className="prob-band-value" style={{ color: info.color }}>{probBand}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Single scan (Bands) tab ───────────────────────────────────────────────────
-function SingleScanBands() {
-  const [phone, setPhone]       = useState('');
-  const [result, setResult]     = useState(null);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState(null);
-  const [notFound, setNotFound] = useState(false);
-
-  async function handleScan(e) {
-    e.preventDefault();
-    if (phone.length !== 10) return;
-    setLoading(true); setError(null); setResult(null); setNotFound(false);
-    try {
-      const [res] = await Promise.all([
-        fetch(`/api/bands-scan/${phone}`),
-        new Promise(r => setTimeout(r, 2000)),
-      ]);
-      if (res.status === 404) { setNotFound(true); return; }
-      if (!res.ok) throw new Error((await res.json()).detail || 'Scan failed');
-      setResult(await res.json());
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
-  }
-
-  return (
-    <>
-      <form className="search-box" onSubmit={handleScan}>
-        <div className="phone-input-wrap">
-          <span className="phone-prefix">+91</span>
-          <input type="tel" className="phone-input" placeholder="Enter 10-digit phone number"
-            value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-            maxLength={10} autoFocus />
-        </div>
-        <button type="submit" className="scan-btn" disabled={loading || phone.length !== 10}>
-          {loading ? <><span className="spinner" /> Scanning…</> : 'SCAN NOW'}
-        </button>
-      </form>
-
-      <ScanSteps active={loading} />
-      {notFound && !loading && (
-        <div className="status-box not-found">
-          <span className="status-icon">🔍</span>
-          <h3>No Profile Found</h3>
-          <p>+91 {phone} is not in our dataset.</p>
-        </div>
-      )}
-      {error && !loading && (
-        <div className="status-box error-box">
-          <span className="status-icon">⚠️</span>
-          <h3>Something went wrong</h3><p>{error}</p>
-        </div>
-      )}
-
-      {result && !loading && (
-        <div className="results">
-          <div className="results-header">
-            <div>
-              <span className="customer-label">Customer</span>
-              <span className="customer-number">+91 {result.phone}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {result.model_version && <span className="data-date">Model {result.model_version}</span>}
-              {result.thick_thin_data && <span className="data-date">Data: {result.thick_thin_data}</span>}
-              {result.computed_at && <span className="data-date">{result.computed_at.slice(0, 10)}</span>}
-            </div>
-          </div>
-
-          <div className="section-label">CREDIT RISK BANDS</div>
+          <div className="section-label">CREDIT RISK PROFILE</div>
           <div className="cards-grid">
-            {result.dpd30_band && <BandOnlyCard title="30-Day Default Risk"
-              band={result.dpd30_band} probBand={result.dpd30_prob_band} />}
-            {result.dpd90_band && <BandOnlyCard title="90-Day Default Risk"
-              band={result.dpd90_band} probBand={result.dpd90_prob_band} />}
-            {result.cd_band && <BandOnlyCard title="CD Default Risk"
-              band={result.cd_band} probBand={result.cd_prob_band} />}
+            {result.dpd30_band && <RiskCard title="30-Day Default Risk"
+              band={result.dpd30_band} creditScore={result.dpd30_credit_score} probability={result.dpd30_probability} />}
+            {result.dpd90_band && <RiskCard title="90-Day Default Risk"
+              band={result.dpd90_band} creditScore={result.dpd90_credit_score} probability={result.dpd90_probability} />}
+            {result.cd_band && <RiskCard title="Credit Demand Score"
+              band={result.cd_band} creditScore={result.cd_credit_score} probability={result.cd_probability} />}
           </div>
 
-          {result.predicted_income_bucket && (
+          {result.predicted_income != null && (
             <>
               <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
               <div className="income-grid">
                 <div className="income-card">
-                  <div className="income-label">Predicted Income Bucket</div>
-                  <div className="cohort-value" style={{ fontSize: 28, fontWeight: 900, color: '#1e3a8a' }}>
-                    {result.predicted_income_bucket}
-                  </div>
+                  <div className="income-label">Predicted Annual Income</div>
+                  <div className="income-amount">{formatINR(result.predicted_income)}</div>
+                  <div className="income-bucket">{result.predicted_income_bucket}</div>
                 </div>
+                {result.cohort && (
+                  <div className="income-card">
+                    <div className="income-label">Customer Cohort</div>
+                    <div className="cohort-value">{result.cohort}</div>
+                  </div>
+                )}
               </div>
             </>
           )}
-        </div>
-      )}
-    </>
-  );
-}
-
-// ── Batch scan (Bands) tab ────────────────────────────────────────────────────
-function BatchScanBands() {
-  const [input, setInput]     = useState('');
-  const [rows, setRows]       = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
-
-  async function handleBatch(e) {
-    e.preventDefault();
-    const phones = [...new Set(
-      input.split(/[\n,\s]+/).map(p => p.replace(/\D/g, '')).filter(p => p.length === 10)
-    )];
-    if (!phones.length) { setError('No valid 10-digit numbers found.'); return; }
-    setLoading(true); setError(null); setRows(null);
-    try {
-      const res = await fetch('/api/batch-bands-scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phones }),
-      });
-      if (!res.ok) throw new Error((await res.json()).detail || 'Batch scan failed');
-      const data = await res.json();
-      setRows(data.results);
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
-  }
-
-  function exportBandsCSV(rows) {
-    const headers = ['Phone','DPD30 Band','DPD90 Band','CD Band','DPD30 Prob Band','DPD90 Prob Band','CD Prob Band','Income Bucket','Thick/Thin','Model Version','Computed At'];
-    const lines = [headers.join(',')];
-    for (const r of rows) {
-      lines.push([
-        r.phone, r.dpd30_band ?? '', r.dpd90_band ?? '', r.cd_band ?? '',
-        r.dpd30_prob_band ?? '', r.dpd90_prob_band ?? '', r.cd_prob_band ?? '',
-        r.predicted_income_bucket ?? '', r.thick_thin_data ?? '',
-        r.model_version ?? '', r.computed_at ?? '',
-      ].join(','));
-    }
-    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a'); a.href = url; a.download = 'bands_scan_results.csv'; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <>
-      <form className="batch-form" onSubmit={handleBatch}>
-        <label className="batch-label">
-          Paste phone numbers — one per line, comma-separated, or mixed
-        </label>
-        <textarea className="batch-textarea" rows={6}
-          placeholder={"9838433104\n9967010131\n9999554381"}
-          value={input} onChange={e => setInput(e.target.value)} />
-        <div className="batch-actions">
-          <span className="batch-count">
-            {input.split(/[\n,\s]+/).filter(p => p.replace(/\D/g,'').length === 10).length} valid numbers detected
-          </span>
-          <button type="submit" className="scan-btn" disabled={loading}>
-            {loading ? <><span className="spinner" /> Scanning…</> : 'RUN BATCH SCAN'}
-          </button>
-        </div>
-      </form>
-
-      {error && <div className="status-box error-box" style={{ marginTop: 16 }}>
-        <span className="status-icon">⚠️</span><h3>Error</h3><p>{error}</p>
-      </div>}
-
-      {rows && (
-        <div className="batch-results">
-          <div className="batch-results-header">
-            <span>{rows.length} results</span>
-            <button className="export-btn" onClick={() => exportBandsCSV(rows)}>↓ Export CSV</button>
-          </div>
-          <div className="table-wrap">
-            <table className="batch-table">
-              <thead>
-                <tr>
-                  <th>Phone</th>
-                  <th>DPD30 Band</th>
-                  <th>DPD90 Band</th>
-                  <th>CD Band</th>
-                  <th>DPD30 Prob Band</th>
-                  <th>DPD90 Prob Band</th>
-                  <th>CD Prob Band</th>
-                  <th>Income Bucket</th>
-                  <th>Thick/Thin</th>
-                  <th>Model</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => {
-                  const notFound = !r.dpd30_band && !r.dpd90_band && !r.cd_band;
-                  return (
-                    <tr key={r.phone} className={notFound ? 'row-not-found' : ''}>
-                      <td className="td-phone">+91 {r.phone}</td>
-                      <td>{r.dpd30_band ? <BandChip band={r.dpd30_band} /> : '—'}</td>
-                      <td>{r.dpd90_band ? <BandChip band={r.dpd90_band} /> : '—'}</td>
-                      <td>{r.cd_band    ? <BandChip band={r.cd_band}    /> : '—'}</td>
-                      <td>{r.dpd30_prob_band ?? '—'}</td>
-                      <td>{r.dpd90_prob_band ?? '—'}</td>
-                      <td>{r.cd_prob_band    ?? '—'}</td>
-                      <td>{r.predicted_income_bucket ?? '—'}</td>
-                      <td>{r.thick_thin_data ?? '—'}</td>
-                      <td>{r.model_version   ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
         </div>
       )}
     </>
@@ -732,8 +421,7 @@ function BatchScanBands() {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab,  setTab]  = useState('single'); // 'single' | 'batch'
-  const [mode, setMode] = useState('bands');  // 'bands'  | 'full'
+  const [tier, setTier] = useState('ts2'); // 'ts1' | 'ts2'
 
   return (
     <div className="app">
@@ -758,21 +446,16 @@ export default function App() {
 
         <div className="tabs-row">
           <div className="tabs">
-            {[{ id: 'single', label: 'Single Scan' }, { id: 'batch', label: 'Batch Scan' }].map(t => (
-              <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+            {[{ id: 'ts1', label: 'Trust Scan 1.0' }, { id: 'ts2', label: 'Trust Scan 2.0' }].map(t => (
+              <button key={t.id} className={`tab ${tier === t.id ? 'active' : ''}`} onClick={() => setTier(t.id)}>
                 {t.label}
               </button>
             ))}
           </div>
-          <div className="mode-toggle">
-            <button className={`mode-btn ${mode === 'bands' ? 'mode-active' : ''}`} onClick={() => setMode('bands')}>Bands</button>
-            <button className={`mode-btn ${mode === 'full'  ? 'mode-active' : ''}`} onClick={() => setMode('full')}>Full Scan</button>
-          </div>
         </div>
 
-        <div style={{ display: tab === 'single' ? 'block' : 'none' }}><SingleScan mode={mode} /></div>
-        <div style={{ display: tab === 'batch'  && mode === 'full'  ? 'block' : 'none' }}><BatchScan /></div>
-        <div style={{ display: tab === 'batch'  && mode === 'bands' ? 'block' : 'none' }}><BatchScanBands /></div>
+        <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}><TrustScan1View /></div>
+        <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}><TrustScan2View /></div>
       </main>
 
       <footer className="footer">

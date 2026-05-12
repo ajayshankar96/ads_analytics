@@ -356,6 +356,53 @@ body {
 .prob-band-label { font-size: 11px; color: #9ca3af; }
 .prob-band-value { font-size: 13px; font-weight: 700; }
 
+/* ── Trust Scan 1.0 band card ────────────────────────────────── */
+.ts1-band-card {
+  display: flex; gap: 32px; align-items: center;
+  background: white; border-radius: 14px; padding: 32px 28px;
+  border: 2px solid; margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.07);
+}
+.ts1-band-left {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.ts1-band-letter {
+  width: 100px; height: 100px; border-radius: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 64px; font-weight: 900; line-height: 1;
+}
+.ts1-band-label {
+  font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+}
+.ts1-band-right { flex: 1; }
+.ts1-band-desc-title {
+  font-size: 11px; font-weight: 700; color: #9ca3af;
+  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px;
+}
+.ts1-band-desc {
+  font-size: 15px; color: #374151; margin-bottom: 20px; line-height: 1.5;
+}
+.ts1-band-grid {
+  display: flex; gap: 6px; margin-bottom: 8px;
+}
+.ts1-grid-cell {
+  width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+  background: #f3f4f6; color: #9ca3af; border: 2px solid transparent;
+  transition: all .2s;
+}
+.ts1-grid-active {
+  transform: scale(1.15);
+}
+.ts1-grid-legend {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: #9ca3af;
+}
+@media (max-width: 560px) {
+  .ts1-band-card { flex-direction: column; align-items: flex-start; gap: 20px; }
+}
+
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer {
   background: #1e3a8a; color: rgba(255,255,255,.45);

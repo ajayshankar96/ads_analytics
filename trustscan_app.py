@@ -41,6 +41,7 @@ CSV_COLUMNS = [
     "dpd30_default_probability", "dpd90_default_probability", "dpd_date",
     "exact_cd_band", "predicted_income", "exact_income_bucket",
     "cd_credit_score", "cd_default_probability", "cohort", "cd_date",
+    "ts1_band",
 ]
 
 # ── In-memory store ───────────────────────────────────────────────────────────
@@ -142,101 +143,10 @@ def trust_scan(phone: str):
         "cd_prob_band":        record["cd_dpd_30_prob_band"],
         "thick_thin_data":     record["thick_thin_data"],
         "model_version":       record["model_version"],
+        # Trust Scan 1.0
+        "ts1_band":            record.get("ts1_band", ""),
     }
 
-
-@app.post("/api/batch-trust-scan")
-def batch_trust_scan(payload: dict):
-    phones = payload.get("phones", [])
-    if not phones:
-        raise HTTPException(status_code=400, detail="No phone numbers provided")
-    if len(phones) > 500:
-        raise HTTPException(status_code=400, detail="Max 500 numbers per batch")
-    phones = [str(p) for p in phones if str(p).isdigit() and len(str(p)) == 10]
-    if not phones:
-        raise HTTPException(status_code=400, detail="No valid 10-digit numbers found")
-
-    results = []
-    for phone in phones:
-        record = _DATA.get(phone)
-        if record:
-            results.append({
-                "phone": phone,
-                "dpd30_band":          record["exact_dpd30_band"],
-                "dpd90_band":          record["exact_dpd90_band"],
-                "dpd30_credit_score":  record["dpd30_credit_score"],
-                "dpd90_credit_score":  record["dpd90_credit_score"],
-                "dpd30_probability":   record["dpd30_default_probability"],
-                "dpd90_probability":   record["dpd90_default_probability"],
-                "dpd_date":            record["dpd_date"],
-                "cd_band":             record["exact_cd_band"],
-                "predicted_income":    record["predicted_income"],
-                "predicted_income_bucket": record["exact_income_bucket"],
-                "cd_credit_score":     record["cd_credit_score"],
-                "cd_probability":      record["cd_default_probability"],
-                "cohort":              record["cohort"],
-                "cd_date":             record["cd_date"],
-            })
-        else:
-            results.append({"phone": phone})
-    return {"results": results}
-
-
-# ── Bands Scan endpoints ──────────────────────────────────────────────────────
-
-@app.get("/api/bands-scan/{phone}")
-def bands_scan(phone: str):
-    if not phone.isdigit() or len(phone) != 10:
-        raise HTTPException(status_code=400, detail="Phone must be a 10-digit number")
-
-    record = _DATA.get(phone)
-    if not record:
-        raise HTTPException(status_code=404, detail="No data found for this phone number")
-
-    return {
-        "phone": phone,
-        "dpd30_band":              record["bands_dpd30_band"],
-        "dpd90_band":              record["bands_dpd90_band"],
-        "cd_band":                 record["bands_cd_band"],
-        "predicted_income_bucket": record["bands_income_bucket"],
-        "thick_thin_data":         record["thick_thin_data"],
-        "model_version":           record["model_version"],
-        "dpd30_prob_band":         record["dpd_30_prob_band"],
-        "dpd90_prob_band":         record["dpd_90_prob_band"],
-        "cd_prob_band":            record["cd_dpd_30_prob_band"],
-    }
-
-
-@app.post("/api/batch-bands-scan")
-def batch_bands_scan(payload: dict):
-    phones = payload.get("phones", [])
-    if not phones:
-        raise HTTPException(status_code=400, detail="No phone numbers provided")
-    if len(phones) > 500:
-        raise HTTPException(status_code=400, detail="Max 500 numbers per batch")
-    phones = [str(p) for p in phones if str(p).isdigit() and len(str(p)) == 10]
-    if not phones:
-        raise HTTPException(status_code=400, detail="No valid 10-digit numbers found")
-
-    results = []
-    for phone in phones:
-        record = _DATA.get(phone)
-        if record:
-            results.append({
-                "phone": phone,
-                "dpd30_band":              record["bands_dpd30_band"],
-                "dpd90_band":              record["bands_dpd90_band"],
-                "cd_band":                 record["bands_cd_band"],
-                "predicted_income_bucket": record["bands_income_bucket"],
-                "thick_thin_data":         record["thick_thin_data"],
-                "model_version":           record["model_version"],
-                "dpd30_prob_band":         record["dpd_30_prob_band"],
-                "dpd90_prob_band":         record["dpd_90_prob_band"],
-                "cd_prob_band":            record["cd_dpd_30_prob_band"],
-            })
-        else:
-            results.append({"phone": phone})
-    return {"results": results}
 
 
 @app.get("/health")
