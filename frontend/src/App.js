@@ -271,10 +271,60 @@ function EmptyState() {
   );
 }
 
-// ── Shared phone input form ───────────────────────────────────────────────────
-function PhoneForm({ onSubmit, loading }) {
-  const [phone, setPhone] = useState('');
+// ── Sample phone sidebar ──────────────────────────────────────────────────────
+const SAMPLE_PHONES = [
+  {
+    band: 'A', label: 'Band A — Elite',
+    badgeColor: '#166534', badgeBg: '#dcfce7',
+    phones: ['9355518700', '9964129431', '9415341740', '8376993489', '9004414413'],
+  },
+  {
+    band: 'C', label: 'Band C — Power',
+    badgeColor: '#1e40af', badgeBg: '#dbeafe',
+    phones: ['9936410230', '9949009502', '8853256537', '7676748598', '9835007089'],
+  },
+  {
+    band: 'F', label: 'Band F — Risky',
+    badgeColor: '#9d174d', badgeBg: '#fce7f3',
+    phones: ['9012135298', '8975529064', '8432870993', '8318252968', '9325513903'],
+  },
+];
 
+function SampleSidebar({ selected, onSelect }) {
+  return (
+    <aside className="sample-sidebar">
+      <div className="sample-sidebar-title">Sample Numbers</div>
+      {SAMPLE_PHONES.map(section => (
+        <div key={section.band} className="sample-section">
+          <div className="sample-section-header">
+            <span className="sample-band-badge" style={{ background: section.badgeBg, color: section.badgeColor }}>
+              {section.band}
+            </span>
+            <span className="sample-section-label" style={{ color: section.badgeColor }}>
+              {section.label}
+            </span>
+          </div>
+          <ul className="sample-phone-list">
+            {section.phones.map(ph => (
+              <li key={ph}>
+                <button
+                  className={`sample-phone-btn ${selected === ph ? 'sample-phone-active' : ''}`}
+                  style={selected === ph ? { background: section.badgeBg, color: section.badgeColor, borderColor: section.badgeColor } : {}}
+                  onClick={() => onSelect(ph)}
+                >
+                  {ph.slice(0, 5)} {ph.slice(5)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </aside>
+  );
+}
+
+// ── Shared phone input form (controlled) ──────────────────────────────────────
+function PhoneForm({ phone, setPhone, onSubmit, loading }) {
   function handleSubmit(e) {
     e.preventDefault();
     if (phone.length !== 10) return;
@@ -353,9 +403,8 @@ function Ts1BandGrid({ band: customerBand, allBands }) {
   );
 }
 
-// ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
-
-function TrustScan1View() {
+// ── Shared scan view logic ────────────────────────────────────────────────────
+function useScanState(preselect) {
   const [result,   setResult]   = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
@@ -377,11 +426,26 @@ function TrustScan1View() {
     finally { setLoading(false); }
   }
 
+  // Fire scan automatically when sidebar selects a number
+  useEffect(() => {
+    if (preselect?.phone) {
+      setPhone(preselect.phone);
+      handleScan(preselect.phone);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselect]);
+
+  return { result, loading, error, notFound, phone, setPhone, handleScan };
+}
+
+// ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
+function TrustScan1View({ preselect }) {
+  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState(preselect);
   const band = result?.ts1_band?.trim();
 
   return (
     <>
-      <PhoneForm onSubmit={handleScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -426,31 +490,12 @@ function TrustScan1View() {
 }
 
 // ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
-function TrustScan2View() {
-  const [result,   setResult]   = useState(null);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState(null);
-  const [notFound, setNotFound] = useState(false);
-  const [phone,    setPhone]    = useState('');
-
-  async function handleScan(ph) {
-    setPhone(ph);
-    setLoading(true); setError(null); setResult(null); setNotFound(false);
-    try {
-      const [res] = await Promise.all([
-        fetch(`/api/trust-scan/${ph}`),
-        new Promise(r => setTimeout(r, 2000)),
-      ]);
-      if (res.status === 404) { setNotFound(true); return; }
-      if (!res.ok) throw new Error((await res.json()).detail || 'Scan failed');
-      setResult(await res.json());
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
-  }
+function TrustScan2View({ preselect }) {
+  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState(preselect);
 
   return (
     <>
-      <PhoneForm onSubmit={handleScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -517,7 +562,14 @@ function TrustScan2View() {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tier, setTier] = useState('ts2'); // 'ts1' | 'ts2'
+  const [tier,    setTier]    = useState('ts2');
+  const [selected, setSelected] = useState(null);
+
+  // Each sidebar click generates a new object so useEffect always fires,
+  // even if the same number is clicked twice
+  function handleSidebarSelect(ph) {
+    setSelected({ phone: ph, ts: Date.now() });
+  }
 
   return (
     <div className="app">
@@ -540,18 +592,28 @@ export default function App() {
           <p className="hero-sub">Instant risk profiling & income prediction for any customer</p>
         </div>
 
-        <div className="tabs-row">
-          <div className="tabs">
-            {[{ id: 'ts1', label: 'Trust Scan 1.0' }, { id: 'ts2', label: 'Trust Scan 2.0' }].map(t => (
-              <button key={t.id} className={`tab ${tier === t.id ? 'active' : ''}`} onClick={() => setTier(t.id)}>
-                {t.label}
-              </button>
-            ))}
+        <div className="content-layout">
+          <SampleSidebar selected={selected?.phone} onSelect={handleSidebarSelect} />
+
+          <div className="content-main">
+            <div className="tabs-row">
+              <div className="tabs">
+                {[{ id: 'ts1', label: 'Trust Scan 1.0' }, { id: 'ts2', label: 'Trust Scan 2.0' }].map(t => (
+                  <button key={t.id} className={`tab ${tier === t.id ? 'active' : ''}`} onClick={() => setTier(t.id)}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}>
+              <TrustScan1View preselect={selected} />
+            </div>
+            <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}>
+              <TrustScan2View preselect={selected} />
+            </div>
           </div>
         </div>
-
-        <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}><TrustScan1View /></div>
-        <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}><TrustScan2View /></div>
       </main>
 
       <footer className="footer">

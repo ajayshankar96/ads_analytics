@@ -356,6 +356,57 @@ body {
 .prob-band-label { font-size: 11px; color: #9ca3af; }
 .prob-band-value { font-size: 13px; font-weight: 700; }
 
+/* ── Two-column layout ───────────────────────────────────────── */
+.content-layout {
+  display: flex; align-items: flex-start; gap: 20px;
+}
+.content-main { flex: 1; min-width: 0; }
+
+/* ── Sample sidebar ──────────────────────────────────────────── */
+.sample-sidebar {
+  flex-shrink: 0; width: 200px;
+  background: white; border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(30,58,138,.1);
+  padding: 18px 14px; position: sticky; top: 20px;
+}
+.sample-sidebar-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  color: #9ca3af; text-transform: uppercase; margin-bottom: 14px;
+  padding-bottom: 10px; border-bottom: 1px solid #f3f4f6;
+}
+.sample-section { margin-bottom: 16px; }
+.sample-section:last-child { margin-bottom: 0; }
+.sample-section-header {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+}
+.sample-band-badge {
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+}
+.sample-section-label {
+  font-size: 11px; font-weight: 700;
+}
+.sample-phone-list {
+  list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px;
+}
+.sample-phone-btn {
+  width: 100%; text-align: left; background: #f8fafc;
+  border: 1.5px solid #e5e7eb; border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-family: monospace;
+  color: #374151; cursor: pointer; transition: all .15s;
+}
+.sample-phone-btn:hover {
+  background: #f0f4ff; border-color: #93c5fd; color: #1e40af;
+}
+.sample-phone-active {
+  font-weight: 700;
+}
+@media (max-width: 700px) {
+  .content-layout { flex-direction: column; }
+  .sample-sidebar { width: 100%; position: static; }
+}
+
 /* ── Empty state ─────────────────────────────────────────────── */
 .empty-state {
   background: white; border-radius: 16px;
