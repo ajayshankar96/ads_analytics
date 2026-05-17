@@ -206,19 +206,11 @@ body {
 .trust-right { flex: 1; }
 .trust-score-label {
   font-size: 12px; font-weight: 600; color: #6b7280;
-  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
 }
-.trust-score-num {
-  font-size: 48px; font-weight: 900; line-height: 1; margin-bottom: 10px;
-}
-.trust-bar-bg {
-  height: 10px; background: #e5e7eb; border-radius: 5px;
-  overflow: hidden; margin-bottom: 6px;
-}
-.trust-bar-fill { height: 100%; border-radius: 5px; transition: width .8s ease; }
-.trust-bar-ends {
-  display: flex; justify-content: space-between;
-  font-size: 11px; color: #9ca3af;
+.trust-tier-badge {
+  display: inline-block; padding: 8px 20px; border-radius: 30px;
+  font-size: 16px; font-weight: 800; letter-spacing: 1px; margin-bottom: 8px;
 }
 
 /* ── Section label ───────────────────────────────────────────── */
@@ -250,12 +242,7 @@ body {
   font-size: 12px; font-weight: 700; margin-bottom: 10px;
 }
 
-.prob-section { border-top: 1px solid #f3f4f6; padding-top: 12px; }
-.prob-row     { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.prob-label   { font-size: 11px; color: #9ca3af; }
-.prob-bar-bg  { height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
-.prob-bar-fill { height: 100%; border-radius: 4px; transition: width .8s ease; }
-.prob-value   { font-size: 14px; font-weight: 800; }
+.risk-band-icon { font-size: 32px; margin-top: 6px; }
 
 /* ── Income grid ─────────────────────────────────────────────── */
 .income-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }

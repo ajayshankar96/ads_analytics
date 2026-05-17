@@ -186,7 +186,7 @@ function CreditGauge({ score, color }) {
 }
 
 // ── Risk card ─────────────────────────────────────────────────────────────────
-function RiskCard({ title, band, creditScore, probability }) {
+function RiskCard({ title, band }) {
   const info = bandInfo(band);
   const bandNum = band?.replace('band_', '') ?? '';
   return (
@@ -196,18 +196,8 @@ function RiskCard({ title, band, creditScore, probability }) {
         <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
           Band {bandNum} · {info.label}
         </div>
-        <CreditGauge score={creditScore} color={info.color} />
-      </div>
-      <div className="prob-section">
-        <div className="prob-row">
-          <div className="prob-label">Default Probability</div>
-          <div className="prob-value" style={{ color: info.color }}>
-            {parseProb(probability) != null ? `${parseProb(probability)}%` : '—'}
-          </div>
-        </div>
-        <div className="prob-bar-bg">
-          <div className="prob-bar-fill"
-            style={{ width: `${Math.min(parseProb(probability) ?? 0, 100)}%`, background: info.color }} />
+        <div className="risk-band-icon" style={{ color: info.color }}>
+          {info.label === 'LOW RISK' ? '🟢' : info.label === 'MEDIUM RISK' ? '🟡' : info.label === 'MEDIUM-HIGH' ? '🟠' : '🔴'}
         </div>
       </div>
     </div>
@@ -219,7 +209,6 @@ function TrustScoreCard({ data }) {
   const score   = computeTrustScore(data);
   if (score == null) return null;
   const verdict = trustVerdict(score);
-  const pct     = score;
 
   return (
     <div className="trust-card" style={{ borderColor: verdict.border }}>
@@ -231,14 +220,11 @@ function TrustScoreCard({ data }) {
         <div className="trust-sub">Based on 3 ML model signals</div>
       </div>
       <div className="trust-right">
-        <div className="trust-score-label">Trust Score</div>
-        <div className="trust-score-num" style={{ color: verdict.color }}>{score}</div>
-        <div className="trust-bar-bg">
-          <div className="trust-bar-fill" style={{ width: `${pct}%`, background: verdict.color }} />
+        <div className="trust-score-label">Risk Tier</div>
+        <div className="trust-tier-badge" style={{ background: verdict.bg, color: verdict.color, border: `2px solid ${verdict.border}` }}>
+          {verdict.label === 'APPROVE' ? 'LOW RISK' : verdict.label === 'REVIEW' ? 'MEDIUM RISK' : 'HIGH RISK'}
         </div>
-        <div className="trust-bar-ends">
-          <span>0 — High Risk</span><span>100 — Low Risk</span>
-        </div>
+        <div className="trust-sub" style={{ marginTop: 8 }}>Composite of DPD-30, DPD-90 & CD signals</div>
       </div>
     </div>
   );
@@ -284,9 +270,9 @@ function DeLayerSection({ deVars }) {
       <div className="de-disclaimer">
         <span className="de-disclaimer-icon">i</span>
         <span>
-          <strong>DE variable values shown are real band codes</strong> from{' '}
-          <code>engage_trustscan_api_ready_variables</code>. Each letter-number pair (e.g. A1, J9) represents
-          a decile band. 77 variables are available per contact — 8 shown here as a sample.
+          <strong>All values shown are band codes</strong> — each letter-number pair (e.g. A1, J9) represents
+          a decile band. Actual underlying values are not disclosed for compliance reasons.
+          77 variables are available per contact — 8 shown here as a sample.
         </span>
       </div>
     </div>
@@ -577,22 +563,18 @@ function TrustScan2View({ preselect }) {
 
           <div className="section-label">CREDIT RISK PROFILE</div>
           <div className="cards-grid">
-            {result.dpd30_band && <RiskCard title="30-Day Default Risk"
-              band={result.dpd30_band} creditScore={result.dpd30_credit_score} probability={result.dpd30_probability} />}
-            {result.dpd90_band && <RiskCard title="90-Day Default Risk"
-              band={result.dpd90_band} creditScore={result.dpd90_credit_score} probability={result.dpd90_probability} />}
-            {result.cd_band && <RiskCard title="Credit Demand Score"
-              band={result.cd_band} creditScore={result.cd_credit_score} probability={result.cd_probability} />}
+            {result.dpd30_band && <RiskCard title="30-Day Default Risk" band={result.dpd30_band} />}
+            {result.dpd90_band && <RiskCard title="90-Day Default Risk" band={result.dpd90_band} />}
+            {result.cd_band && <RiskCard title="Credit Demand Score" band={result.cd_band} />}
           </div>
 
-          {result.predicted_income != null && (
+          {result.predicted_income_bucket && (
             <>
               <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
               <div className="income-grid">
                 <div className="income-card">
-                  <div className="income-label">Predicted Annual Income</div>
-                  <div className="income-amount">{formatINR(result.predicted_income)}</div>
-                  <div className="income-bucket">{result.predicted_income_bucket}</div>
+                  <div className="income-label">Predicted Income Band</div>
+                  <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.predicted_income_bucket}</div>
                 </div>
                 {result.cohort && (
                   <div className="income-card">
