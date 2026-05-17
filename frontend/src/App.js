@@ -244,6 +244,55 @@ function TrustScoreCard({ data }) {
   );
 }
 
+// ── Data Engineering Layer ────────────────────────────────────────────────────
+const DE_VAR_DEFS = [
+  { key: 'avg_amount',                    label: 'avg_amount',                    title: 'Avg Transaction Amount',     unit: 'amount band'    },
+  { key: 'yearly_transaction_volume',     label: 'yearly_transaction_volume',     title: 'Yearly Txn Volume',          unit: 'volume band'    },
+  { key: 'max_vintage',                   label: 'max_vintage',                   title: 'Network Tenure',             unit: 'vintage band'   },
+  { key: 'weighted_success_rate',         label: 'weighted_success_rate',         title: 'Payment Success Rate',       unit: 'success band'   },
+  { key: 'perc_non_discretionary_spends', label: 'perc_non_discretionary_spends', title: 'Non-Discretionary Spend',    unit: 'spend band'     },
+  { key: 'unique_city_transacted',        label: 'unique_city_transacted',        title: 'Unique Cities Transacted',   unit: 'city band'      },
+  { key: 'yoy_growth_percentage',         label: 'yoy_growth_percentage',         title: 'YoY Spend Growth',           unit: 'growth band'    },
+  { key: 'ott_trxns_last_1_year',         label: 'ott_trxns_last_1_year',         title: 'OTT Transactions (1Y)',      unit: 'txn band'       },
+];
+
+function DeLayerSection({ deVars }) {
+  if (!deVars) return null;
+  return (
+    <div className="de-section">
+      <div className="de-section-header">
+        <div className="de-section-left">
+          <span className="de-title">DATA ENGINEERING LAYER</span>
+          <span className="de-count">· 8 variables (sample)</span>
+        </div>
+        <span className="de-note">! 77 total DE-layer variables available per contact</span>
+      </div>
+
+      <div className="de-grid">
+        {DE_VAR_DEFS.map(def => (
+          <div key={def.key} className="de-card">
+            <div className="de-card-top">
+              <code className="de-var-name">{def.label}</code>
+              <span className="de-badge">DE</span>
+            </div>
+            <div className="de-var-value">{deVars[def.key] || '—'}</div>
+            <div className="de-var-unit">{def.unit}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="de-disclaimer">
+        <span className="de-disclaimer-icon">i</span>
+        <span>
+          <strong>DE variable values shown are real band codes</strong> from{' '}
+          <code>engage_trustscan_api_ready_variables</code>. Each letter-number pair (e.g. A1, J9) represents
+          a decile band. 77 variables are available per contact — 8 shown here as a sample.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 function EmptyState() {
   return (
@@ -554,6 +603,8 @@ function TrustScan2View({ preselect }) {
               </div>
             </>
           )}
+
+          <DeLayerSection deVars={result.de_variables} />
         </div>
       )}
     </>

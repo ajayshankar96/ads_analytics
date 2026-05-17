@@ -47,6 +47,34 @@ CSV_COLUMNS = [
 # ── In-memory store ───────────────────────────────────────────────────────────
 # Keyed by contact (phone number) → dict of all columns
 _DATA: dict = {}
+# DE variables store — keyed by phone → dict of DE variable band codes
+_DE_DATA: dict = {}
+
+_REPO_DE_CSV = Path("/tmp/repo/data/de_variables.csv")
+
+DE_COLUMNS = [
+    "phone", "avg_amount", "yearly_transaction_volume", "max_vintage",
+    "weighted_success_rate", "perc_non_discretionary_spends",
+    "unique_city_transacted", "yoy_growth_percentage", "ott_trxns_last_1_year",
+    "perc_merchants_emi_linked", "upi_payment_amount", "vintage_utilities",
+    "weighted_error_ratio", "unique_state_transacted",
+    "loan_stacking_amount_l3m", "count_issuer_cc",
+]
+
+def load_de_data():
+    """Load DE variables CSV (has header row)."""
+    global _DE_DATA
+    if _REPO_DE_CSV.exists():
+        try:
+            with open(_REPO_DE_CSV, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    phone = row.get("phone", "").strip()
+                    if phone:
+                        _DE_DATA[phone] = {k: v.strip() for k, v in row.items()}
+            logger.info(f"Loaded DE variables for {len(_DE_DATA)} contacts")
+        except Exception as e:
+            logger.warning(f"Failed to load DE variables CSV: {e}")
 
 
 def _load_csv_file(path_or_buffer, source_label: str) -> dict:
@@ -103,6 +131,7 @@ def load_data():
 
 # Load on startup
 load_data()
+load_de_data()
 
 
 # ── Trust Scan endpoint ───────────────────────────────────────────────────────
@@ -145,6 +174,8 @@ def trust_scan(phone: str):
         "model_version":       record["model_version"],
         # Trust Scan 1.0
         "ts1_band":            record.get("ts1_band", ""),
+        # Data Engineering Layer variables (None if not available)
+        "de_variables":        _DE_DATA.get(phone),
     }
 
 
