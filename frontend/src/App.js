@@ -621,15 +621,15 @@ export default function App() {
       </header>
 
       <main className="main">
-        <div className="hero">
-          <h1 className="hero-title">AI-Powered Credit Intelligence</h1>
-          <p className="hero-sub">Instant risk profiling & income prediction for any customer</p>
-        </div>
-
         <div className="content-layout">
           <SampleSidebar selected={selected?.phone} onSelect={handleScan} />
 
           <div className="content-main">
+            <div className="content-hero">
+              <h1 className="hero-title">AI-Powered Credit Intelligence</h1>
+              <p className="hero-sub">Instant risk profiling &amp; income prediction for any customer</p>
+            </div>
+
             <div className="tabs-row">
               <div className="tabs">
                 {[{ id: 'ts1', label: 'Trust Scan 1.0' }, { id: 'ts2', label: 'Trust Scan 2.0' }].map(t => (
