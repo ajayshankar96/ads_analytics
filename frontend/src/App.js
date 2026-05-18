@@ -501,14 +501,6 @@ function TrustScan1View({ preselect, onScan }) {
 
       {result && !loading && (
         <div className="results">
-          <div className="results-header">
-            <div>
-              <span className="customer-label">Customer</span>
-              <span className="customer-number">+91 {result.phone}</span>
-            </div>
-            <div className="data-date">Trust Scan 1.0</div>
-          </div>
-
           {band ? (
             <Ts1BandGrid band={band} allBands={TS1_BANDS} />
           ) : (
@@ -551,14 +543,6 @@ function TrustScan2View({ preselect, onScan }) {
 
       {result && !loading && (
         <div className="results">
-          <div className="results-header">
-            <div>
-              <span className="customer-label">Customer</span>
-              <span className="customer-number">+91 {result.phone}</span>
-            </div>
-            <div className="data-date">Data as of {result.dpd_date || result.cd_date}</div>
-          </div>
-
           <TrustScoreCard data={result} />
 
           <div className="section-label">CREDIT RISK PROFILE</div>
