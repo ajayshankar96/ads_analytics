@@ -217,8 +217,8 @@ body {
 
 /* ── Section label ───────────────────────────────────────────── */
 .section-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 2px;
-  color: #9ca3af; margin: 0 0 12px 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  color: #374151; text-transform: uppercase; margin: 0 0 12px 4px;
 }
 
 /* ── Cards grid ──────────────────────────────────────────────── */
