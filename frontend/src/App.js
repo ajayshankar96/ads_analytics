@@ -595,7 +595,7 @@ function TrustScan2View({ preselect, onScan }) {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tier,    setTier]    = useState('ts2');
+  const [tier,    setTier]    = useState('ts1');
   const [selected, setSelected] = useState(null);
 
   // Unified scan handler — used by both sidebar clicks AND manual form entry.
