@@ -470,17 +470,17 @@ function useScanState(preselect) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselect]);
 
-  return { result, loading, error, notFound, phone, setPhone, handleScan };
+  return { result, loading, error, notFound, phone, setPhone };
 }
 
 // ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
-function TrustScan1View({ preselect }) {
-  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState(preselect);
+function TrustScan1View({ preselect, onScan }) {
+  const { result, loading, error, notFound, phone, setPhone } = useScanState(preselect);
   const band = result?.ts1_band?.trim();
 
   return (
     <>
-      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={onScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -525,12 +525,12 @@ function TrustScan1View({ preselect }) {
 }
 
 // ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
-function TrustScan2View({ preselect }) {
-  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState(preselect);
+function TrustScan2View({ preselect, onScan }) {
+  const { result, loading, error, notFound, phone, setPhone } = useScanState(preselect);
 
   return (
     <>
-      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={onScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -565,7 +565,7 @@ function TrustScan2View({ preselect }) {
           <div className="cards-grid">
             {result.dpd30_band && <RiskCard title="30-Day Default Risk" band={result.dpd30_band} />}
             {result.dpd90_band && <RiskCard title="90-Day Default Risk" band={result.dpd90_band} />}
-            {result.cd_band && <RiskCard title="Credit Demand Score" band={result.cd_band} />}
+            {result.cd_band && <RiskCard title="Customer Durable Loans Score" band={result.cd_band} />}
           </div>
 
           {result.predicted_income_bucket && (
@@ -598,9 +598,10 @@ export default function App() {
   const [tier,    setTier]    = useState('ts2');
   const [selected, setSelected] = useState(null);
 
-  // Each sidebar click generates a new object so useEffect always fires,
-  // even if the same number is clicked twice
-  function handleSidebarSelect(ph) {
+  // Unified scan handler — used by both sidebar clicks AND manual form entry.
+  // Wrapping in a new object every time ensures useEffect always fires in both views,
+  // even if the same number is scanned twice.
+  function handleScan(ph) {
     setSelected({ phone: ph, ts: Date.now() });
   }
 
@@ -626,7 +627,7 @@ export default function App() {
         </div>
 
         <div className="content-layout">
-          <SampleSidebar selected={selected?.phone} onSelect={handleSidebarSelect} />
+          <SampleSidebar selected={selected?.phone} onSelect={handleScan} />
 
           <div className="content-main">
             <div className="tabs-row">
@@ -640,10 +641,10 @@ export default function App() {
             </div>
 
             <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}>
-              <TrustScan1View preselect={selected} />
+              <TrustScan1View preselect={selected} onScan={handleScan} />
             </div>
             <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}>
-              <TrustScan2View preselect={selected} />
+              <TrustScan2View preselect={selected} onScan={handleScan} />
             </div>
           </div>
         </div>
