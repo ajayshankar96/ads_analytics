@@ -577,20 +577,121 @@ function TrustScan2View({ preselect, onScan }) {
   );
 }
 
+// ── Setup modal ───────────────────────────────────────────────────────────────
+function SetupModal({ onComplete }) {
+  const [ts1, setTs1] = useState('');
+  const [ts2, setTs2] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!ts1.trim() || !ts2.trim()) { setError('Both fields are required.'); return; }
+    setSaving(true); setError('');
+    try {
+      const res = await fetch('/api/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ts1_auth: ts1.trim(), ts2_auth: ts2.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail || 'Setup failed');
+      }
+      onComplete();
+    } catch (err) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="setup-backdrop">
+      <div className="setup-modal">
+        <div className="setup-shield">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" fill="#1d4ed8" opacity=".15"/>
+            <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6L12 2z" stroke="#1d4ed8" strokeWidth="1.5" fill="none"/>
+            <path d="M9 12l2 2 4-4" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <h2 className="setup-title">Welcome to TrustScan</h2>
+        <p className="setup-sub">
+          One-time setup. Paste your Razorpay TrustScan API credentials below.
+          They are stored in memory on the server for this session only.
+        </p>
+
+        <form onSubmit={handleSave}>
+          <label className="setup-label">
+            TS 1.0 Authorization
+            <span className="setup-hint"> — full <code>Basic xxxxxxxx</code> value</span>
+          </label>
+          <input
+            className="setup-input"
+            type="password"
+            placeholder="Basic cnpwX2xpdmVf…"
+            value={ts1}
+            onChange={e => setTs1(e.target.value)}
+            autoComplete="off"
+            spellCheck="false"
+          />
+
+          <label className="setup-label" style={{ marginTop: 16 }}>
+            TS 2.0 Authorization
+            <span className="setup-hint"> — can be same as TS 1.0</span>
+          </label>
+          <input
+            className="setup-input"
+            type="password"
+            placeholder="Basic cnpwX2xpdmVf…"
+            value={ts2}
+            onChange={e => setTs2(e.target.value)}
+            autoComplete="off"
+            spellCheck="false"
+          />
+
+          <div className="setup-note">
+            <strong>Where to find these?</strong> Razorpay Dashboard → Account &amp; Settings → API Keys,
+            or copy the <code>Authorization</code> header from any working TrustScan curl example.
+          </div>
+
+          {error && <div className="setup-error">{error}</div>}
+
+          <button className="setup-save-btn" type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save and continue →'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tier,    setTier]    = useState('ts1');
-  const [selected, setSelected] = useState(null);
+  const [tier,       setTier]       = useState('ts1');
+  const [selected,   setSelected]   = useState(null);
+  const [setupDone,  setSetupDone]  = useState(null); // null=checking, true/false
 
-  // Unified scan handler — used by both sidebar clicks AND manual form entry.
-  // Wrapping in a new object every time ensures useEffect always fires in both views,
-  // even if the same number is scanned twice.
+  // On mount check if credentials are already configured
+  useEffect(() => {
+    fetch('/api/live/health')
+      .then(r => r.json())
+      .then(d => setSetupDone(d.setup === 'complete'))
+      .catch(() => setSetupDone(true)); // if endpoint errors, don't block the UI
+  }, []);
+
   function handleScan(ph) {
     setSelected({ phone: ph, ts: Date.now() });
   }
 
+  // Still checking — show nothing to avoid flash
+  if (setupDone === null) return null;
+
   return (
     <div className="app">
+      {!setupDone && <SetupModal onComplete={() => setSetupDone(true)} />}
+
       <header className="header">
         <div className="header-inner">
           <div className="logo">
