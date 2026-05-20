@@ -752,14 +752,15 @@ function TrustScan2View({ preselect, onScan }) {
                 {result.predicted_income_bucket && (() => {
                   const code = (result.predicted_income_bucket || '').toUpperCase();
                   const label = INCOME_BUCKET_MAP[code] || code;
+                  const info = bandInfo(code);
                   return (
-                    <div className="risk-card" style={{ borderTop: '4px solid #4f46e5' }}>
+                    <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Predicted Income Band</div>
                       <div className="card-body-center">
-                        <div className="band-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe', fontSize: 22, fontWeight: 900, padding: '6px 18px' }}>
+                        <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}`, fontSize: 22, fontWeight: 900, padding: '6px 18px' }}>
                           {code}
                         </div>
-                        <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 8, fontWeight: 500 }}>{label}</div>
+                        <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
                     </div>
                   );
@@ -767,14 +768,15 @@ function TrustScan2View({ preselect, onScan }) {
                 {result.thick_thin_data && (() => {
                   const code = (result.thick_thin_data || '').toUpperCase();
                   const label = THICK_THIN_MAP[code] || code;
+                  const info = bandInfo(code);
                   return (
-                    <div className="risk-card" style={{ borderTop: '4px solid #4f46e5' }}>
+                    <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Data Profile</div>
                       <div className="card-body-center">
-                        <div className="band-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe', fontSize: 22, fontWeight: 900, padding: '6px 18px' }}>
+                        <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}`, fontSize: 22, fontWeight: 900, padding: '6px 18px' }}>
                           {code}
                         </div>
-                        <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 8, fontWeight: 500 }}>{label}</div>
+                        <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
                     </div>
                   );
