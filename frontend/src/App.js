@@ -678,6 +678,26 @@ function TrustScan1View({ preselect, onScan }) {
   );
 }
 
+// ── SHA-256 hash strip (TS 2.0 only) ─────────────────────────────────────────
+function ShaStrip({ phone }) {
+  const [hash, setHash] = useState('');
+
+  useEffect(() => {
+    if (phone.length !== 10) { setHash(''); return; }
+    crypto.subtle.digest('SHA-256', new TextEncoder().encode(phone))
+      .then(buf => setHash([...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')));
+  }, [phone]);
+
+  if (!hash) return null;
+  return (
+    <div className="sha-strip">
+      <span className="sha-label">SHA-256</span>
+      <code className="sha-value">{hash}</code>
+      <span className="sha-note">TS 2.0 only sees the hash, not the raw number.</span>
+    </div>
+  );
+}
+
 // ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
 function TrustScan2View({ preselect, onScan }) {
   const { result, loading, error, notFound, phone, setPhone } = useScanState(preselect);
@@ -685,6 +705,7 @@ function TrustScan2View({ preselect, onScan }) {
   return (
     <>
       <PhoneForm phone={phone} setPhone={setPhone} onSubmit={onScan} loading={loading} />
+      <ShaStrip phone={phone} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (

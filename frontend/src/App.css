@@ -114,6 +114,30 @@ body {
 }
 .scan-btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* ── SHA-256 strip (TS 2.0) ──────────────────────────────────── */
+.sha-strip {
+  display: flex; align-items: center; gap: 12px;
+  background: #f0f4ff; border: 1px dashed #c7d2fe;
+  border-radius: 10px; padding: 10px 16px;
+  margin-top: -18px; margin-bottom: 20px;
+  font-size: 12px;
+}
+.sha-label {
+  flex-shrink: 0; font-size: 10px; font-weight: 800;
+  letter-spacing: 1px; color: #4f46e5; text-transform: uppercase;
+  background: #e0e7ff; border: 1px solid #c7d2fe;
+  padding: 2px 8px; border-radius: 5px;
+}
+.sha-value {
+  flex: 1; font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px; color: #374151;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sha-note {
+  flex-shrink: 0; font-size: 11.5px; color: #6b7280;
+}
+@media (max-width: 600px) { .sha-note { display: none; } }
+
 /* ── Spinner ─────────────────────────────────────────────────── */
 .spinner {
   width: 15px; height: 15px;
