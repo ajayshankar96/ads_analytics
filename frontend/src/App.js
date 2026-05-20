@@ -226,6 +226,25 @@ const THICK_THIN_MAP = {
   Z2: 'No Razorpay History',
 };
 
+// Income bucket: A1=lowest income (red) → G1=highest income (green), Z2=grey
+function incomeBandInfo(code) {
+  const c = (code || '').toUpperCase();
+  if (c === 'Z2') return { color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
+  if (c === 'A1') return { color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
+  if (c === 'B1') return { color: '#ea580c', bg: '#ffedd5', border: '#ea580c' };
+  if (c === 'C1' || c === 'D1') return { color: '#d97706', bg: '#fef3c7', border: '#d97706' };
+  // E1, F1, G1 → green (higher income)
+  return { color: '#059669', bg: '#d1fae5', border: '#059669' };
+}
+
+// Data profile: A1=thick (green, most data), B1=thin (amber), Z2=no history (grey)
+function thickThinBandInfo(code) {
+  const c = (code || '').toUpperCase();
+  if (c === 'A1') return { color: '#059669', bg: '#d1fae5', border: '#059669' };
+  if (c === 'B1') return { color: '#d97706', bg: '#fef3c7', border: '#d97706' };
+  return { color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
+}
+
 function RiskCard({ title, band }) {
   const info = bandInfo(band);
   // Decile format (A1, B2…): show code directly. Score-range (band_N): show "Band N"
@@ -752,7 +771,7 @@ function TrustScan2View({ preselect, onScan }) {
                 {result.predicted_income_bucket && (() => {
                   const code = (result.predicted_income_bucket || '').toUpperCase();
                   const label = INCOME_BUCKET_MAP[code] || code;
-                  const info = bandInfo(code);
+                  const info = incomeBandInfo(code);
                   return (
                     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Predicted Income Band</div>
@@ -768,7 +787,7 @@ function TrustScan2View({ preselect, onScan }) {
                 {result.thick_thin_data && (() => {
                   const code = (result.thick_thin_data || '').toUpperCase();
                   const label = THICK_THIN_MAP[code] || code;
-                  const info = bandInfo(code);
+                  const info = thickThinBandInfo(code);
                   return (
                     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Data Profile</div>
