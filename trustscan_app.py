@@ -3,10 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import os
 import csv
 import io
+import json
+import re
+import urllib.request
+import urllib.error
 import logging
 from pathlib import Path
 
@@ -183,6 +187,142 @@ def trust_scan(phone: str):
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "contacts_loaded": len(_DATA)}
+
+
+# ── Live API proxy ────────────────────────────────────────────────────────────
+# Mirrors the local proxy in TrustScan 2.app — credentials stored in memory,
+# seeded from env vars TS1_AUTH / TS2_AUTH on startup, overridable via /api/setup.
+
+_LIVE_CONFIG: dict = {
+    "ts1_auth": os.getenv("TS1_AUTH", ""),
+    "ts2_auth": os.getenv("TS2_AUTH", ""),
+}
+
+def _live_configured() -> bool:
+    return bool(_LIVE_CONFIG.get("ts1_auth") and _LIVE_CONFIG.get("ts2_auth"))
+
+def _norm_auth(s: str) -> str:
+    t = s.strip()
+    if not t:
+        return ""
+    return t if t.startswith("Basic ") else f"Basic {t}"
+
+
+class LiveSetupRequest(BaseModel):
+    ts1_auth: str
+    ts2_auth: str
+
+class Ts1LiveRequest(BaseModel):
+    contact: str
+
+class Ts2LiveRequest(BaseModel):
+    sha256: str
+    attributes: List[str]
+
+
+@app.post("/api/setup")
+def setup_live(body: LiveSetupRequest):
+    ts1 = _norm_auth(body.ts1_auth)
+    ts2 = _norm_auth(body.ts2_auth)
+    if not ts1 or not ts2:
+        raise HTTPException(status_code=400, detail="Both ts1_auth and ts2_auth are required")
+    _LIVE_CONFIG["ts1_auth"] = ts1
+    _LIVE_CONFIG["ts2_auth"] = ts2
+    logger.info("Live API credentials updated via /api/setup")
+    return {"ok": True, "setup": "complete"}
+
+
+@app.get("/api/live/health")
+def live_health():
+    return {
+        "ok": True,
+        "setup": "complete" if _live_configured() else "required",
+        "ts1_auth_set": bool(_LIVE_CONFIG.get("ts1_auth")),
+        "ts2_auth_set": bool(_LIVE_CONFIG.get("ts2_auth")),
+    }
+
+
+def _razorpay_request(url: str, payload: dict, auth: str) -> dict:
+    """Make a POST to api.razorpay.com and return the parsed JSON body."""
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json", "Authorization": auth},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return {"status": resp.status, "body": json.loads(resp.read().decode())}
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            err_body = json.loads(raw.decode())
+        except Exception:
+            err_body = {"raw": raw.decode()}
+        return {"status": e.code, "body": err_body}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={"error": "upstream_unreachable", "detail": str(exc)})
+
+
+@app.post("/api/live/ts1")
+def live_ts1(body: Ts1LiveRequest):
+    if not _live_configured():
+        raise HTTPException(status_code=409, detail={
+            "code": "SETUP_REQUIRED",
+            "description": "API keys not configured. POST credentials to /api/setup first.",
+        })
+    contact = body.contact.strip()
+    if not contact.isdigit() or len(contact) != 10:
+        raise HTTPException(status_code=400, detail="contact must be a 10-digit phone number")
+
+    result = _razorpay_request(
+        "https://api.razorpay.com/v1/trust_scan",
+        {"customer": {"contact": contact}},
+        _LIVE_CONFIG["ts1_auth"],
+    )
+    if result["status"] != 200:
+        raise HTTPException(status_code=result["status"], detail=result["body"])
+    return result["body"]
+
+
+@app.post("/api/live/ts2")
+def live_ts2(body: Ts2LiveRequest):
+    if not _live_configured():
+        raise HTTPException(status_code=409, detail={
+            "code": "SETUP_REQUIRED",
+            "description": "API keys not configured. POST credentials to /api/setup first.",
+        })
+    sha = body.sha256.strip().lower()
+    if not re.match(r"^[0-9a-f]{64}$", sha):
+        raise HTTPException(status_code=400, detail="sha256 must be a 64-char hex string")
+    attrs = body.attributes
+    if not attrs:
+        raise HTTPException(status_code=400, detail="attributes must be a non-empty list")
+
+    # API caps at 40 attributes per request — chunk and merge
+    CHUNK = 40
+    chunks = [attrs[i:i+CHUNK] for i in range(0, len(attrs), CHUNK)]
+    merged_attrs: dict = {}
+    as_of = None
+    for chunk in chunks:
+        result = _razorpay_request(
+            "https://api.razorpay.com/v2/engage/trust_scan",
+            {
+                "customer_identifier": {"type": "SHA256_PHONE", "value": sha},
+                "attributes": chunk,
+            },
+            _LIVE_CONFIG["ts2_auth"],
+        )
+        if result["status"] != 200:
+            raise HTTPException(status_code=result["status"], detail=result["body"])
+        rb = result["body"]
+        if as_of is None:
+            as_of = rb.get("as_of") or rb.get("data", {}).get("as_of")
+        chunk_attrs = rb.get("attributes") or rb.get("data", {}).get("attributes") or {}
+        merged_attrs.update(chunk_attrs)
+
+    return {"as_of": as_of, "attributes": merged_attrs}
 
 
 # ── Serve React frontend ──────────────────────────────────────────────────────
