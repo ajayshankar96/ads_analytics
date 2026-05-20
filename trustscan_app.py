@@ -194,15 +194,35 @@ def health_check():
 
 # TS 2.0 attributes to request from the live API
 _TS2_SCAN_ATTRS = [
+    # Risk model bands
     "dpd_30_prob_band", "dpd_90_prob_band", "cd_dpd_30_prob_band",
-    "thick_thin_data", "predicted_income_bucket",
-    # DE layer variables
-    "avg_amount", "yearly_transaction_volume", "max_vintage",
-    "weighted_success_rate", "perc_non_discretionary_spends",
-    "unique_city_transacted", "yoy_growth_percentage", "ott_trxns_last_1_year",
-    "perc_merchants_emi_linked", "upi_payment_amount", "vintage_utilities",
-    "weighted_error_ratio", "unique_state_transacted",
-    "loan_stacking_amount_l3m", "count_issuer_cc",
+    # Payment volume analysis
+    "thick_thin_data", "yearly_transaction_volume", "yoy_growth_percentage",
+    # SR ratio
+    "error_ratio_card", "error_ratio_last_12_weeks_emandate", "error_ratio_last_24_weeks_emandate",
+    "failed_txn_amount_sum", "failed_txn_count", "repayment_error_ratio_l12w",
+    "risky_fails_to_success_trxn_ratio_l12m", "risky_fails_to_success_trxn_ratio_l6m",
+    "success_rate_last_24_weeks_card", "success_rate_last_24_weeks_emandate",
+    "weighted_error_ratio", "weighted_error_ratio_last_12_weeks", "weighted_error_ratio_last_24_weeks",
+    "weighted_success_rate",
+    # Spend propensity
+    "avg_amount", "has_failed_high_value_txn",
+    "l12m_aov_astrology", "l12m_aov_real_estate", "l12m_spend_astrology", "l12m_spend_micro_drama",
+    "l3m_aov_astrology", "l3m_spend_astrology", "l3m_spend_micro_drama",
+    "log_aov_gold", "log_aov_last_12_weeks_ecommerce", "log_aov_last_12_weeks_services",
+    "log_aov_last_12_weeks_utilities", "log_aov_last_24_weeks_ecommerce", "log_aov_last_24_weeks_utilities",
+    "log_aov_utilities", "luxury_category_spend", "ott_trxns_last_1_year",
+    "perc_non_discretionary_spends", "predicted_income_bucket",
+    "spend_last_12_weeks_lending", "spend_last_1_year_fashion_and_lifestyle",
+    "spend_last_1_year_government", "spend_last_1_year_lending", "spend_last_1_year_tours_and_travel",
+    "spend_last_24_weeks_lending", "total_spend_last_12_weeks", "upi_payment_amount",
+    "vintage_education", "vintage_investments", "vintage_services", "vintage_utilities",
+    "weighted_log_aov",
+    # Demographic
+    "max_vintage", "unique_city_transacted", "unique_state_transacted",
+    # Credit propensity
+    "count_issuer_cc", "loan_stacking_amount_l3m", "loan_stacking_amount_l6m",
+    "unique_lenders_last_1_years",
 ]
 
 def _extract_ts1_band(body: dict) -> str:
@@ -273,15 +293,6 @@ def _live_scan(phone: str) -> dict:
     dpd90_prob = raw_attrs.get("dpd_90_prob_band", "")
     cd_prob    = raw_attrs.get("cd_dpd_30_prob_band", "")
 
-    de_vars = {k: raw_attrs.get(k, "") for k in [
-        "avg_amount", "yearly_transaction_volume", "max_vintage",
-        "weighted_success_rate", "perc_non_discretionary_spends",
-        "unique_city_transacted", "yoy_growth_percentage", "ott_trxns_last_1_year",
-        "perc_merchants_emi_linked", "upi_payment_amount", "vintage_utilities",
-        "weighted_error_ratio", "unique_state_transacted",
-        "loan_stacking_amount_l3m", "count_issuer_cc",
-    ]}
-
     return {
         "phone": phone,
         "source": "live",
@@ -310,8 +321,9 @@ def _live_scan(phone: str) -> dict:
         "bands_cd_band":       cd_prob,
         "bands_income_bucket": raw_attrs.get("predicted_income_bucket", ""),
         "model_version": "live",
-        # DE layer
-        "de_variables": de_vars,
+        # All raw TS2 attributes — used by frontend enrichment section
+        "live_attrs": raw_attrs,
+        "de_variables": None,
     }
 
 

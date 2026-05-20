@@ -260,49 +260,181 @@ function TrustScoreCard({ data }) {
   );
 }
 
-// ── Data Engineering Layer ────────────────────────────────────────────────────
-const DE_VAR_DEFS = [
-  { key: 'avg_amount',                    label: 'avg_amount',                    title: 'Avg Transaction Amount',     unit: 'amount band'    },
-  { key: 'yearly_transaction_volume',     label: 'yearly_transaction_volume',     title: 'Yearly Txn Volume',          unit: 'volume band'    },
-  { key: 'max_vintage',                   label: 'max_vintage',                   title: 'Network Tenure',             unit: 'vintage band'   },
-  { key: 'weighted_success_rate',         label: 'weighted_success_rate',         title: 'Payment Success Rate',       unit: 'success band'   },
-  { key: 'perc_non_discretionary_spends', label: 'perc_non_discretionary_spends', title: 'Non-Discretionary Spend',    unit: 'spend band'     },
-  { key: 'unique_city_transacted',        label: 'unique_city_transacted',        title: 'Unique Cities Transacted',   unit: 'city band'      },
-  { key: 'yoy_growth_percentage',         label: 'yoy_growth_percentage',         title: 'YoY Spend Growth',           unit: 'growth band'    },
-  { key: 'ott_trxns_last_1_year',         label: 'ott_trxns_last_1_year',         title: 'OTT Transactions (1Y)',      unit: 'txn band'       },
+// ── Live Enrichment Section ───────────────────────────────────────────────────
+const TS2_LIVE_CATEGORIES = [
+  {
+    key: 'payment_volume',
+    icon: 'V',
+    label: 'Payment Volume Analysis',
+    desc: 'Transaction volume, YoY growth, platform engagement',
+    vars: [
+      { name: 'thick_thin_data',            desc: 'Indicator of user activity level on the Razorpay platform',                                   scale: 'Discrete' },
+      { name: 'yearly_transaction_volume',  desc: 'Aggregate value of all transactions successfully completed in the last 1 year',                scale: 'Decile'   },
+      { name: 'yoy_growth_percentage',      desc: 'Year-over-year spends growth in the last 2 years (%)',                                         scale: 'Min-Max'  },
+    ],
+  },
+  {
+    key: 'sr_ratio',
+    icon: 'SR',
+    label: 'SR Ratio',
+    desc: 'Success rates, error ratios, decline patterns',
+    vars: [
+      { name: 'weighted_success_rate',                    desc: 'Weighted transaction success rate across payment methods',                                                        scale: 'Min-Max' },
+      { name: 'weighted_error_ratio',                     desc: 'Weighted measure of incomplete payment transactions across methods and time periods',                              scale: 'Min-Max' },
+      { name: 'weighted_error_ratio_last_12_weeks',       desc: '% of transactions failed due to risk-identified errors in the last 12 weeks',                                     scale: 'Min-Max' },
+      { name: 'weighted_error_ratio_last_24_weeks',       desc: 'Weighted measure of incomplete payment transactions across methods in the last 24 weeks',                         scale: 'Min-Max' },
+      { name: 'error_ratio_card',                         desc: '% of card transactions failed due to risk-identified errors (insufficient balance, credit limit exceeded, etc.)', scale: 'Min-Max' },
+      { name: 'error_ratio_last_12_weeks_emandate',       desc: '% of e-mandate transactions failed due to risk-identified errors in the last 12 weeks',                          scale: 'Min-Max' },
+      { name: 'error_ratio_last_24_weeks_emandate',       desc: '% of e-mandate transactions that did not complete successfully in the last 24 weeks',                            scale: 'Min-Max' },
+      { name: 'failed_txn_amount_sum',                    desc: 'Total monetary value of all failed/declined transactions',                                                        scale: 'Min-Max' },
+      { name: 'failed_txn_count',                         desc: 'Total count of failed transactions — high rates can indicate lack of funds or risky behaviour',                  scale: 'Min-Max' },
+      { name: 'repayment_error_ratio_l12w',               desc: 'Loan repayment transaction failures with risk-identified errors in the last 12 weeks',                           scale: 'Min-Max' },
+      { name: 'risky_fails_to_success_trxn_ratio_l12m',  desc: 'Ratio of unsuccessful to successful payment attempts for recurring transactions in the last 12 months',          scale: 'Min-Max' },
+      { name: 'risky_fails_to_success_trxn_ratio_l6m',   desc: 'Ratio of unsuccessful to successful payment attempts for recurring transactions in the last 6 months',           scale: 'Min-Max' },
+      { name: 'success_rate_last_24_weeks_card',          desc: 'Transaction success rate for card payments in the last 24 weeks',                                                scale: 'Min-Max' },
+      { name: 'success_rate_last_24_weeks_emandate',      desc: 'Transaction success rate for e-mandate payments in the last 24 weeks',                                           scale: 'Min-Max' },
+    ],
+  },
+  {
+    key: 'spend_propensity',
+    icon: '₹',
+    label: 'Spend Propensity',
+    desc: 'Category-level spend, AOV, vintage, income signals',
+    vars: [
+      { name: 'avg_amount',                             desc: 'Mean value of successful transactions — proxy for average spending power',                       scale: 'Min-Max'  },
+      { name: 'predicted_income_bucket',                desc: 'Spend capacity derived from affluence signal and 98 key variables',                              scale: 'N/A'      },
+      { name: 'perc_non_discretionary_spends',          desc: 'Share of spend on essential categories (groceries, utilities, healthcare, financial commitments)',scale: 'Min-Max'  },
+      { name: 'upi_payment_amount',                     desc: 'Total payment amount processed via UPI in the last 12 months',                                   scale: 'Decile'   },
+      { name: 'ott_trxns_last_1_year',                  desc: 'Total spend on OTT subscriptions in the last 1 year',                                            scale: 'Decile'   },
+      { name: 'luxury_category_spend',                  desc: 'Total payment in non-essential categories (dining, entertainment, travel, luxury goods) in 1Y',  scale: 'Decile'   },
+      { name: 'total_spend_last_12_weeks',              desc: 'Total spend across all categories in the last 12 weeks',                                         scale: 'Min-Max'  },
+      { name: 'weighted_log_aov',                       desc: 'Weighted average order value across spend categories',                                            scale: 'Min-Max'  },
+      { name: 'has_failed_high_value_txn',              desc: 'Binary flag — user has any failed high-value transaction (risk signal)',                          scale: 'Min-Max'  },
+      { name: 'spend_last_1_year_lending',              desc: 'Total spend on financial services transactions in the last 1 year',                               scale: 'Min-Max'  },
+      { name: 'spend_last_24_weeks_lending',            desc: 'Total spend on financial services transactions in the last 24 weeks',                             scale: 'Min-Max'  },
+      { name: 'spend_last_12_weeks_lending',            desc: 'Total spend on financial services transactions in the last 12 weeks',                             scale: 'Min-Max'  },
+      { name: 'spend_last_1_year_fashion_and_lifestyle',desc: 'Total spend on fashion and lifestyle transactions in the last 1 year',                            scale: 'Min-Max'  },
+      { name: 'spend_last_1_year_tours_and_travel',     desc: 'Total spend on travel transactions in the last 1 year',                                          scale: 'Min-Max'  },
+      { name: 'spend_last_1_year_government',           desc: 'Total spend on government transactions in the last 1 year',                                      scale: 'Min-Max'  },
+      { name: 'log_aov_gold',                           desc: 'Average order value for gold transactions',                                                       scale: 'Min-Max'  },
+      { name: 'log_aov_utilities',                      desc: 'Average order value for utility transactions',                                                    scale: 'Min-Max'  },
+      { name: 'log_aov_last_12_weeks_ecommerce',        desc: 'Average order value for e-commerce transactions in the last 12 weeks',                           scale: 'Min-Max'  },
+      { name: 'log_aov_last_12_weeks_services',         desc: 'Average order value for services transactions in the last 12 weeks',                             scale: 'Min-Max'  },
+      { name: 'log_aov_last_12_weeks_utilities',        desc: 'Average order value for utility transactions in the last 12 weeks',                              scale: 'Min-Max'  },
+      { name: 'log_aov_last_24_weeks_ecommerce',        desc: 'Average order value for e-commerce transactions in the last 24 weeks',                           scale: 'Min-Max'  },
+      { name: 'log_aov_last_24_weeks_utilities',        desc: 'Average order value for utility transactions in the last 24 weeks',                              scale: 'Min-Max'  },
+      { name: 'l12m_aov_astrology',                     desc: 'Average transaction value in the astrology category in the last 12 months',                      scale: 'Decile'   },
+      { name: 'l12m_spend_astrology',                   desc: 'Total spend in the astrology category in the last 12 months',                                    scale: 'Decile'   },
+      { name: 'l12m_aov_real_estate',                   desc: 'Average order value for real estate-related transactions in the last 12 months',                 scale: 'Min-Max'  },
+      { name: 'l12m_spend_micro_drama',                 desc: 'Total spend on micro drama content/platforms in the last 12 months',                             scale: 'Decile'   },
+      { name: 'l3m_aov_astrology',                      desc: 'Average transaction value in the astrology category in the last 3 months',                       scale: 'Decile'   },
+      { name: 'l3m_spend_astrology',                    desc: 'Total spend in the astrology category in the last 3 months',                                     scale: 'Decile'   },
+      { name: 'l3m_spend_micro_drama',                  desc: 'Total spend on micro drama content/platforms in the last 3 months',                              scale: 'Decile'   },
+      { name: 'vintage_education',                      desc: 'Months since first payment in education category',                                                scale: 'Min-Max'  },
+      { name: 'vintage_investments',                    desc: 'Months since first payment in investments category',                                              scale: 'Min-Max'  },
+      { name: 'vintage_services',                       desc: 'Months since first payment in services category',                                                 scale: 'Min-Max'  },
+      { name: 'vintage_utilities',                      desc: 'Months since first payment in utilities category',                                                scale: 'Min-Max'  },
+    ],
+  },
+  {
+    key: 'demographic',
+    icon: 'D',
+    label: 'Demographic',
+    desc: 'Network tenure and geographic spread',
+    vars: [
+      { name: 'max_vintage',           desc: 'Vintage across all digital payment channels (months)',      scale: 'Min-Max' },
+      { name: 'unique_city_transacted',desc: 'Number of unique cities in which transactions were made',   scale: 'Min-Max' },
+      { name: 'unique_state_transacted',desc: 'Number of unique states in which transactions were made',  scale: 'Min-Max' },
+    ],
+  },
+  {
+    key: 'credit_propensity',
+    icon: 'CP',
+    label: 'Credit Propensity',
+    desc: 'Loan stacking and credit card usage signals',
+    vars: [
+      { name: 'count_issuer_cc',           desc: 'Count of distinct credit card issuers used for transactions in the last 5 years',           scale: 'Min-Max' },
+      { name: 'loan_stacking_amount_l3m',  desc: 'Total payment volume towards financial services merchants in the last 3 months',            scale: 'Min-Max' },
+      { name: 'loan_stacking_amount_l6m',  desc: 'Total payment volume towards financial services merchants in the last 6 months',            scale: 'Min-Max' },
+      { name: 'unique_lenders_last_1_years',desc: 'Count of distinct financial services merchants transacted with in the last 1 year',        scale: 'Min-Max' },
+    ],
+  },
 ];
 
-function DeLayerSection({ deVars }) {
-  if (!deVars) return null;
+function LiveEnrichmentSection({ liveAttrs }) {
+  // All categories collapsed by default
+  const [openCats, setOpenCats] = useState(new Set());
+
+  if (!liveAttrs) return null;
+
+  const totalVars = TS2_LIVE_CATEGORIES.reduce((s, c) => s + c.vars.length, 0);
+  const returnedCount = TS2_LIVE_CATEGORIES.reduce((s, c) =>
+    s + c.vars.filter(v => liveAttrs[v.name] && liveAttrs[v.name] !== '').length, 0);
+
+  function toggleCat(key) {
+    setOpenCats(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
   return (
-    <div className="de-section">
-      <div className="de-section-header">
-        <div className="de-section-left">
-          <span className="de-title">DATA ENGINEERING LAYER</span>
-          <span className="de-count">· 8 variables (sample)</span>
-        </div>
-        <span className="de-note">! 77 total DE-layer variables available per contact</span>
+    <div className="enrich-section">
+      <div className="enrich-header">
+        <span className="section-label" style={{ margin: 0 }}>LIVE ENRICHMENT VARIABLES</span>
+        <span className="enrich-count">{returnedCount} / {totalVars} returned · compliance-approved · refreshed weekly</span>
       </div>
 
-      <div className="de-grid">
-        {DE_VAR_DEFS.map(def => (
-          <div key={def.key} className="de-card">
-            <div className="de-card-top">
-              <code className="de-var-name">{def.label}</code>
-              <span className="de-badge">DE</span>
-            </div>
-            <div className="de-var-value">{deVars[def.key] || '—'}</div>
-            <div className="de-var-unit">{def.unit}</div>
+      {TS2_LIVE_CATEGORIES.map(cat => {
+        const isOpen = openCats.has(cat.key);
+        const catReturned = cat.vars.filter(v => liveAttrs[v.name] && liveAttrs[v.name] !== '').length;
+        return (
+          <div key={cat.key} className="enrich-cat">
+            <button className="enrich-cat-head" onClick={() => toggleCat(cat.key)}>
+              <span className="enrich-cat-icon">{cat.icon}</span>
+              <span className="enrich-cat-info">
+                <span className="enrich-cat-label">{cat.label}</span>
+                <span className="enrich-cat-desc">{cat.desc}</span>
+              </span>
+              <span className="enrich-cat-count">{catReturned}/{cat.vars.length}</span>
+              <span className={`enrich-arrow ${isOpen ? 'open' : ''}`}>›</span>
+            </button>
+            {isOpen && (
+              <div className="enrich-cat-body">
+                <div className="enrich-grid">
+                  {cat.vars.map(v => {
+                    const val = liveAttrs[v.name] || '';
+                    const missing = !val;
+                    const bi = val ? bandInfo(val) : null;
+                    return (
+                      <div key={v.name} className={`enrich-card ${missing ? 'enrich-card-missing' : ''}`}>
+                        <div className="enrich-card-top">
+                          <code className="enrich-var-name">{v.name}</code>
+                          <span className="enrich-scale">{v.scale}</span>
+                        </div>
+                        <div
+                          className="enrich-band"
+                          style={bi ? { background: bi.bg, color: bi.color, border: `1px solid ${bi.border}` } : {}}
+                        >
+                          {val || '—'}
+                        </div>
+                        <div className="enrich-var-desc">{v.desc}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+        );
+      })}
 
-      <div className="de-disclaimer">
+      <div className="de-disclaimer" style={{ marginTop: 12 }}>
         <span className="de-disclaimer-icon">i</span>
         <span>
-          <strong>All values shown are band codes</strong> — each letter-number pair (e.g. A1, J9) represents
-          a decile band. Actual underlying values are not disclosed for compliance reasons.
-          77 variables are available per contact — 8 shown here as a sample.
+          <strong>Values are band codes</strong> — each letter-number pair (e.g. E4, B1) is a decile or min-max band.
+          Actual underlying values are not disclosed for compliance reasons.
         </span>
       </div>
     </div>
@@ -606,7 +738,7 @@ function TrustScan2View({ preselect, onScan }) {
             </>
           )}
 
-          <DeLayerSection deVars={result.de_variables} />
+          <LiveEnrichmentSection liveAttrs={result.live_attrs} />
         </div>
       )}
     </>
