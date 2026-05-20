@@ -4,6 +4,16 @@ import './App.css';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function bandInfo(band) {
+  // Decile band format from live API: A1–C9 = low, D–F = medium, G = medium-high, H–J = high
+  if (band && /^[A-Za-z]\d/.test(band)) {
+    const l = band[0].toUpperCase();
+    if ('ABC'.includes(l)) return { label: 'LOW RISK',    color: '#059669', bg: '#d1fae5', border: '#059669' };
+    if ('DEF'.includes(l)) return { label: 'MEDIUM RISK', color: '#d97706', bg: '#fef3c7', border: '#d97706' };
+    if (l === 'G')         return { label: 'MEDIUM-HIGH', color: '#ea580c', bg: '#ffedd5', border: '#ea580c' };
+    if ('HIJ'.includes(l)) return { label: 'HIGH RISK',   color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
+    return { label: band, color: '#6b7280', bg: '#f3f4f6', border: '#6b7280' };
+  }
+  // Score-range band format from CSV: band_1 … band_7
   const num = parseInt(band?.replace('band_', '') || '0');
   if (num <= 3) return { label: 'LOW RISK',     color: '#059669', bg: '#d1fae5', border: '#059669' };
   if (num <= 5) return { label: 'MEDIUM RISK',  color: '#d97706', bg: '#fef3c7', border: '#d97706' };
@@ -188,13 +198,15 @@ function CreditGauge({ score, color }) {
 // ── Risk card ─────────────────────────────────────────────────────────────────
 function RiskCard({ title, band }) {
   const info = bandInfo(band);
-  const bandNum = band?.replace('band_', '') ?? '';
+  // Decile format (A1, B2…): show code directly. Score-range (band_N): show "Band N"
+  const isDecile = band && /^[A-Za-z]\d/.test(band);
+  const bandDisplay = isDecile ? band.toUpperCase() : `Band ${band?.replace('band_', '') ?? ''}`;
   return (
     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
       <div className="card-title">{title}</div>
       <div className="card-body-center">
         <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
-          Band {bandNum} · {info.label}
+          {bandDisplay} · {info.label}
         </div>
         <div className="risk-band-icon" style={{ color: info.color }}>
           {info.label === 'LOW RISK' ? '🟢' : info.label === 'MEDIUM RISK' ? '🟡' : info.label === 'MEDIUM-HIGH' ? '🟠' : '🔴'}
@@ -451,7 +463,7 @@ function useScanState(preselect) {
     setLoading(true); setError(null); setResult(null); setNotFound(false);
     try {
       const [res] = await Promise.all([
-        fetch(`/api/trust-scan/${ph}`),
+        fetch(`/api/scan/${ph}`),
         new Promise(r => setTimeout(r, 2000)),
       ]);
       if (res.status === 404) { setNotFound(true); return; }
