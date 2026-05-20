@@ -442,7 +442,10 @@ function LiveEnrichmentSection({ liveAttrs }) {
                       <div key={v.name} className={`enrich-card ${missing ? 'enrich-card-missing' : ''}`}>
                         <div className="enrich-card-top">
                           <code className="enrich-var-name">{v.name}</code>
-                          <span className="enrich-scale">{v.scale}</span>
+                          {missing
+                            ? <span className="enrich-live-soon">LIVE SOON</span>
+                            : <span className="enrich-scale">{v.scale}</span>
+                          }
                         </div>
                         <div
                           className="enrich-band"
@@ -450,7 +453,12 @@ function LiveEnrichmentSection({ liveAttrs }) {
                         >
                           {val || '—'}
                         </div>
-                        <div className="enrich-var-desc">{v.desc}</div>
+                        <div className="enrich-var-desc">
+                          {missing
+                            ? <><strong>To be live soon</strong> · In development — not currently returned by the API</>
+                            : v.desc
+                          }
+                        </div>
                       </div>
                     );
                   })}

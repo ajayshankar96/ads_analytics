@@ -589,6 +589,11 @@ body {
   background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb;
   padding: 2px 6px; border-radius: 4px; white-space: nowrap;
 }
+.enrich-live-soon {
+  flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: .5px;
+  background: #fffbeb; color: #92400e; border: 1px solid #fcd34d;
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+}
 .enrich-band {
   display: inline-block; font-size: 20px; font-weight: 900;
   font-family: monospace; padding: 4px 10px;
