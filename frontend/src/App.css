@@ -40,7 +40,7 @@ body {
   color: #4f46e5; text-transform: uppercase; margin-bottom: 8px;
 }
 .hero-title { font-size: 30px; font-weight: 800; color: #1e3a8a; margin-bottom: 8px; line-height: 1.2; }
-.hero-sub { font-size: 14px; color: #6b7280; line-height: 1.6; max-width: 560px; }
+.hero-sub { font-size: 14px; color: #6366f1; line-height: 1.6; max-width: 560px; }
 
 /* ── Tabs ────────────────────────────────────────────────────── */
 .tabs-row {
@@ -750,11 +750,11 @@ body {
 
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer {
-  background: #f3f4f6; border-top: 1px solid #e5e7eb;
+  background: #1e3a8a;
   display: flex; align-items: center; justify-content: center;
   gap: 12px; flex-wrap: wrap;
-  padding: 14px 24px; font-size: 12px; color: #9ca3af;
+  padding: 14px 24px; font-size: 12px; color: rgba(255,255,255,.45);
 }
 .footer-div {
-  width: 1px; height: 12px; background: #d1d5db; flex-shrink: 0;
+  width: 1px; height: 12px; background: rgba(255,255,255,.2); flex-shrink: 0;
 }
