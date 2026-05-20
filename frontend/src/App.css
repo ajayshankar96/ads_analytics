@@ -750,6 +750,11 @@ body {
 
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer {
-  background: #1e3a8a; color: rgba(255,255,255,.45);
-  text-align: center; padding: 16px; font-size: 12px;
+  background: #f3f4f6; border-top: 1px solid #e5e7eb;
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; flex-wrap: wrap;
+  padding: 14px 24px; font-size: 12px; color: #9ca3af;
+}
+.footer-div {
+  width: 1px; height: 12px; background: #d1d5db; flex-shrink: 0;
 }

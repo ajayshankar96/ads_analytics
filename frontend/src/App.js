@@ -823,7 +823,11 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        © 2025 Razorpay Software Private Limited &nbsp;·&nbsp; TrustScan is for authorised use only
+        <span>TrustScan Analytics · v1.0</span>
+        <span className="footer-div" />
+        <span>Live API · Razorpay TrustScan</span>
+        <span className="footer-div" />
+        <span>© Razorpay · Internal use only</span>
       </footer>
     </div>
   );
