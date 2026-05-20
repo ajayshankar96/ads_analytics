@@ -701,22 +701,13 @@ function SetupModal({ onComplete }) {
 export default function App() {
   const [tier,       setTier]       = useState('ts1');
   const [selected,   setSelected]   = useState(null);
-  const [setupDone,  setSetupDone]  = useState(null); // null=checking, true/false
-
-  // On mount check if credentials are already configured
-  useEffect(() => {
-    fetch('/api/live/health')
-      .then(r => r.json())
-      .then(d => setSetupDone(d.setup === 'complete'))
-      .catch(() => setSetupDone(true)); // if endpoint errors, don't block the UI
-  }, []);
+  // Always show setup modal on every fresh page load — credentials are in-memory
+  // and get wiped on pod restart, so we always ask the user to enter fresh keys.
+  const [setupDone,  setSetupDone]  = useState(false);
 
   function handleScan(ph) {
     setSelected({ phone: ph, ts: Date.now() });
   }
-
-  // Still checking — show nothing to avoid flash
-  if (setupDone === null) return null;
 
   return (
     <div className="app">
