@@ -214,6 +214,18 @@ function CreditGauge({ score, color }) {
 }
 
 // ── Risk card ─────────────────────────────────────────────────────────────────
+// ── Income / Data Profile lookup maps ────────────────────────────────────────
+const INCOME_BUCKET_MAP = {
+  A1: '₹0 – 3L',   B1: '₹3 – 4L',  C1: '₹4 – 6L',
+  D1: '₹6 – 10L',  E1: '₹10 – 15L', F1: '₹15 – 25L',
+  G1: '₹25L+',     Z2: 'Null',
+};
+const THICK_THIN_MAP = {
+  A1: 'More than 3 annual transactions',
+  B1: 'Less than or equal to 3 annual transactions',
+  Z2: 'No Razorpay History',
+};
+
 function RiskCard({ title, band }) {
   const info = bandInfo(band);
   // Decile format (A1, B2…): show code directly. Score-range (band_N): show "Band N"
@@ -735,24 +747,44 @@ function TrustScan2View({ preselect, onScan }) {
 
           {(result.predicted_income_bucket || result.thick_thin_data) && (
             <>
-              <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
-              <div className="income-grid">
-                {result.predicted_income_bucket && (
-                  <div className="income-card">
-                    <div className="income-label">Predicted Income Band</div>
-                    <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.predicted_income_bucket}</div>
-                  </div>
-                )}
-                {result.thick_thin_data && (
-                  <div className="income-card">
-                    <div className="income-label">Data Profile</div>
-                    <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.thick_thin_data}</div>
-                  </div>
-                )}
+              <div className="section-label" style={{ marginTop: 24 }}>INCOME PROFILE</div>
+              <div className="cards-grid">
+                {result.predicted_income_bucket && (() => {
+                  const code = (result.predicted_income_bucket || '').toUpperCase();
+                  const label = INCOME_BUCKET_MAP[code] || code;
+                  return (
+                    <div className="risk-card" style={{ borderTop: '4px solid #4f46e5' }}>
+                      <div className="card-title">Predicted Income Band</div>
+                      <div className="card-body-center">
+                        <div className="band-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                          {code} · {label}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {result.thick_thin_data && (() => {
+                  const code = (result.thick_thin_data || '').toUpperCase();
+                  const label = THICK_THIN_MAP[code] || code;
+                  return (
+                    <div className="risk-card" style={{ borderTop: '4px solid #4f46e5' }}>
+                      <div className="card-title">Data Profile</div>
+                      <div className="card-body-center">
+                        <div className="band-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                          {code} · {label}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {result.cohort && (
-                  <div className="income-card">
-                    <div className="income-label">Customer Cohort</div>
-                    <div className="cohort-value">{result.cohort}</div>
+                  <div className="risk-card" style={{ borderTop: '4px solid #4f46e5' }}>
+                    <div className="card-title">Customer Cohort</div>
+                    <div className="card-body-center">
+                      <div className="band-badge" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                        {result.cohort}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
