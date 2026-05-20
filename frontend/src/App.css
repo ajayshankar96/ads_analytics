@@ -44,8 +44,12 @@ body {
 
 /* ── Tabs ────────────────────────────────────────────────────── */
 .tabs-row {
-  display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+  display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;
 }
+.tab-desc {
+  font-size: 12px; color: #64748b; margin: 0; line-height: 1.5;
+}
+.tab-desc strong { color: #1e3a8a; }
 .tabs {
   display: flex; gap: 4px;
   background: #f1f5f9; padding: 5px; border-radius: 12px;

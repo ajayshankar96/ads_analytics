@@ -873,6 +873,12 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              <p className="tab-desc">
+                {tier === 'ts1'
+                  ? <><strong>TS 1.0 returns one risk band</strong> — A through G. Quick read on a customer's network reliability. Ideal for top-of-funnel filtering.</>
+                  : <><strong>TS 2.0 returns 57 live variables across 5 categories</strong> — engagement, predicted income, 6 default-risk bands, plus full enrichment layer. The phone number is SHA-256 hashed before being sent.</>
+                }
+              </p>
             </div>
 
             <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}>
