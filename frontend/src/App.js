@@ -4,13 +4,17 @@ import './App.css';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function bandInfo(band) {
-  // Decile band format from live API: A1–C9 = low, D–F = medium, G = medium-high, H–J = high
+  // Decile band format (live API): A1 = prob ~1.00 (highest default risk), J10 = prob ~0.01 (lowest)
+  // A–B → HIGH RISK, C–D → MEDIUM-HIGH, E–F–G → MEDIUM, H–I–J → LOW RISK
+  // K1 = exact zero probability → LOW RISK, Z2 = null → neutral
   if (band && /^[A-Za-z]\d/.test(band)) {
     const l = band[0].toUpperCase();
-    if ('ABC'.includes(l)) return { label: 'LOW RISK',    color: '#059669', bg: '#d1fae5', border: '#059669' };
-    if ('DEF'.includes(l)) return { label: 'MEDIUM RISK', color: '#d97706', bg: '#fef3c7', border: '#d97706' };
-    if (l === 'G')         return { label: 'MEDIUM-HIGH', color: '#ea580c', bg: '#ffedd5', border: '#ea580c' };
-    if ('HIJ'.includes(l)) return { label: 'HIGH RISK',   color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
+    if (l === 'K') return { label: 'LOW RISK',    color: '#059669', bg: '#d1fae5', border: '#059669' };
+    if (l === 'Z') return { label: 'NO DATA',     color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
+    if ('AB'.includes(l))  return { label: 'HIGH RISK',    color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
+    if ('CD'.includes(l))  return { label: 'MEDIUM-HIGH',  color: '#ea580c', bg: '#ffedd5', border: '#ea580c' };
+    if ('EFG'.includes(l)) return { label: 'MEDIUM RISK',  color: '#d97706', bg: '#fef3c7', border: '#d97706' };
+    if ('HIJ'.includes(l)) return { label: 'LOW RISK',     color: '#059669', bg: '#d1fae5', border: '#059669' };
     return { label: band, color: '#6b7280', bg: '#f3f4f6', border: '#6b7280' };
   }
   // Score-range band format from CSV: band_1 … band_7
@@ -91,8 +95,21 @@ function parseProb(val) {
   return isNaN(n) ? null : +(n * 100).toFixed(2);
 }
 
-// Weighted average of available default probabilities → Trust Score 0-100
+// Derive overall verdict from decile prob bands (A–J) or raw probabilities.
+// For decile bands: A/B = highest default prob = DECLINE, H/I/J = lowest = APPROVE.
+// For raw prob %: higher % = higher risk = worse verdict.
 function computeTrustScore(data) {
+  // Prefer decile bands (live API) — use worst-band letter
+  const probBands = [data?.dpd30_prob_band, data?.dpd90_prob_band, data?.cd_prob_band]
+    .filter(b => b && /^[A-J]/i.test(b));
+  if (probBands.length) {
+    const letters = probBands.map(b => b[0].toUpperCase()).filter(l => 'ABCDEFGHIJ'.includes(l)).sort();
+    const worst = letters[letters.length - 1];
+    // Map worst letter → 0-100 score where 100 = lowest risk
+    const letterScore = { A:5, B:15, C:25, D:35, E:45, F:55, G:65, H:75, I:85, J:95 };
+    return letterScore[worst] ?? null;
+  }
+  // Fallback: raw probability percentages from CSV
   const slots = [
     { val: parseProb(data?.dpd30_probability), w: 35 },
     { val: parseProb(data?.dpd90_probability), w: 35 },
@@ -105,8 +122,9 @@ function computeTrustScore(data) {
 }
 
 function trustVerdict(score) {
-  if (score >= 65) return { label: 'APPROVE',  color: '#059669', bg: '#d1fae5', border: '#059669' };
-  if (score >= 45) return { label: 'REVIEW',   color: '#d97706', bg: '#fef3c7', border: '#d97706' };
+  // score = 0 (highest risk) → 100 (lowest risk)
+  if (score >= 60) return { label: 'APPROVE',  color: '#059669', bg: '#d1fae5', border: '#059669' };
+  if (score >= 35) return { label: 'REVIEW',   color: '#d97706', bg: '#fef3c7', border: '#d97706' };
   return                  { label: 'DECLINE',  color: '#dc2626', bg: '#fee2e2', border: '#dc2626' };
 }
 
