@@ -797,8 +797,9 @@ export default function App() {
 
           <div className="content-main">
             <div className="content-hero">
-              <h1 className="hero-title">AI-Powered Credit Intelligence</h1>
-              <p className="hero-sub">Instant risk profiling &amp; income prediction for any customer</p>
+              <div className="hero-eyebrow">CREDIT INTELLIGENCE</div>
+              <h1 className="hero-title">Risk-profile any customer in real time</h1>
+              <p className="hero-sub">ML-powered default risk, credit-demand bands, and income predictions — direct from the Razorpay TrustScan API.</p>
             </div>
 
             <div className="tabs-row">
