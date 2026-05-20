@@ -573,8 +573,6 @@ function TrustScan2View({ preselect, onScan }) {
 
       {result && !loading && (
         <div className="results">
-          <TrustScoreCard data={result} />
-
           <div className="section-label">CREDIT RISK PROFILE</div>
           <div className="cards-grid">
             {result.dpd30_band && <RiskCard title="30-Day Default Risk" band={result.dpd30_band} />}
@@ -582,14 +580,22 @@ function TrustScan2View({ preselect, onScan }) {
             {result.cd_band && <RiskCard title="Customer Durable Loans Score" band={result.cd_band} />}
           </div>
 
-          {result.predicted_income_bucket && (
+          {(result.predicted_income_bucket || result.thick_thin_data) && (
             <>
               <div className="section-label" style={{ marginTop: 28 }}>INCOME PROFILE</div>
               <div className="income-grid">
-                <div className="income-card">
-                  <div className="income-label">Predicted Income Band</div>
-                  <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.predicted_income_bucket}</div>
-                </div>
+                {result.predicted_income_bucket && (
+                  <div className="income-card">
+                    <div className="income-label">Predicted Income Band</div>
+                    <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.predicted_income_bucket}</div>
+                  </div>
+                )}
+                {result.thick_thin_data && (
+                  <div className="income-card">
+                    <div className="income-label">Data Profile</div>
+                    <div className="income-bucket" style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{result.thick_thin_data}</div>
+                  </div>
+                )}
                 {result.cohort && (
                   <div className="income-card">
                     <div className="income-label">Customer Cohort</div>
