@@ -873,9 +873,13 @@ export default function App() {
 
             <div className="tabs-row">
               <div className="tabs">
-                {[{ id: 'ts1', label: 'Trust Scan 1.0' }, { id: 'ts2', label: 'Trust Scan 2.0' }].map(t => (
+                {[
+                  { id: 'ts1', label: 'Trust Scan 1.0', sub: 'Risk Band' },
+                  { id: 'ts2', label: 'Trust Scan 2.0', sub: 'Full Profile' },
+                ].map(t => (
                   <button key={t.id} className={`tab ${tier === t.id ? 'active' : ''}`} onClick={() => setTier(t.id)}>
-                    {t.label}
+                    <span className="tab-dot" />
+                    {t.label}&nbsp;·&nbsp;{t.sub}
                   </button>
                 ))}
               </div>
