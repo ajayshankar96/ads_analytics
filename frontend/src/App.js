@@ -800,8 +800,7 @@ function useScanState() {
 }
 
 // ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
-function TrustScan1View() {
-  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState();
+function TrustScan1View({ result, loading, error, notFound, phone, setPhone, handleScan }) {
   const band = result?.ts1_band?.trim();
 
   return (
@@ -863,8 +862,7 @@ function ShaStrip({ phone }) {
 }
 
 // ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
-function TrustScan2View() {
-  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState();
+function TrustScan2View({ result, loading, error, notFound, phone, setPhone, handleScan }) {
 
   return (
     <>
@@ -963,6 +961,7 @@ function TrustScan2View() {
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tier, setTier] = useState('ts1');
+  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState();
 
   return (
     <div className="app">}
@@ -1016,10 +1015,10 @@ export default function App() {
             </div>
 
             <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}>
-              <TrustScan1View />
+              <TrustScan1View result={result} loading={loading} error={error} notFound={notFound} phone={phone} setPhone={setPhone} handleScan={handleScan} />
             </div>
             <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}>
-              <TrustScan2View />
+              <TrustScan2View result={result} loading={loading} error={error} notFound={notFound} phone={phone} setPhone={setPhone} handleScan={handleScan} />
             </div>
           </div>
         </div>
