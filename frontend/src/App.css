@@ -294,8 +294,35 @@ body {
 .risk-card {
   background: white; border-radius: 12px; padding: 22px;
   box-shadow: 0 2px 12px rgba(0,0,0,.06); transition: transform .18s;
+  position: relative; overflow: visible;
 }
 .risk-card:hover { transform: translateY(-2px); }
+.risk-card:hover .card-tooltip { opacity: 1; visibility: visible; pointer-events: auto; }
+
+/* ── Card hover tooltip ───────────────────────────────────────── */
+.card-tooltip {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  background: #1e293b; color: #f1f5f9;
+  border-radius: 10px; padding: 12px 14px;
+  width: 230px; z-index: 100;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .18s, visibility .18s;
+  box-shadow: 0 8px 24px rgba(0,0,0,.22);
+}
+.card-tooltip::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #1e293b;
+}
+.card-tooltip-tag {
+  font-size: 11px; font-weight: 800; letter-spacing: .8px;
+  color: #a5b4fc; text-transform: uppercase; margin-bottom: 4px;
+}
+.card-tooltip-sub {
+  font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: 500;
+}
+.card-tooltip-meaning {
+  font-size: 12px; color: #e2e8f0; line-height: 1.55;
+}
 .card-title {
   font-size: 11px; font-weight: 700; color: #374151;
   text-transform: uppercase; letter-spacing: .3px; margin-bottom: 12px;

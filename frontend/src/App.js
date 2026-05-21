@@ -329,21 +329,21 @@ function IncomeBandSlider({ band }) {
 }
 
 function ThickThinSlider({ band }) {
-  const letter = band?.[0]?.toUpperCase();
-  if (!letter || letter === 'Z') return null;
+  const code = band?.toUpperCase();
   const segments = [
-    { l: 'A', active: '#10b981', inactive: '#a7f3d0', label: 'Thick' },
-    { l: 'B', active: '#f59e0b', inactive: '#fde68a', label: 'Thin' },
+    { key: 'A1', active: '#10b981', inactive: '#a7f3d0' },
+    { key: 'B1', active: '#f59e0b', inactive: '#fde68a' },
+    { key: 'Z2', active: '#9ca3af', inactive: '#e5e7eb' },
   ];
   return (
     <div className="band-slider">
       <div className="band-slider-track">
-        {segments.map((s, i) => {
-          const isActive = s.l === letter;
+        {segments.map((s) => {
+          const isActive = s.key === code;
           return (
-            <div key={s.l} className="band-seg-wrap">
+            <div key={s.key} className="band-seg-wrap">
               <div className="band-seg-pip-row">
-                {isActive && <span className="band-seg-pip-label">{band.toUpperCase()}</span>}
+                {isActive && <span className="band-seg-pip-label">{code}</span>}
               </div>
               <div className="band-seg" style={{ background: isActive ? s.active : s.inactive, opacity: isActive ? 1 : 0.55 }} />
             </div>
@@ -351,9 +351,55 @@ function ThickThinSlider({ band }) {
         })}
       </div>
       <div className="band-slider-ends">
-        <span>← THICK DATA</span>
-        <span>THIN DATA →</span>
+        <span>← THICK</span>
+        <span>NULL →</span>
       </div>
+    </div>
+  );
+}
+
+// ── Tooltip lookup tables ──────────────────────────────────────────────────────
+
+const CREDIT_BAND_DESC = {
+  A: { pct: '91st–100th percentile', meaning: 'Top decile of default probability. Highest default risk in the population.' },
+  B: { pct: '81st–90th percentile',  meaning: 'Above-average likelihood of default. Strong risk signal.' },
+  C: { pct: '71st–80th percentile',  meaning: 'Above-median default risk.' },
+  D: { pct: '61st–70th percentile',  meaning: 'Slightly above median default risk.' },
+  E: { pct: '51st–60th percentile',  meaning: 'Just above the midpoint — moderate default risk.' },
+  F: { pct: '41st–50th percentile',  meaning: 'Just below midpoint — slightly below-median default risk.' },
+  G: { pct: '31st–40th percentile',  meaning: 'Slightly below median default risk.' },
+  H: { pct: '21st–30th percentile',  meaning: 'Below median — lower-than-average default risk.' },
+  I: { pct: '11th–20th percentile',  meaning: 'Weak / below-average default probability. Low default risk.' },
+  J: { pct: '1st–10th percentile',   meaning: 'Bottom decile of default probability. Lowest default risk (non-zero).' },
+  K: { pct: 'Raw value = 0.00',      meaning: 'Explicit zero probability of default.' },
+  Z: { pct: 'Null',                  meaning: 'Variable could not be computed — no transactions or history available.' },
+};
+
+const INCOME_BAND_DESC = {
+  A1: { range: '₹0 – 3L',   meaning: 'Below per-capita income; high collection-risk segment for unsecured products.' },
+  B1: { range: '₹3 – 4L',   meaning: 'Entry-level salaried / informal sector.' },
+  C1: { range: '₹4 – 6L',   meaning: 'Mid-income, typical underwriting target.' },
+  D1: { range: '₹6 – 10L',  meaning: 'Comfortably eligible for prime products.' },
+  E1: { range: '₹10 – 15L', meaning: 'Affluent.' },
+  F1: { range: '₹15 – 25L', meaning: 'High earner.' },
+  G1: { range: '₹25L+',     meaning: 'Top-of-pyramid earner.' },
+  Z2: { range: 'Null',       meaning: 'Insufficient signal for the model to predict.' },
+};
+
+const THICK_THIN_DESC = {
+  A1: { cohort: 'More than 3 annual transactions', meaning: '"Thick" Razorpay user with substantial transaction history. Strongest enrichment confidence.' },
+  B1: { cohort: '≤ 3 annual transactions',         meaning: '"Thin" Razorpay user with limited history; downstream variables are computable but with low confidence.' },
+  Z2: { cohort: 'No Razorpay history',             meaning: 'New-to-Razorpay user. Most other variables will also return Z2 (null).' },
+};
+
+// ── Card tooltip ───────────────────────────────────────────────────────────────
+
+function CardTooltip({ tag, sub, meaning }) {
+  return (
+    <div className="card-tooltip">
+      <div className="card-tooltip-tag">{tag}</div>
+      {sub && <div className="card-tooltip-sub">{sub}</div>}
+      <div className="card-tooltip-meaning">{meaning}</div>
     </div>
   );
 }
@@ -364,6 +410,8 @@ function RiskCard({ title, band }) {
   const info = bandInfo(band);
   const isDecile = band && /^[A-Za-z]\d/.test(band);
   const bandDisplay = isDecile ? band.toUpperCase() : `Band ${band?.replace('band_', '') ?? ''}`;
+  const letter = band?.[0]?.toUpperCase();
+  const desc = CREDIT_BAND_DESC[letter];
   return (
     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
       <div className="card-title">{title}</div>
@@ -373,6 +421,7 @@ function RiskCard({ title, band }) {
         </div>
       </div>
       <CreditBandSlider band={band} />
+      {desc && <CardTooltip tag={bandDisplay} sub={desc.pct} meaning={desc.meaning} />}
     </div>
   );
 }
@@ -892,6 +941,7 @@ function TrustScan2View({ preselect, onScan }) {
                   const code = (result.predicted_income_bucket || '').toUpperCase();
                   const label = INCOME_BUCKET_MAP[code] || code;
                   const info = incomeBandInfo(code);
+                  const incomeDesc = INCOME_BAND_DESC[code];
                   return (
                     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Predicted Income Band</div>
@@ -902,6 +952,7 @@ function TrustScan2View({ preselect, onScan }) {
                         <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
                       <IncomeBandSlider band={code} />
+                      {incomeDesc && <CardTooltip tag={code} sub={incomeDesc.range} meaning={incomeDesc.meaning} />}
                     </div>
                   );
                 })()}
@@ -909,6 +960,7 @@ function TrustScan2View({ preselect, onScan }) {
                   const code = (result.thick_thin_data || '').toUpperCase();
                   const label = THICK_THIN_MAP[code] || code;
                   const info = thickThinBandInfo(code);
+                  const ttDesc = THICK_THIN_DESC[code];
                   return (
                     <div className="risk-card" style={{ borderTop: `4px solid ${info.border}` }}>
                       <div className="card-title">Data Profile</div>
@@ -919,6 +971,7 @@ function TrustScan2View({ preselect, onScan }) {
                         <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
                       <ThickThinSlider band={code} />
+                      {ttDesc && <CardTooltip tag={code} sub={ttDesc.cohort} meaning={ttDesc.meaning} />}
                     </div>
                   );
                 })()}
