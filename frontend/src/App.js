@@ -245,6 +245,30 @@ function thickThinBandInfo(code) {
   return { color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
 }
 
+// ── Enrichment band color (decile/Min-Max scale: A=top percentile, neutral palette) ──
+// Unlike credit risk, enrichment variables have mixed directions so we avoid red/green
+// and use a neutral indigo-to-slate gradient instead.
+function enrichBandInfo(band) {
+  if (!band) return { color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb' };
+  const l = band[0]?.toUpperCase();
+  if (l === 'Z') return { color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' };  // null
+  if (l === 'K') return { color: '#6b7280', bg: '#f3f4f6', border: '#d1d5db' };  // zero
+  // A–J: uniform indigo, varying lightness so it's clearly informational, not risk
+  const palette = {
+    A: { color: '#3730a3', bg: '#eef2ff', border: '#a5b4fc' },
+    B: { color: '#4338ca', bg: '#eef2ff', border: '#a5b4fc' },
+    C: { color: '#4f46e5', bg: '#eef2ff', border: '#a5b4fc' },
+    D: { color: '#6366f1', bg: '#f0f4ff', border: '#c7d2fe' },
+    E: { color: '#6366f1', bg: '#f0f4ff', border: '#c7d2fe' },
+    F: { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+    G: { color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+    H: { color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
+    I: { color: '#475569', bg: '#f8fafc', border: '#e2e8f0' },
+    J: { color: '#64748b', bg: '#f8fafc', border: '#e2e8f0' },
+  };
+  return palette[l] || { color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb' };
+}
+
 // ── Band sliders ──────────────────────────────────────────────────────────────
 
 const CREDIT_LETTERS = ['A','B','C','D','E','F','G','H','I','J'];
@@ -598,7 +622,7 @@ function LiveEnrichmentSection({ liveAttrs }) {
                   {cat.vars.map(v => {
                     const val = liveAttrs[v.name] || '';
                     const missing = !val;
-                    const bi = val ? bandInfo(val) : null;
+                    const enrichBandStyle = val ? enrichBandInfo(val) : null;
                     return (
                       <div key={v.name} className={`enrich-card ${missing ? 'enrich-card-missing' : ''}`}>
                         <div className="enrich-card-top">
@@ -610,7 +634,7 @@ function LiveEnrichmentSection({ liveAttrs }) {
                         </div>
                         <div
                           className="enrich-band"
-                          style={bi ? { background: bi.bg, color: bi.color, border: `1px solid ${bi.border}` } : {}}
+                          style={enrichBandStyle ? { background: enrichBandStyle.bg, color: enrichBandStyle.color, border: `1px solid ${enrichBandStyle.border}` } : {}}
                         >
                           {val || '—'}
                         </div>
