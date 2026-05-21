@@ -668,57 +668,6 @@ function EmptyState() {
   );
 }
 
-// ── Sample phone sidebar ──────────────────────────────────────────────────────
-const SAMPLE_PHONES = [
-  {
-    band: 'A', label: 'Band A — Elite',
-    badgeColor: '#166534', badgeBg: '#dcfce7',
-    phones: ['9355518700', '9964129431', '9415341740', '8376993489', '9004414413'],
-  },
-  {
-    band: 'C', label: 'Band C — Power',
-    badgeColor: '#1e40af', badgeBg: '#dbeafe',
-    phones: ['9936410230', '9949009502', '8853256537', '7676748598', '9835007089'],
-  },
-  {
-    band: 'F', label: 'Band F — Risky',
-    badgeColor: '#9d174d', badgeBg: '#fce7f3',
-    phones: ['9012135298', '8975529064', '8432870993', '8318252968', '9325513903'],
-  },
-];
-
-function SampleSidebar({ selected, onSelect }) {
-  return (
-    <aside className="sample-sidebar">
-      <div className="sample-sidebar-title">Sample Numbers</div>
-      {SAMPLE_PHONES.map(section => (
-        <div key={section.band} className="sample-section">
-          <div className="sample-section-header">
-            <span className="sample-band-badge" style={{ background: section.badgeBg, color: section.badgeColor }}>
-              {section.band}
-            </span>
-            <span className="sample-section-label" style={{ color: section.badgeColor }}>
-              {section.label}
-            </span>
-          </div>
-          <ul className="sample-phone-list">
-            {section.phones.map(ph => (
-              <li key={ph}>
-                <button
-                  className={`sample-phone-btn ${selected === ph ? 'sample-phone-active' : ''}`}
-                  style={selected === ph ? { background: section.badgeBg, color: section.badgeColor, borderColor: section.badgeColor } : {}}
-                  onClick={() => onSelect(ph)}
-                >
-                  {ph.slice(0, 5)} {ph.slice(5)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </aside>
-  );
-}
 
 // ── Shared phone input form (controlled) ──────────────────────────────────────
 function PhoneForm({ phone, setPhone, onSubmit, loading }) {
@@ -801,7 +750,7 @@ function Ts1BandGrid({ band: customerBand, allBands }) {
 }
 
 // ── Shared scan view logic ────────────────────────────────────────────────────
-function useScanState(preselect) {
+function useScanState() {
   const [result,   setResult]   = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState(null);
@@ -823,26 +772,17 @@ function useScanState(preselect) {
     finally { setLoading(false); }
   }
 
-  // Fire scan automatically when sidebar selects a number
-  useEffect(() => {
-    if (preselect?.phone) {
-      setPhone(preselect.phone);
-      handleScan(preselect.phone);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preselect]);
-
-  return { result, loading, error, notFound, phone, setPhone };
+  return { result, loading, error, notFound, phone, setPhone, handleScan };
 }
 
 // ── Trust Scan 1.0 view ───────────────────────────────────────────────────────
-function TrustScan1View({ preselect, onScan }) {
-  const { result, loading, error, notFound, phone, setPhone } = useScanState(preselect);
+function TrustScan1View() {
+  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState();
   const band = result?.ts1_band?.trim();
 
   return (
     <>
-      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={onScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
       <ScanSteps active={loading} />
 
       {notFound && !loading && (
@@ -899,12 +839,12 @@ function ShaStrip({ phone }) {
 }
 
 // ── Trust Scan 2.0 view ───────────────────────────────────────────────────────
-function TrustScan2View({ preselect, onScan }) {
-  const { result, loading, error, notFound, phone, setPhone } = useScanState(preselect);
+function TrustScan2View() {
+  const { result, loading, error, notFound, phone, setPhone, handleScan } = useScanState();
 
   return (
     <>
-      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={onScan} loading={loading} />
+      <PhoneForm phone={phone} setPhone={setPhone} onSubmit={handleScan} loading={loading} />
       <ShaStrip phone={phone} />
       <ScanSteps active={loading} />
 
@@ -998,12 +938,7 @@ function TrustScan2View({ preselect, onScan }) {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tier,     setTier]   = useState('ts1');
-  const [selected, setSelected] = useState(null);
-
-  function handleScan(ph) {
-    setSelected({ phone: ph, ts: Date.now() });
-  }
+  const [tier, setTier] = useState('ts1');
 
   return (
     <div className="app">}
@@ -1023,8 +958,6 @@ export default function App() {
 
       <main className="main">
         <div className="content-layout">
-          <SampleSidebar selected={selected?.phone} onSelect={handleScan} />
-
           <div className="content-main">
             <div className="content-hero">
               <div className="hero-eyebrow-row">
@@ -1059,10 +992,10 @@ export default function App() {
             </div>
 
             <div style={{ display: tier === 'ts1' ? 'block' : 'none' }}>
-              <TrustScan1View preselect={selected} onScan={handleScan} />
+              <TrustScan1View />
             </div>
             <div style={{ display: tier === 'ts2' ? 'block' : 'none' }}>
-              <TrustScan2View preselect={selected} onScan={handleScan} />
+              <TrustScan2View />
             </div>
           </div>
         </div>

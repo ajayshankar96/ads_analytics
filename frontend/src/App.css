@@ -469,54 +469,8 @@ body {
 .prob-band-value { font-size: 13px; font-weight: 700; }
 
 /* ── Two-column layout ───────────────────────────────────────── */
-.content-layout {
-  display: flex; align-items: flex-start; gap: 24px;
-}
-.content-main { flex: 1; min-width: 0; }
-
-/* ── Sample sidebar ──────────────────────────────────────────── */
-.sample-sidebar {
-  flex-shrink: 0; width: 210px;
-  background: white; border-radius: 16px;
-  box-shadow: 0 2px 16px rgba(30,58,138,.08);
-  border: 1px solid #e8edf5;
-  padding: 16px 14px; position: sticky; top: 20px;
-}
-.sample-sidebar-title {
-  font-size: 10px; font-weight: 700; letter-spacing: 1.8px;
-  color: #94a3b8; text-transform: uppercase; margin-bottom: 14px;
-  padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;
-}
-.sample-section { margin-bottom: 14px; }
-.sample-section:last-child { margin-bottom: 0; }
-.sample-section-header {
-  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
-}
-.sample-band-badge {
-  width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800;
-}
-.sample-section-label {
-  font-size: 11px; font-weight: 700;
-}
-.sample-phone-list {
-  list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px;
-}
-.sample-phone-btn {
-  width: 100%; text-align: left; background: transparent;
-  border: 1.5px solid transparent; border-radius: 7px;
-  padding: 5px 9px; font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #475569; cursor: pointer; transition: all .15s; letter-spacing: .3px;
-}
-.sample-phone-btn:hover {
-  background: #f0f4ff; border-color: #c7d2fe; color: #1e40af;
-}
-.sample-phone-active { font-weight: 700; }
-@media (max-width: 700px) {
-  .content-layout { flex-direction: column; }
-  .sample-sidebar { width: 100%; position: static; }
-}
+.content-layout { width: 100%; }
+.content-main { width: 100%; }
 
 /* ── Empty state ─────────────────────────────────────────────── */
 .empty-state {
