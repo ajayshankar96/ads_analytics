@@ -245,9 +245,123 @@ function thickThinBandInfo(code) {
   return { color: '#6b7280', bg: '#f3f4f6', border: '#9ca3af' };
 }
 
+// ── Band sliders ──────────────────────────────────────────────────────────────
+
+const CREDIT_LETTERS = ['A','B','C','D','E','F','G','H','I','J'];
+function creditSegColor(l) {
+  if ('AB'.includes(l))  return { active: '#ef4444', inactive: '#fecaca' };
+  if ('CD'.includes(l))  return { active: '#f97316', inactive: '#fed7aa' };
+  if ('EFG'.includes(l)) return { active: '#f59e0b', inactive: '#fde68a' };
+  return                        { active: '#10b981', inactive: '#a7f3d0' };
+}
+
+function CreditBandSlider({ band }) {
+  const letter = band?.[0]?.toUpperCase();
+  if (!letter || letter === 'Z' || letter === 'K') return null;
+  const activeIdx = CREDIT_LETTERS.indexOf(letter);
+  if (activeIdx === -1) return null;
+  return (
+    <div className="band-slider">
+      <div className="band-slider-track">
+        {CREDIT_LETTERS.map((l, i) => {
+          const c = creditSegColor(l);
+          const isActive = i === activeIdx;
+          return (
+            <div key={l} className="band-seg-wrap">
+              <div className={`band-seg-pip-row`}>
+                {isActive && <span className="band-seg-pip-label">{band.toUpperCase()}</span>}
+              </div>
+              <div className="band-seg" style={{ background: isActive ? c.active : c.inactive, opacity: isActive ? 1 : 0.55 }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="band-slider-ends">
+        <span>← HIGH RISK</span>
+        <span>LOW RISK →</span>
+      </div>
+    </div>
+  );
+}
+
+const INCOME_LETTERS = ['A','B','C','D','E','F','G'];
+function incomeBandColor(l) {
+  // A=lowest income (grey-blue) → G=highest (indigo)
+  const palette = {
+    A: { active: '#94a3b8', inactive: '#e2e8f0' },
+    B: { active: '#64748b', inactive: '#e2e8f0' },
+    C: { active: '#6366f1', inactive: '#e0e7ff' },
+    D: { active: '#4f46e5', inactive: '#e0e7ff' },
+    E: { active: '#4338ca', inactive: '#e0e7ff' },
+    F: { active: '#3730a3', inactive: '#e0e7ff' },
+    G: { active: '#1e3a8a', inactive: '#dbeafe' },
+  };
+  return palette[l] || { active: '#6b7280', inactive: '#f3f4f6' };
+}
+
+function IncomeBandSlider({ band }) {
+  const letter = band?.[0]?.toUpperCase();
+  if (!letter || letter === 'Z') return null;
+  const activeIdx = INCOME_LETTERS.indexOf(letter);
+  if (activeIdx === -1) return null;
+  return (
+    <div className="band-slider">
+      <div className="band-slider-track">
+        {INCOME_LETTERS.map((l, i) => {
+          const c = incomeBandColor(l);
+          const isActive = i === activeIdx;
+          return (
+            <div key={l} className="band-seg-wrap">
+              <div className="band-seg-pip-row">
+                {isActive && <span className="band-seg-pip-label">{band.toUpperCase()}</span>}
+              </div>
+              <div className="band-seg" style={{ background: isActive ? c.active : c.inactive, opacity: isActive ? 1 : 0.6 }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="band-slider-ends">
+        <span>← LOWER</span>
+        <span>HIGHER →</span>
+      </div>
+    </div>
+  );
+}
+
+function ThickThinSlider({ band }) {
+  const letter = band?.[0]?.toUpperCase();
+  if (!letter || letter === 'Z') return null;
+  const segments = [
+    { l: 'A', active: '#10b981', inactive: '#a7f3d0', label: 'Thick' },
+    { l: 'B', active: '#f59e0b', inactive: '#fde68a', label: 'Thin' },
+  ];
+  return (
+    <div className="band-slider">
+      <div className="band-slider-track">
+        {segments.map((s, i) => {
+          const isActive = s.l === letter;
+          return (
+            <div key={s.l} className="band-seg-wrap">
+              <div className="band-seg-pip-row">
+                {isActive && <span className="band-seg-pip-label">{band.toUpperCase()}</span>}
+              </div>
+              <div className="band-seg" style={{ background: isActive ? s.active : s.inactive, opacity: isActive ? 1 : 0.55 }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="band-slider-ends">
+        <span>← THICK DATA</span>
+        <span>THIN DATA →</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Risk card ──────────────────────────────────────────────────────────────────
+
 function RiskCard({ title, band }) {
   const info = bandInfo(band);
-  // Decile format (A1, B2…): show code directly. Score-range (band_N): show "Band N"
   const isDecile = band && /^[A-Za-z]\d/.test(band);
   const bandDisplay = isDecile ? band.toUpperCase() : `Band ${band?.replace('band_', '') ?? ''}`;
   return (
@@ -257,10 +371,8 @@ function RiskCard({ title, band }) {
         <div className="band-badge" style={{ background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>
           {bandDisplay} · {info.label}
         </div>
-        <div className="risk-band-icon" style={{ color: info.color }}>
-          {info.label === 'LOW RISK' ? '🟢' : info.label === 'MEDIUM RISK' ? '🟡' : info.label === 'MEDIUM-HIGH' ? '🟠' : '🔴'}
-        </div>
       </div>
+      <CreditBandSlider band={band} />
     </div>
   );
 }
@@ -789,6 +901,7 @@ function TrustScan2View({ preselect, onScan }) {
                         </div>
                         <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
+                      <IncomeBandSlider band={code} />
                     </div>
                   );
                 })()}
@@ -805,6 +918,7 @@ function TrustScan2View({ preselect, onScan }) {
                         </div>
                         <div style={{ fontSize: 12, color: info.color, marginTop: 8, fontWeight: 500 }}>{label}</div>
                       </div>
+                      <ThickThinSlider band={code} />
                     </div>
                   );
                 })()}

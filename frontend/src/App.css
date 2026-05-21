@@ -310,7 +310,37 @@ body {
   font-size: 12px; font-weight: 700; margin-bottom: 10px;
 }
 
-.risk-band-icon { font-size: 32px; margin-top: 6px; }
+/* ── Band slider ─────────────────────────────────────────────── */
+.band-slider {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+.band-slider-track {
+  display: flex; gap: 3px; align-items: flex-end;
+}
+.band-seg-wrap {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.band-seg-pip-row {
+  height: 18px; display: flex; align-items: flex-end; justify-content: center;
+}
+.band-seg-pip-label {
+  font-size: 10px; font-weight: 800; color: #1e3a8a;
+  background: white; border: 1.5px solid #c7d2fe;
+  border-radius: 4px; padding: 1px 5px; line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0,0,0,.10);
+}
+.band-seg {
+  width: 100%; height: 8px; border-radius: 3px;
+  transition: opacity .15s;
+}
+.band-slider-ends {
+  display: flex; justify-content: space-between;
+  font-size: 9px; font-weight: 600; color: #9ca3af;
+  letter-spacing: .4px; margin-top: 5px;
+  text-transform: uppercase;
+}
 
 /* ── Income grid ─────────────────────────────────────────────── */
 .income-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
