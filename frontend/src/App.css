@@ -15,7 +15,7 @@ body {
   box-shadow: 0 4px 24px rgba(30,58,138,.45);
 }
 .header-inner {
-  max-width: 1280px; margin: 0 auto;
+  max-width: 960px; margin: 0 auto;
   display: flex; justify-content: space-between; align-items: center;
 }
 .logo { display: flex; align-items: center; gap: 10px; }
@@ -29,7 +29,7 @@ body {
 
 /* ── Main ────────────────────────────────────────────────────── */
 .main {
-  flex: 1; max-width: 1280px; margin: 0 auto;
+  flex: 1; max-width: 960px; margin: 0 auto;
   padding: 16px 32px 24px; width: 100%;
 }
 
