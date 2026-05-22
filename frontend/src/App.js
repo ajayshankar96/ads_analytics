@@ -987,7 +987,7 @@ export default function App() {
                 <div className="hero-eyebrow">CREDIT INTELLIGENCE</div>
                 <div className="live-badge">
                   <span className="live-dot" />
-                  Real Time Live Data
+                  Live Data from API
                 </div>
               </div>
               <h1 className="hero-title">Risk-profile any customer in real time</h1>
