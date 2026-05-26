@@ -1047,10 +1047,6 @@ function renderVcard(varName, scaling, band, desc){
  * REPORT RENDERER
  * ============================================================ */
 function renderReport(ts1, ts2){
-  document.getElementById("r-cust").textContent = "+91 " + state.phone;
-  document.getElementById("r-hash").textContent = state.hash.slice(0,12) + "…" + state.hash.slice(-6);
-  const asOf = (ts2.ok && ts2.body && ts2.body.as_of) || (ts1.ok && ts1.body && ts1.body.as_of) || new Date().toISOString().slice(0,10);
-  document.getElementById("r-asof").textContent = "Data as of " + asOf;
 
   renderBandSection(ts1);
   renderHeadlineSection(ts2);
