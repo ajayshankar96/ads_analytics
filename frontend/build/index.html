@@ -831,7 +831,9 @@ function animateLoadingSteps(){
   const s = ["step1","step2","step3"].map(id=>document.getElementById(id));
   s.forEach(x=>x.classList.remove("on","done"));
   s[0].classList.add("on");
-  setTimeout(()=>{s[0].classList.remove("on");s[0].classList.add("done");s[1].classList.add("on");},400);
+  setTimeout(()=>{ s[0].classList.remove("on"); s[0].classList.add("done"); s[1].classList.add("on"); }, 1200);
+  setTimeout(()=>{ s[1].classList.remove("on"); s[1].classList.add("done"); s[2].classList.add("on"); }, 2600);
+  setTimeout(()=>{ s[2].classList.remove("on"); s[2].classList.add("done"); }, 4000);
 }
 
 function setPhone(p){
@@ -863,7 +865,10 @@ async function runScan(){
   showLoading();
   try {
     if (!state.hash) await updateHash();
-    const [ts1Settled, ts2Settled] = await Promise.allSettled([ runTs1(), runTs2() ]);
+    const [ts1Settled, ts2Settled] = await Promise.allSettled([
+      runTs1(), runTs2(),
+      new Promise(r => setTimeout(r, 4200)), // minimum display time — let all steps tick
+    ]);
     const ts1 = ts1Settled.status === "fulfilled" ? ts1Settled.value : { ok: false, errInfo: { title:"Network error", body: String(ts1Settled.reason) } };
     const ts2 = ts2Settled.status === "fulfilled" ? ts2Settled.value : { ok: false, errInfo: { title:"Network error", body: String(ts2Settled.reason) } };
     if (!ts1.ok && !ts2.ok) {
