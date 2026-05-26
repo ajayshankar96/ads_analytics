@@ -961,13 +961,89 @@ function describeBandForVar(varName, band){
   return { label: m.qual, desc: m.pct };
 }
 
+/* ============================================================
+ * HUMAN-READABLE VARIABLE LABELS
+ * ============================================================ */
+const VAR_LABELS = {
+  // Risk model
+  dpd_30_prob_band:                        "30-Day Default Risk",
+  dpd_90_prob_band:                        "90-Day Default Risk",
+  cd_dpd_30_prob_band:                     "Customer Durable Loans Score",
+  // Payment volume
+  thick_thin_data:                         "Data Profile",
+  yearly_transaction_volume:               "Yearly Transaction Volume",
+  yoy_growth_percentage:                   "YoY Spend Growth",
+  // SR ratio
+  error_ratio_card:                        "Card Error Ratio",
+  error_ratio_last_12_weeks_emandate:      "eMandate Error Ratio (12 Weeks)",
+  error_ratio_last_24_weeks_emandate:      "eMandate Error Ratio (24 Weeks)",
+  failed_txn_amount_sum:                   "Failed Transaction Amount",
+  failed_txn_count:                        "Failed Transaction Count",
+  repayment_error_ratio_l12w:              "Repayment Error Ratio (12 Weeks)",
+  risky_fails_to_success_trxn_ratio_l12m:  "Risky Fail Ratio (12 Months)",
+  risky_fails_to_success_trxn_ratio_l6m:   "Risky Fail Ratio (6 Months)",
+  success_rate_last_24_weeks_card:         "Card Success Rate (24 Weeks)",
+  success_rate_last_24_weeks_emandate:     "eMandate Success Rate (24 Weeks)",
+  weighted_error_ratio:                    "Weighted Error Ratio",
+  weighted_error_ratio_last_12_weeks:      "Weighted Error Ratio (12 Weeks)",
+  weighted_error_ratio_last_24_weeks:      "Weighted Error Ratio (24 Weeks)",
+  weighted_success_rate:                   "Weighted Success Rate",
+  // Spend propensity
+  avg_amount:                              "Average Transaction Amount",
+  has_failed_high_value_txn:               "High-Value Failed Transaction",
+  l12m_aov_astrology:                      "Astrology AOV (12 Months)",
+  l12m_aov_real_estate:                    "Real Estate AOV (12 Months)",
+  l12m_spend_astrology:                    "Astrology Spend (12 Months)",
+  l12m_spend_micro_drama:                  "Micro-Drama Spend (12 Months)",
+  l3m_aov_astrology:                       "Astrology AOV (3 Months)",
+  l3m_spend_astrology:                     "Astrology Spend (3 Months)",
+  l3m_spend_micro_drama:                   "Micro-Drama Spend (3 Months)",
+  log_aov_gold:                            "Gold Purchase AOV",
+  log_aov_last_12_weeks_ecommerce:         "E-commerce AOV (12 Weeks)",
+  log_aov_last_12_weeks_services:          "Services AOV (12 Weeks)",
+  log_aov_last_12_weeks_utilities:         "Utilities AOV (12 Weeks)",
+  log_aov_last_24_weeks_ecommerce:         "E-commerce AOV (24 Weeks)",
+  log_aov_last_24_weeks_utilities:         "Utilities AOV (24 Weeks)",
+  log_aov_utilities:                       "Utilities AOV",
+  luxury_category_spend:                   "Luxury Category Spend",
+  ott_trxns_last_1_year:                   "OTT Subscriptions (1 Year)",
+  perc_non_discretionary_spends:           "Non-Discretionary Spend Share",
+  predicted_income_bucket:                 "Predicted Income Band",
+  spend_last_12_weeks_lending:             "Lending Spend (12 Weeks)",
+  spend_last_1_year_fashion_and_lifestyle: "Fashion & Lifestyle Spend (1 Year)",
+  spend_last_1_year_government:            "Government Payments (1 Year)",
+  spend_last_1_year_lending:               "Lending Spend (1 Year)",
+  spend_last_1_year_tours_and_travel:      "Tours & Travel Spend (1 Year)",
+  spend_last_24_weeks_lending:             "Lending Spend (24 Weeks)",
+  total_spend_last_12_weeks:               "Total Spend (12 Weeks)",
+  upi_payment_amount:                      "UPI Payment Amount",
+  vintage_education:                       "Education Vintage",
+  vintage_investments:                     "Investments Vintage",
+  vintage_services:                        "Services Vintage",
+  vintage_utilities:                       "Utilities Vintage",
+  weighted_log_aov:                        "Weighted Average AOV",
+  // Demographic
+  max_vintage:                             "Max Payment Vintage",
+  unique_city_transacted:                  "Unique Cities Transacted",
+  unique_state_transacted:                 "Unique States Transacted",
+  // Credit propensity
+  count_issuer_cc:                         "Credit Card Issuers Used",
+  loan_stacking_amount_l3m:                "Loan Stacking Amount (3 Months)",
+  loan_stacking_amount_l6m:                "Loan Stacking Amount (6 Months)",
+  unique_lenders_last_1_years:             "Unique Lenders (1 Year)",
+};
+
 function renderVcard(varName, scaling, band, desc){
   if (isHiddenBand(band)) return ""; // ← hide Z2 / missing
   const colors = getBandColor(band, varName) || { bg:"var(--vc-neutral-bg)", fg:"var(--vc-neutral-fg)" };
   const meaning = describeBandForVar(varName, band);
+  const label = VAR_LABELS[varName] || varName;
   return `<div class="vcard">
     <div class="vcard-h">
-      <div class="vcard-name">${varName}</div>
+      <div class="vcard-name">
+        <div style="font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-900);margin-bottom:2px">${label}</div>
+        <div style="font-size:10.5px;color:var(--ink-300);font-weight:400;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.01em">${varName}</div>
+      </div>
       <span class="vcard-scale">${scaling}</span>
     </div>
     <div class="vcard-band" style="background:${colors.bg};color:${colors.fg}">${band}</div>
