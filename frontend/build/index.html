@@ -1106,7 +1106,7 @@ function renderEnrichmentSection(ts2){
     }).filter(Boolean);
     if (cards.length === 0) return ""; // hide empty categories
     totalRendered += cards.length;
-    return `<div class="cat-row open" id="livecat-${ci}">
+    return `<div class="cat-row" id="livecat-${ci}">
       <div class="cat-head" onclick="toggleCat('livecat-${ci}')">
         <div class="icon">${cat.icon}</div>
         <div><h4>${catName}</h4><div class="desc">${cat.groupDesc}</div></div>
