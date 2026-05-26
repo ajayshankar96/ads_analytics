@@ -511,6 +511,26 @@ def live_ts2(body: Ts2LiveRequest):
     return {"as_of": as_of, "attributes": merged_attrs}
 
 
+# ── Short-path aliases (used by the new HTML UI) ──────────────────────────────
+
+@app.get("/api/health")
+def health():
+    return {
+        "ok": True,
+        "setup": "complete" if _live_configured() else "required",
+        "ts1_auth_set": bool(_LIVE_CONFIG.get("ts1_auth")),
+        "ts2_auth_set": bool(_LIVE_CONFIG.get("ts2_auth")),
+    }
+
+@app.post("/api/ts1")
+def ts1(body: Ts1LiveRequest):
+    return live_ts1(body)
+
+@app.post("/api/ts2")
+def ts2(body: Ts2LiveRequest):
+    return live_ts2(body)
+
+
 # ── Serve React frontend ──────────────────────────────────────────────────────
 
 _REPO_ROOT = Path(__file__).parent

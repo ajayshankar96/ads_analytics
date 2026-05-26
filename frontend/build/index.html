@@ -1,1 +1,1134 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#000000"/><meta name="description" content="Trino Query Application"/><title>Trino Query App</title><script defer="defer" src="/static/js/main.35a77982.js"></script><link href="/static/css/main.b62c8052.css" rel="stylesheet"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id="root"></div></body></html>
+<!-- TrustScan 2.0 Sales Demo · v2.2 · Live API · Razorpay TrustScan · No mock data -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TrustScan 2.0 · Sales Demo</title>
+<style>
+:root{
+  /* Razorpay Blade palette */
+  --rp-blue-900:#012652; --rp-blue-800:#0A2D6E; --rp-blue-700:#0B4FC4; --rp-blue-500:#0D94FB; --rp-blue-100:#CFE5FE; --rp-blue-50:#E8F2FE; --rp-blue-25:#F4F8FE;
+  --green-700:#0F7B3F; --green-500:#16A34A; --green-50:#E8F8EE;
+  --amber-700:#9A6A00; --amber-500:#F59E0B; --amber-50:#FFF7E0;
+  --red-700:#B42318;   --red-500:#EF4444;  --red-50:#FEECEB;
+  --ink-900:#0A1929; --ink-700:#1F2937; --ink-500:#52606D; --ink-300:#9AA5B1; --ink-200:#CBD2D9;
+  --line:#E4E7EB; --line-2:#F0F3F6;
+  --bg:#F7F9FC; --card:#FFFFFF;
+  --shadow-sm:0 1px 2px rgba(10,25,41,.04);
+  --shadow:0 1px 3px rgba(10,25,41,.06), 0 2px 8px rgba(10,25,41,.04);
+  --shadow-lg:0 4px 12px rgba(10,25,41,.08), 0 10px 32px rgba(10,25,41,.06);
+
+  /* Risk Profile band tints (A=Elite ... G=New-to-Razorpay) */
+  --band-A-bg:#E8F8EE; --band-A-fg:#0F7B3F;
+  --band-B-bg:#E0F7F5; --band-B-fg:#0E7C73;
+  --band-C-bg:#E4ECFF; --band-C-fg:#1E40AF;
+  --band-D-bg:#FFF7E0; --band-D-fg:#9A6A00;
+  --band-E-bg:#EEF0F4; --band-E-fg:#475569;
+  --band-F-bg:#FEECEB; --band-F-fg:#B42318;
+  --band-G-bg:#F1E8FE; --band-G-fg:#6B21A8;
+
+  /* 10-step variable band gradient (semantic: 0 = green/best, 9 = red/worst) */
+  --vc-0-bg:#D1FAE0; --vc-0-fg:#0F7B3F;
+  --vc-1-bg:#DCFCE7; --vc-1-fg:#15803D;
+  --vc-2-bg:#ECFCCB; --vc-2-fg:#3F6212;
+  --vc-3-bg:#FEF3C7; --vc-3-fg:#86701D;
+  --vc-4-bg:#FFEDD5; --vc-4-fg:#9A6A00;
+  --vc-5-bg:#FED7AA; --vc-5-fg:#B45309;
+  --vc-6-bg:#FFD9CF; --vc-6-fg:#9A3412;
+  --vc-7-bg:#FECACA; --vc-7-fg:#9F1239;
+  --vc-8-bg:#FCA5A5; --vc-8-fg:#B42318;
+  --vc-9-bg:#F87171; --vc-9-fg:#7F1D1D;
+  --vc-neutral-bg:#EEF0F4; --vc-neutral-fg:#475569;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink-900);font-family:'Inter',-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"cv02","cv03","cv04","cv11"}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit;font-size:14px}
+input{font-family:inherit;font-size:14px}
+code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;letter-spacing:-.01em}
+
+/* ---------- HEADER ---------- */
+.header{background:#FFFFFF;border-bottom:1px solid var(--line);padding:14px 0;position:sticky;top:0;z-index:50;backdrop-filter:saturate(180%) blur(20px);background:rgba(255,255,255,.85)}
+.h-row{max-width:1240px;margin:0 auto;padding:0 32px;display:flex;align-items:center;gap:12px}
+.h-brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;color:var(--ink-900);text-decoration:none;letter-spacing:-.01em}
+.h-logo{display:block;flex-shrink:0;border-radius:7px}
+.h-wordmark{font-weight:700;letter-spacing:-.015em}
+.h-ver{display:inline-block;margin-left:4px;padding:2px 7px;border-radius:6px;background:var(--rp-blue-50);color:var(--rp-blue-700);font-weight:700;font-size:10.5px;letter-spacing:.02em;vertical-align:middle}
+.h-divider{width:1px;height:16px;background:var(--line);margin:0 4px}
+.h-tag{color:var(--ink-500);font-size:12.5px;font-weight:400}
+.h-spacer{flex:1}
+.h-proxy{display:inline-flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);padding:5px 10px 5px 9px;border-radius:7px;font-size:11.5px;color:var(--ink-700);font-weight:500;letter-spacing:.02em}
+.h-proxy .proxy-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-300);transition:background .2s}
+.h-proxy.up .proxy-dot{background:var(--green-500);box-shadow:0 0 0 3px rgba(22,163,74,.15)}
+.h-proxy.down .proxy-dot{background:var(--red-500);box-shadow:0 0 0 3px rgba(239,68,68,.15)}
+.h-proxy.up .proxy-text::before{content:"Live"}
+.h-proxy.down .proxy-text::before{content:"Offline"}
+.h-proxy .proxy-text::before{content:"Connecting…"}
+
+.hero{max-width:1240px;margin:0 auto;padding:48px 32px 24px}
+.hero .eyebrow{font-size:11.5px;font-weight:600;color:var(--rp-blue-700);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px}
+.hero h1{margin:0 0 12px;font-size:36px;font-weight:700;letter-spacing:-.022em;color:var(--ink-900);line-height:1.15}
+.hero p{margin:0;color:var(--ink-500);font-size:15.5px;max-width:720px;line-height:1.55}
+
+/* ---------- CONTROL ---------- */
+.control{max-width:1240px;margin:0 auto 24px;padding:0 32px}
+.tier-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px;box-shadow:var(--shadow-sm)}
+.scan-lede{font-size:13px;color:var(--ink-500);line-height:1.55;margin-bottom:16px}
+.scan-lede strong{color:var(--ink-900);font-weight:600}
+
+.input-row{display:flex;gap:8px;align-items:stretch}
+.phone-input{flex:1;display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;padding:0 14px;background:#fff;height:52px;transition:border-color .15s,box-shadow .15s}
+.phone-input:focus-within{border-color:var(--rp-blue-500);box-shadow:0 0 0 3px rgba(13,148,251,.12)}
+.phone-input .cc{font-weight:600;color:var(--ink-700);padding-right:10px;border-right:1px solid var(--line);margin-right:10px;font-size:14px;letter-spacing:-.01em}
+.phone-input input{flex:1;border:0;background:transparent;font-size:15px;outline:none;color:var(--ink-900);font-variant-numeric:tabular-nums}
+.phone-input input::placeholder{color:var(--ink-300)}
+.scan-btn{padding:0 24px;height:52px;background:var(--ink-900);color:#fff;font-weight:600;border-radius:10px;letter-spacing:-.005em;display:flex;align-items:center;gap:7px;font-size:13.5px;transition:transform .1s,background .15s}
+.scan-btn:hover{background:#1A2B3F;transform:translateY(-1px)}
+.scan-btn:active{transform:translateY(0)}
+.scan-btn:disabled{background:var(--ink-300);cursor:not-allowed;transform:none}
+
+.hash-strip{margin-top:14px;display:flex;align-items:center;gap:10px;background:var(--rp-blue-25);border:1px dashed var(--rp-blue-100);border-radius:9px;padding:10px 14px;font-size:12px;color:var(--rp-blue-800)}
+.hash-strip .label{font-weight:600;letter-spacing:.04em;color:var(--rp-blue-900);text-transform:uppercase;font-size:10.5px;flex-shrink:0}
+.hash-strip code{flex:1;color:var(--ink-700);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.hash-strip .why{color:var(--ink-500);font-size:11.5px;flex-shrink:0}
+
+/* ---------- RESULT WRAPPER ---------- */
+.result{max-width:1240px;margin:0 auto;padding:0 32px 60px}
+.empty{background:#fff;border:1px solid var(--line);border-radius:14px;padding:56px 32px;text-align:center;box-shadow:var(--shadow-sm)}
+.empty.error{border-color:#FCB7B7;background:#FFF8F7}
+.empty h3{margin:0 0 10px;font-size:20px;color:var(--ink-900);font-weight:600;letter-spacing:-.015em}
+.empty p{margin:0;color:var(--ink-500);font-size:14px;max-width:600px;margin:0 auto;line-height:1.6}
+.empty .pre-panel{display:flex;justify-content:center;gap:14px;margin-top:24px;flex-wrap:wrap}
+.empty .pre{background:var(--rp-blue-25);border:1px solid var(--rp-blue-100);border-radius:11px;padding:14px 18px;text-align:left;font-size:12.5px;color:var(--rp-blue-800);min-width:220px;max-width:300px}
+.empty .pre b{display:block;color:var(--rp-blue-900);font-size:13px;margin-bottom:4px}
+
+.loading{display:none;background:#fff;border:1px solid var(--line);border-radius:14px;padding:56px 40px;box-shadow:var(--shadow-sm);text-align:center}
+.loading.on{display:block}
+.loading .ring{width:54px;height:54px;border:4px solid var(--rp-blue-50);border-top-color:var(--rp-blue-500);border-radius:50%;margin:0 auto 14px;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading .step{font-size:13.5px;color:var(--ink-300);margin:6px 0;display:flex;align-items:center;justify-content:center;gap:8px}
+.loading .step::before{content:"○";color:var(--ink-300)}
+.loading .step.on{color:var(--rp-blue-700);font-weight:600}
+.loading .step.on::before{content:"●";color:var(--rp-blue-500)}
+.loading .step.done{color:var(--green-700)}
+.loading .step.done::before{content:"✓";color:var(--green-500)}
+
+.result-block{display:none;animation:fadein .35s ease}
+.result-block.on{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* customer strip */
+.cust-strip{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:16px;margin-bottom:24px;box-shadow:var(--shadow-sm);flex-wrap:wrap}
+.cust-label{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-500);font-weight:600}
+.cust-id{font-size:17px;font-weight:600;color:var(--ink-900);font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.005em;font-variant-numeric:tabular-nums}
+.cust-strip .right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.cust-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;background:var(--bg);border:1px solid var(--line);font-size:12px;color:var(--ink-700)}
+.cust-chip code{font-size:11px;color:var(--ink-500)}
+
+/* report sections */
+.report-section{margin-bottom:32px}
+.report-section:last-of-type{margin-bottom:0}
+.report-section-h{display:flex;align-items:center;gap:12px;margin:0 0 16px;flex-wrap:wrap}
+.report-section-h .num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:var(--ink-900);color:#fff;font-size:11px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.report-section-h h2{margin:0;font-size:18px;font-weight:700;color:var(--ink-900);letter-spacing:-.015em;line-height:1.3}
+.report-section-h .lede{margin-left:auto;font-size:12.5px;color:var(--ink-500);font-weight:500}
+.report-section-h .err-mini{margin-left:8px;font-size:11.5px;color:var(--red-700);background:var(--red-50);border:1px solid #FCB7B7;padding:3px 8px;border-radius:6px;font-weight:600}
+
+/* ---------- Section 1: Risk Profile Band (HERO — kept as documented exception) ---------- */
+.t1-hero{background:#fff;border:1px solid var(--line);border-radius:16px;padding:32px;display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:center;box-shadow:var(--shadow);margin-bottom:18px}
+.t1-letter{width:152px;height:152px;border-radius:20px;display:grid;place-items:center;font-size:88px;font-weight:700;letter-spacing:-.04em;line-height:1;position:relative}
+.t1-letter::after{content:"";position:absolute;inset:0;border-radius:20px;border:1px solid currentColor;opacity:.16}
+.t1-meta .lab{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-500);font-weight:600;margin-bottom:10px}
+.t1-meta h2{margin:0 0 14px;font-size:28px;font-weight:600;color:var(--ink-900);letter-spacing:-.02em;line-height:1.2}
+.t1-meta .synth-line{font-size:14.5px;color:var(--ink-700);line-height:1.55;max-width:560px}
+
+.ref-grid-wrap{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow-sm)}
+.ref-grid-h{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-500);font-weight:600;margin-bottom:14px}
+.ref-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+.rband{position:relative;background:#fff;border:1px solid var(--line);border-radius:11px;padding:14px;transition:transform .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
+.rband.current{border:1.5px solid var(--ink-900);box-shadow:var(--shadow-lg);transform:translateY(-3px)}
+.rband .chip{display:inline-block;font-size:17px;font-weight:700;padding:5px 11px;border-radius:7px;line-height:1;letter-spacing:-.02em}
+.rband .name{margin-top:10px;font-size:13px;font-weight:700;color:var(--ink-900)}
+.rband .bullets{margin:6px 0 0;padding:0 0 0 16px;font-size:11.5px;color:var(--ink-500);line-height:1.4;list-style:disc}
+.rband .bullets li{margin:3px 0}
+.rband.current .bullets{color:var(--ink-700)}
+.rband .here{position:absolute;top:-9px;right:10px;background:var(--ink-900);color:#fff;font-size:9.5px;padding:3px 7px;border-radius:5px;letter-spacing:.06em;font-weight:700;text-transform:uppercase}
+
+/* ---------- UNIFIED VARIABLE CARD (used in Sections 2, 3, 4) ---------- */
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.vcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:200px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
+.vcard:hover{border-color:var(--ink-200);box-shadow:var(--shadow)}
+.vcard-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;min-height:32px}
+.vcard-name{flex:1;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--rp-blue-800);font-weight:600;line-height:1.4;word-break:break-all}
+.vcard-scale{font-size:9px;letter-spacing:.05em;background:var(--bg);border:1px solid var(--line);color:var(--ink-500);padding:3px 7px;border-radius:5px;text-transform:uppercase;white-space:nowrap;font-weight:600;flex-shrink:0;line-height:1.2;align-self:flex-start}
+.vcard-band{display:inline-block;font-size:20px;font-weight:700;letter-spacing:-.02em;padding:7px 14px;border-radius:8px;line-height:1.15;align-self:flex-start;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
+.vcard-meaning{font-size:12.5px;color:var(--ink-900);line-height:1.45;font-weight:600}
+.vcard-meaning .qual{color:var(--ink-500);font-weight:400;margin-left:0;display:block;margin-top:2px}
+.vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;margin-top:auto;padding-top:10px;border-top:1px dashed var(--line-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+/* enrichment category accordion (Section 4 only) */
+.cat-row{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.cat-head{padding:16px 20px;display:flex;align-items:center;gap:14px;cursor:pointer;user-select:none;transition:background .15s}
+.cat-head:hover{background:var(--bg)}
+.cat-head .icon{width:32px;height:32px;border-radius:8px;background:var(--ink-900);color:#fff;font-weight:700;display:grid;place-items:center;font-size:12px;letter-spacing:-.02em}
+.cat-head h4{margin:0;font-size:13.5px;color:var(--ink-900);font-weight:700}
+.cat-head .desc{font-size:12px;color:var(--ink-500);margin-top:2px}
+.cat-head .count{margin-left:auto;font-size:11px;color:var(--ink-500);background:var(--bg);padding:3px 10px;border-radius:6px;border:1px solid var(--line);font-weight:600}
+.cat-head .arrow{margin-left:8px;font-size:13px;color:var(--ink-300);transition:transform .15s}
+.cat-row.open .cat-head .arrow{transform:rotate(180deg)}
+.cat-body{display:none;border-top:1px solid var(--line-2);padding:14px 18px 18px}
+.cat-row.open .cat-body{display:block}
+
+/* error panel */
+.err-card{background:#fff;border:1px solid #FCB7B7;border-radius:12px;padding:18px;color:var(--red-700);font-size:13px;margin-bottom:16px}
+.err-card h4{margin:0 0 6px;font-size:14px;color:var(--red-700)}
+.err-card pre{margin:8px 0 0;padding:10px;background:#FFF8F7;border-radius:6px;border:1px dashed #FCB7B7;font-size:11.5px;overflow-x:auto;white-space:pre-wrap}
+.err-card .actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.err-card .actions button{font-size:12px;padding:6px 12px;background:#fff;border:1px solid #FCB7B7;border-radius:6px;color:var(--red-700);font-weight:600}
+.err-card .link-btn{background:transparent;border:0;color:var(--red-700);font-size:12px;text-decoration:underline;cursor:pointer;padding:0;font-weight:500}
+
+/* empty section */
+.empty-section{background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:18px;text-align:center;font-size:12.5px;color:var(--ink-500)}
+
+/* Setup modal */
+.setup-back{position:fixed;inset:0;background:rgba(1,38,82,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100}
+.setup-back.on{display:flex}
+.setup{background:#fff;border-radius:16px;width:560px;max-width:92vw;max-height:90vh;overflow-y:auto;padding:32px;box-shadow:0 20px 80px rgba(1,38,82,.4)}
+.setup h2{margin:0 0 8px;font-size:22px;color:var(--ink-900);font-weight:700}
+.setup .sub{margin:0 0 22px;color:var(--ink-500);font-size:13.5px;line-height:1.55}
+.setup label{display:block;margin:14px 0 6px;font-size:12.5px;font-weight:600;color:var(--ink-700);letter-spacing:.02em}
+.setup label .hint{font-weight:400;color:var(--ink-500);font-size:11.5px;margin-left:4px}
+.setup input{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-900);outline:none;background:#fff;transition:border-color .15s,box-shadow .15s;letter-spacing:-.005em}
+.setup input::placeholder{color:var(--ink-300)}
+.setup input:focus{border-color:var(--rp-blue-500);box-shadow:0 0 0 3px rgba(13,148,251,.12)}
+.advanced-toggle{margin-top:18px}
+.advanced-toggle button{font-size:12.5px;color:var(--ink-500);background:transparent;border:0;cursor:pointer;padding:6px 0;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.advanced-toggle button:hover{color:var(--ink-700)}
+.advanced-toggle .arrow{font-size:10px;display:inline-block;transition:transform .15s;color:var(--ink-300)}
+.advanced-block{display:none}
+.advanced-block.on{display:block;margin-top:4px;padding-top:8px;border-top:1px dashed var(--line-2)}
+.setup .note{margin-top:18px;background:var(--rp-blue-25);border:1px solid var(--rp-blue-100);border-radius:9px;padding:12px 14px;font-size:12px;color:var(--rp-blue-800);line-height:1.55}
+.setup .note b{color:var(--rp-blue-900)}
+.setup .row{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.setup .row button{padding:11px 18px;border-radius:10px;font-weight:600;font-size:13.5px;cursor:pointer}
+.setup .save-btn{background:var(--rp-blue-700);color:#fff;border:0}
+.setup .save-btn:hover{background:var(--rp-blue-800)}
+.setup .save-btn:disabled{background:#A8B5FF;cursor:not-allowed}
+.setup .err{margin-top:12px;background:#FFF8F7;border:1px solid #FCB7B7;color:var(--red-700);border-radius:8px;padding:10px 14px;font-size:12.5px;display:none}
+.setup .err.on{display:block}
+
+.pfoot{max-width:1240px;margin:0 auto;padding:24px 32px 40px;color:var(--ink-300);font-size:11.5px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line-2);margin-top:32px}
+.pfoot .div{width:1px;height:11px;background:var(--line)}
+
+@media (max-width:980px){
+  .ref-grid{grid-template-columns:repeat(4,1fr)}
+  .t1-hero{grid-template-columns:1fr;text-align:center}
+  .t1-letter{margin:0 auto}
+  .vgrid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="h-row">
+    <a class="h-brand" href="#" aria-label="TrustScan 2.0">
+      <svg class="h-logo" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#0D94FB"/>
+        <path d="M11.4 8.5h7.4c2.9 0 4.7 1.6 4.7 4.1 0 1.8-1 3.2-2.7 3.8l2.8 7.1h-3.5l-2.5-6.5h-3l-1.7 6.5H9.7L11.4 8.5zm5.9 6.1c1.4 0 2.3-.7 2.3-1.8 0-1-.7-1.5-2-1.5h-3.1l-.9 3.3h3.7z" fill="#fff"/>
+      </svg>
+      <span class="h-wordmark">TrustScan</span>
+      <span class="h-ver">2.0</span>
+    </a>
+    <span class="h-divider" aria-hidden="true"></span>
+    <span class="h-tag">By Razorpay</span>
+    <div class="h-spacer"></div>
+    <div class="h-proxy" id="proxyChip"><span class="proxy-dot"></span><span class="proxy-text"></span></div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">Customer Intelligence · Unified Profile</div>
+  <h1>Complete customer profile in real time</h1>
+  <p>One scan returns a complete customer profile — headline risk band, default-risk model bands, predicted income, payment behaviour, vintage, and category-level spend signals — direct from the Razorpay TrustScan 2.0 API.</p>
+</section>
+
+<section class="control">
+  <div class="tier-card">
+    <div class="scan-lede">
+      <strong>Enter a 10-digit Indian mobile number to run a unified TrustScan 2.0 report.</strong> The phone number is SHA-256 hashed before being sent to the enrichment endpoint, so raw numbers never leave this Mac for that call.
+    </div>
+
+    <div class="input-row">
+      <div class="phone-input">
+        <span class="cc">+91</span>
+        <input id="phone" placeholder="Enter 10-digit phone number" maxlength="10" autocomplete="off" inputmode="numeric" />
+      </div>
+      <button class="scan-btn" id="scanBtn" onclick="runScan()">Scan now <span style="font-size:18px">→</span></button>
+    </div>
+
+    <div class="hash-strip" id="hashStrip">
+      <span class="label">SHA-256</span>
+      <code id="hashValue">(enter 10 digits to see hash)</code>
+      <span class="why">Used for the enrichment call</span>
+    </div>
+  </div>
+</section>
+
+<section class="result">
+
+  <div class="empty result-block on" id="block-empty">
+    <h3>Type a number and click Scan</h3>
+    <p>This dashboard calls the Razorpay TrustScan 2.0 API through your local proxy. The unified report combines the headline Risk Profile band with the full enrichment and default-risk profile in a single view.</p>
+    <div class="pre-panel">
+      <div class="pre"><b>Risk Profile Band</b>One of seven bands (A through G), from Elite through New-to-Razorpay.</div>
+      <div class="pre"><b>Headline Signals</b>Engagement depth and predicted annual income bucket.</div>
+      <div class="pre"><b>Default Risk Models</b>DPD-30, DPD-90 and Customer Durables probability bands.</div>
+      <div class="pre"><b>Enrichment Layer</b>Live variables across payment volume, success ratio, spend, demographic, and credit propensity.</div>
+    </div>
+  </div>
+
+  <div class="empty error result-block" id="block-proxy-down">
+    <h3>Proxy not running</h3>
+    <p>The dashboard needs the local proxy server to talk to Razorpay. Quit and re-open TrustScan to start it.</p>
+    <p style="margin-top:14px;font-size:12.5px;color:var(--ink-300)">If the issue persists, check <code>~/Library/Logs/TrustScanDemo/proxy.log</code>.</p>
+  </div>
+
+  <div class="loading result-block" id="block-loading">
+    <div class="ring"></div>
+    <div class="step on" id="step1">Hashing customer identifier (SHA-256)</div>
+    <div class="step" id="step2">Querying Razorpay TrustScan 2.0 API</div>
+    <div class="step" id="step3">Mapping bands to plain-English meaning</div>
+  </div>
+
+  <div class="result-block" id="block-error">
+    <div class="err-card">
+      <h4 id="errTitle">Couldn't fetch result</h4>
+      <div id="errBody">Unknown error.</div>
+      <div id="errDetailsRow" style="display:none;margin-top:10px">
+        <button id="errToggle" class="link-btn" onclick="toggleErrDetails()">Show technical details</button>
+        <pre id="errPre" style="display:none"></pre>
+      </div>
+      <div class="actions">
+        <button onclick="runScan()">Try again</button>
+        <button onclick="showEmpty()">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!--             UNIFIED REPORT — Sections 1 → 4                  -->
+  <!-- ============================================================ -->
+  <div class="result-block" id="block-report">
+
+    <div class="cust-strip">
+      <span class="cust-label">Customer</span>
+      <span class="cust-id" id="r-cust">+91 ——————</span>
+      <div class="right">
+        <span class="cust-chip">SHA-256 <code id="r-hash">—</code></span>
+        <span class="cust-chip" id="r-asof">Data as of —</span>
+      </div>
+    </div>
+
+    <!-- Section 1: Risk Profile Band (HERO — kept as documented exception) -->
+    <div class="report-section">
+      <div class="report-section-h">
+        <span class="num">1</span>
+        <h2>Risk Profile Band</h2>
+        <span class="lede">Headline read on customer reliability</span>
+        <span id="r-band-err-mini" class="err-mini" style="display:none">Unavailable</span>
+      </div>
+
+      <div class="t1-hero">
+        <div class="t1-letter" id="r-letter">—</div>
+        <div class="t1-meta">
+          <div class="lab">Band Code</div>
+          <h2 id="r-band-name">—</h2>
+          <div class="synth-line" id="r-band-synth">—</div>
+        </div>
+      </div>
+
+      <div class="ref-grid-wrap">
+        <div class="ref-grid-h">Full band reference</div>
+        <div class="ref-grid" id="refGrid"></div>
+      </div>
+    </div>
+
+    <!-- Section 2: Headline Signals (unified cards) -->
+    <div class="report-section" id="section-headline">
+      <div class="report-section-h">
+        <span class="num">2</span>
+        <h2>Headline Signals</h2>
+        <span class="lede">Engagement depth and predicted income</span>
+        <span id="r-headline-err-mini" class="err-mini" style="display:none">Unavailable</span>
+      </div>
+      <div class="vgrid" id="headlineGrid"></div>
+    </div>
+
+    <!-- Section 3: Default Risk Models (unified cards) -->
+    <div class="report-section" id="section-risk">
+      <div class="report-section-h">
+        <span class="num">3</span>
+        <h2>Default Risk Models</h2>
+        <span class="lede">DPD-30 · DPD-90 · Customer Durable Loans</span>
+        <span id="r-risk-err-mini" class="err-mini" style="display:none">Unavailable</span>
+      </div>
+      <div class="vgrid" id="riskGrid"></div>
+    </div>
+
+    <!-- Section 4: Enrichment (unified cards, category accordion) -->
+    <div class="report-section" id="section-enrich">
+      <div class="report-section-h">
+        <span class="num">4</span>
+        <h2>Enrichment · <span id="r-live-count">—</span> variables</h2>
+        <span class="lede">Live variables returned, grouped by category</span>
+        <span id="r-enrich-err-mini" class="err-mini" style="display:none">Unavailable</span>
+      </div>
+      <div id="enrichContainer"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===== Setup modal ===== -->
+<div class="setup-back" id="setupModal">
+  <div class="setup">
+    <h2>Welcome to TrustScan 2.0</h2>
+    <p class="sub">One-time setup. Enter your Razorpay API credentials below, the same ones you see in Razorpay Dashboard, under Account &amp; Settings, then API Keys. Stored locally on this Mac only.</p>
+
+    <label>Key ID <span class="hint">(starts with <code>rzp_live_</code>)</span></label>
+    <input type="text" id="setup-key-id" placeholder="rzp_live_xxxxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+
+    <label>Key Secret</label>
+    <input type="password" id="setup-key-secret" placeholder="(hidden as you type)" autocomplete="off" spellcheck="false" />
+
+    <div class="advanced-toggle" id="advancedToggle">
+      <button type="button" onclick="toggleAdvanced()"><span class="arrow">▸</span> Use different keys for the enrichment endpoint</button>
+    </div>
+    <div class="advanced-block" id="advancedBlock">
+      <label>Enrichment Key ID</label>
+      <input type="text" id="setup-key-id-ts2" placeholder="rzp_live_xxxxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+      <label>Enrichment Key Secret</label>
+      <input type="password" id="setup-key-secret-ts2" placeholder="(hidden as you type)" autocomplete="off" spellcheck="false" />
+    </div>
+
+    <div class="note">
+      <b>Where do these come from?</b> Razorpay Dashboard, under Account &amp; Settings, then API Keys. The Key ID is visible. The Secret is shown once when the key is created. If you don't have it, regenerate the key.<br><br>
+      <b>Saved where?</b> <code>~/Library/Application Support/TrustScanDemo/config.json</code> on this Mac. Permission 600 (you only). Never synced anywhere.
+    </div>
+
+    <div class="err" id="setup-err"></div>
+
+    <div class="row">
+      <button class="save-btn" id="setup-save" onclick="saveSetup()">Save and start</button>
+    </div>
+  </div>
+</div>
+
+<div class="pfoot">
+  <span>TrustScan Analytics</span>
+  <span class="div"></span>
+  <span>Live API · Razorpay TrustScan</span>
+  <span class="div"></span>
+  <span>© Razorpay · Internal pre-sales use only</span>
+</div>
+
+<script>
+/* ============================================================
+ * CONFIG
+ * ============================================================ */
+const PROXY = location.protocol === "file:" ? "http://localhost:3000" : "";
+
+/* ============================================================
+ * RISK PROFILE BAND TABLE (Section 1 hero)
+ * ============================================================ */
+const RISK_BANDS = [
+  {code:"A", name:"Elite Customers",     bullets:["Good transactional behaviour","Good credit behaviour exhibited on Razorpay's platform","High affluence"]},
+  {code:"B", name:"Prime Customers",     bullets:["Good transactional behaviour","Good credit behaviour exhibited on Razorpay's platform"]},
+  {code:"C", name:"Power Customers",     bullets:["Good transactional behaviour"]},
+  {code:"D", name:"Sub-prime Customers", bullets:["Infrequent transactors"]},
+  {code:"E", name:"Dormant Customers",   bullets:["Digitally inactive with zero engagement on Razorpay's platform in last 6 months"]},
+  {code:"F", name:"Risky Customers",     bullets:["Negative engagement in past like chargeback, fraud attempts","Payments decline due to insufficient balance"]},
+  {code:"G", name:"New to Razorpay",     bullets:["Never active on Razorpay's platform"]}
+];
+const RISK_SYNTH = {
+  A:"This customer shows good transactional behaviour, exhibits strong credit behaviour on the Razorpay platform, and has high affluence.",
+  B:"This customer shows good transactional behaviour and exhibits strong credit behaviour on the Razorpay platform.",
+  C:"This customer shows good transactional behaviour on the Razorpay platform.",
+  D:"This customer is an infrequent transactor on the Razorpay platform.",
+  E:"This customer is digitally inactive with zero engagement on Razorpay's platform in the last 6 months.",
+  F:"This customer has negative engagement signals such as chargebacks or fraud attempts in past, and payment declines due to insufficient balance.",
+  G:"This customer has never been active on Razorpay's platform. Recommend richer KYC."
+};
+
+/* ============================================================
+ * VARIABLE DIRECTION TABLE (Green/Red orientation per variable)
+ *   high_is_good → A1 is best (green), K1 is worst (red)
+ *   low_is_good  → A1 is worst (red), K1 is best (green)
+ * Source: Trust Scan 2.0 doc, "Green/Red (Generalised)" column.
+ * ============================================================ */
+const VAR_DIRECTION = {
+  // Payment volume analysis
+  thick_thin_data: "high_is_good",
+  yearly_transaction_volume: "high_is_good",
+  yoy_growth_percentage: "high_is_good",
+
+  // SR ratio
+  error_ratio_card: "low_is_good",
+  error_ratio_last_12_weeks_emandate: "low_is_good",
+  error_ratio_last_24_weeks_emandate: "low_is_good",
+  failed_txn_amount_sum: "low_is_good",
+  failed_txn_count: "low_is_good",
+  repayment_error_ratio_l12w: "low_is_good",
+  risky_fails_to_success_trxn_ratio_l12m: "low_is_good",
+  risky_fails_to_success_trxn_ratio_l6m: "low_is_good",
+  success_rate_last_24_weeks_card: "high_is_good",
+  success_rate_last_24_weeks_emandate: "high_is_good",
+  weighted_error_ratio: "low_is_good",
+  weighted_error_ratio_last_12_weeks: "low_is_good",
+  weighted_error_ratio_last_24_weeks: "low_is_good",
+  weighted_success_rate: "high_is_good",
+
+  // Spend propensity
+  avg_amount: "high_is_good",
+  has_failed_high_value_txn: "low_is_good",
+  l12m_aov_astrology: "high_is_good",
+  l12m_aov_real_estate: "high_is_good",
+  l12m_spend_astrology: "high_is_good",
+  l12m_spend_micro_drama: "high_is_good",
+  l3m_aov_astrology: "high_is_good",
+  l3m_spend_astrology: "high_is_good",
+  l3m_spend_micro_drama: "high_is_good",
+  log_aov_gold: "high_is_good",
+  log_aov_last_12_weeks_ecommerce: "high_is_good",
+  log_aov_last_12_weeks_services: "high_is_good",
+  log_aov_last_12_weeks_utilities: "high_is_good",
+  log_aov_last_24_weeks_ecommerce: "high_is_good",
+  log_aov_last_24_weeks_utilities: "high_is_good",
+  log_aov_utilities: "high_is_good",
+  luxury_category_spend: "high_is_good",
+  ott_trxns_last_1_year: "high_is_good",
+  perc_non_discretionary_spends: "high_is_good",
+  predicted_income_bucket: "low_is_good", // A1=lowest income=highest risk; G1=highest income=best
+  spend_last_12_weeks_lending: "high_is_good",
+  spend_last_1_year_fashion_and_lifestyle: "high_is_good",
+  spend_last_1_year_government: "high_is_good",
+  spend_last_1_year_lending: "high_is_good",
+  spend_last_1_year_tours_and_travel: "high_is_good",
+  spend_last_24_weeks_lending: "high_is_good",
+  total_spend_last_12_weeks: "high_is_good",
+  upi_payment_amount: "high_is_good",
+  vintage_education: "high_is_good",
+  vintage_investments: "high_is_good",
+  vintage_services: "high_is_good",
+  vintage_utilities: "high_is_good",
+  weighted_log_aov: "high_is_good",
+
+  // Demographic
+  max_vintage: "high_is_good",
+  unique_city_transacted: "high_is_good",
+  unique_state_transacted: "high_is_good",
+
+  // Credit propensity (not in doc Green/Red column — best-inference defaults)
+  count_issuer_cc: "high_is_good",
+  loan_stacking_amount_l3m: "low_is_good",
+  loan_stacking_amount_l6m: "low_is_good",
+  unique_lenders_last_1_years: "low_is_good",
+
+  // Risk Model bands — A1 = 100% default probability (worst); K1 = 0% (best)
+  dpd_30_prob_band: "low_is_good",
+  dpd_90_prob_band: "low_is_good",
+  cd_dpd_30_prob_band: "low_is_good",
+};
+
+/* ============================================================
+ * DECILE / INCOME BUCKET / DISCRETE LOOKUPS
+ * ============================================================ */
+function decilePct(letter){
+  const top = { A:100, B:90, C:80, D:70, E:60, F:50, G:40, H:30, I:20, J:10 };
+  if (!top[letter]) return "";
+  const lo = top[letter] - 10;
+  return `${lo+1}-${top[letter]}th percentile`;
+}
+function decileQual(letter){
+  return ({
+    A:"Top decile, best-in-population",
+    B:"Strong, above-average",
+    C:"Above-median",
+    D:"Slightly above median",
+    E:"Just above midpoint",
+    F:"Just below midpoint",
+    G:"Slightly below median",
+    H:"Below median",
+    I:"Weak, below-average",
+    J:"Bottom decile (non-zero)"
+  })[letter] || "—";
+}
+function bandMeaning(band){
+  if(!band) return {pct:"", qual:"No value returned by the API"};
+  const b = String(band).toUpperCase();
+  if(b === "K1") return {pct:"Raw value = 0.00", qual:"Explicit zero (computed-and-zero, distinct from null)"};
+  if(b === "Z2") return {pct:"Null", qual:"Variable could not be computed (no signal or no history)"};
+  const m = b.match(/^([A-J])(\d{1,2})$/);
+  if(!m) return {pct:b, qual:"—"};
+  return { pct: decilePct(m[1]), qual: decileQual(m[1]) };
+}
+
+const INCOME_BUCKETS = {
+  A1:{range:"₹0 – 3 L",  label:"Below per-capita; high-risk segment for unsecured"},
+  B1:{range:"₹3 – 4 L",  label:"Entry-level salaried or informal sector"},
+  C1:{range:"₹4 – 6 L",  label:"Mid-income, typical underwriting target"},
+  D1:{range:"₹6 – 10 L", label:"Comfortably eligible for prime products"},
+  E1:{range:"₹10 – 15 L",label:"Affluent"},
+  F1:{range:"₹15 – 25 L",label:"High earner"},
+  G1:{range:"₹25 L+",    label:"Top-of-pyramid earner"},
+};
+const THICK_THIN = {
+  A1:{label:"Thick data",        desc:"More than 3 annual transactions on Razorpay. Strongest enrichment confidence."},
+  B1:{label:"Thin data",         desc:"3 or fewer annual transactions. Variables computable but with low confidence."},
+};
+
+/* ============================================================
+ * COLOR ENGINE — per-variable, direction-aware
+ * ============================================================ */
+function getBandColor(band, varName){
+  if (!band) return null;
+  const b = String(band).toUpperCase().trim();
+  if (b === "Z2") return null; // hide
+  if (b === "K1") return { bg:"var(--vc-neutral-bg)", fg:"var(--vc-neutral-fg)" };
+
+  const letter = b.charAt(0);
+  const letterIdx = letter.charCodeAt(0) - 65; // A=0 ... J=9, K=10
+
+  // Determine the maximum letter index in this variable's band range
+  let maxIdx = 9; // default A–J
+  if (varName === "predicted_income_bucket") {
+    maxIdx = 6; // A–G
+  } else if (varName === "thick_thin_data") {
+    maxIdx = 1; // A–B
+  } else {
+    // Decile-scaled variables only use A and B (A1–A10 + B1–B4)
+    const sc = VAR_SCALING[varName];
+    if (sc === "Custom Decile" || sc === "Decile based") maxIdx = 1;
+  }
+
+  if (letterIdx < 0 || letterIdx > maxIdx) return null;
+
+  // Normalize position into 0–9 color slots
+  let pos = Math.round((letterIdx / maxIdx) * 9);
+  const dir = VAR_DIRECTION[varName] || "high_is_good";
+  if (dir === "low_is_good") pos = 9 - pos;
+  pos = Math.max(0, Math.min(9, pos));
+
+  return { bg:`var(--vc-${pos}-bg)`, fg:`var(--vc-${pos}-fg)` };
+}
+
+/* ============================================================
+ * VARIABLE CATALOGUE (only LIVE variables retained)
+ * ============================================================ */
+const TS2_ALL_VARS = {
+  "Payment volume analysis": { icon: "PV", groupDesc: "Volume, growth, and platform-activity signals", vars: [
+    { name: "thick_thin_data", scaling: "Discrete", live: true, headline: true, desc: "Indicator of user activity on Razorpay: Thick (>3 annual txns) vs Thin (≤3) vs No History." },
+    { name: "yearly_transaction_volume", scaling: "Custom Decile", live: true, desc: "Aggregate value of all transactions successfully completed by the user across all payment channels in the last 1 year." },
+    { name: "yoy_growth_percentage", scaling: "Min-Max", live: true, desc: "Year-over-year spends growth in the last 2 years (%) for a user." },
+  ]},
+  "SR ratio": { icon: "SR", groupDesc: "Success rates, error ratios, decline patterns", vars: [
+    { name: "error_ratio_card", scaling: "Min-Max", live: true, desc: "% of card transactions failed due to risk errors (insufficient balance, frozen account, etc.) in the last 1 year." },
+    { name: "error_ratio_last_12_weeks_emandate", scaling: "Min-Max", live: true, desc: "% of emandate transactions failed due to risk errors in the last 12 weeks." },
+    { name: "error_ratio_last_24_weeks_emandate", scaling: "Min-Max", live: true, desc: "% of emandate transactions failed due to risk errors in the last 24 weeks." },
+    { name: "failed_txn_amount_sum", scaling: "Min-Max", live: true, desc: "Total monetary value (INR) of all failed/declined transactions in the last 1 year." },
+    { name: "failed_txn_count", scaling: "Min-Max", live: true, desc: "Total count of failed transactions in the last 1 year. High counts can indicate lack of funds or risky behaviour." },
+    { name: "repayment_error_ratio_l12w", scaling: "Min-Max", live: true, desc: "Share of lending/repayment value that failed due to risk-identified errors in the last 12 weeks." },
+    { name: "risky_fails_to_success_trxn_ratio_l12m", scaling: "Min-Max", live: true, desc: "Ratio of risk-flagged failed loan-repayment transactions to successful ones in the last 12 months." },
+    { name: "risky_fails_to_success_trxn_ratio_l6m", scaling: "Min-Max", live: true, desc: "Ratio of risk-flagged failed loan-repayment transactions to successful ones in the last 6 months." },
+    { name: "success_rate_last_24_weeks_card", scaling: "Min-Max", live: true, desc: "Proportion of card transactions successfully authorized in the last 24 weeks." },
+    { name: "success_rate_last_24_weeks_emandate", scaling: "Min-Max", live: true, desc: "Proportion of emandate transactions successfully authorized in the last 24 weeks." },
+    { name: "weighted_error_ratio", scaling: "Min-Max", live: true, desc: "Transaction-volume weighted average of risky-error rates across all payment methods over the last 1 year." },
+    { name: "weighted_error_ratio_last_12_weeks", scaling: "Min-Max", live: true, desc: "Transaction-volume weighted average of risky-error rates across methods in the last 12 weeks." },
+    { name: "weighted_error_ratio_last_24_weeks", scaling: "Min-Max", live: true, desc: "Transaction-volume weighted average of risky-error rates across methods in the last 24 weeks." },
+    { name: "weighted_success_rate", scaling: "Min-Max", live: true, desc: "Transaction-volume weighted average of success rates across all payment methods over the last 1 year." },
+  ]},
+  "Spend propensity": { icon: "SP", groupDesc: "Category-level spend, AOV, vintage, income signals", vars: [
+    { name: "avg_amount", scaling: "Min-Max", live: true, desc: "Mean value of successful transactions. Proxy for the user's typical spending power per transaction." },
+    { name: "has_failed_high_value_txn", scaling: "Min-Max", live: true, desc: "Binary flag indicating if user has any failed transaction with high value (above ~₹8,500). Risk signal." },
+    { name: "l12m_aov_astrology", scaling: "Custom Decile", live: true, desc: "Average transaction value in the astrology category in the last 12 months." },
+    { name: "l12m_aov_real_estate", scaling: "Min-Max", live: true, desc: "Average order value for real-estate transactions (property classifieds, developers, rentals) in the last 12 months." },
+    { name: "l12m_spend_astrology", scaling: "Custom Decile", live: true, desc: "Total spend in the astrology category in the last 12 months." },
+    { name: "l12m_spend_micro_drama", scaling: "Custom Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 12 months." },
+    { name: "l3m_aov_astrology", scaling: "Custom Decile", live: true, desc: "Average transaction value in the astrology category in the last 3 months." },
+    { name: "l3m_spend_astrology", scaling: "Custom Decile", live: true, desc: "Total spend in the astrology category in the last 3 months." },
+    { name: "l3m_spend_micro_drama", scaling: "Custom Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 3 months." },
+    { name: "log_aov_gold", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for gold purchase transactions in the last 1 year." },
+    { name: "log_aov_last_12_weeks_ecommerce", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for e-commerce purchases in the last 12 weeks." },
+    { name: "log_aov_last_12_weeks_services", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for services transactions in the last 12 weeks." },
+    { name: "log_aov_last_12_weeks_utilities", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for utility bill payments in the last 12 weeks." },
+    { name: "log_aov_last_24_weeks_ecommerce", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for e-commerce purchases in the last 24 weeks." },
+    { name: "log_aov_last_24_weeks_utilities", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for utility bill payments in the last 24 weeks." },
+    { name: "log_aov_utilities", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for utility bill payments (electricity, telecom, broadband) in the last 1 year." },
+    { name: "luxury_category_spend", scaling: "Custom Decile", live: true, desc: "Total spend on non-essential categories (dining, entertainment, travel, luxury) in the last 1 year." },
+    { name: "ott_trxns_last_1_year", scaling: "Custom Decile", live: true, desc: "Count of OTT subscription payments (streaming platforms) in the last 1 year." },
+    { name: "perc_non_discretionary_spends", scaling: "Min-Max", live: true, desc: "Share of spend on essential categories (groceries, utilities, healthcare, financial commitments)." },
+    { name: "predicted_income_bucket", scaling: "Discrete", live: true, headline: true, desc: "ML-model predicted annual income bracket based on ~98 spending, behaviour and affluence variables." },
+    { name: "spend_last_12_weeks_lending", scaling: "Min-Max", live: true, desc: "Total lending/loan-repayment spend (INR) in the last 12 weeks." },
+    { name: "spend_last_1_year_fashion_and_lifestyle", scaling: "Min-Max", live: true, desc: "Total amount (INR) spent on fashion and lifestyle merchants in the last 1 year." },
+    { name: "spend_last_1_year_government", scaling: "Min-Max", live: true, desc: "Total amount (INR) spent on government-related payments (fees, taxes, fines) in the last 1 year." },
+    { name: "spend_last_1_year_lending", scaling: "Min-Max", live: true, desc: "Total amount (INR) spent at lending merchants (loan repayments, EMI, NBFC) in the last 1 year." },
+    { name: "spend_last_1_year_tours_and_travel", scaling: "Min-Max", live: true, desc: "Total amount (INR) spent on travel-related merchants (hotels, airlines, agencies) in the last 1 year." },
+    { name: "spend_last_24_weeks_lending", scaling: "Min-Max", live: true, desc: "Total lending/loan-repayment spend (INR) in the last 24 weeks." },
+    { name: "total_spend_last_12_weeks", scaling: "Min-Max", live: true, desc: "Total payment amount (INR) across all merchant categories in the last 12 weeks." },
+    { name: "upi_payment_amount", scaling: "Custom Decile", live: true, desc: "Total UPI payment amount (INR) in the last 12 months." },
+    { name: "vintage_education", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever education-merchant payment on Razorpay." },
+    { name: "vintage_investments", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever investment-related payment on Razorpay." },
+    { name: "vintage_services", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever services-merchant payment on Razorpay." },
+    { name: "vintage_utilities", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever utility bill payment on Razorpay." },
+    { name: "weighted_log_aov", scaling: "Min-Max", live: true, desc: "Spend-weighted average of log-transformed AOV across all merchant categories." },
+  ]},
+  "Demographic": { icon: "DM", groupDesc: "Network tenure and geographic spread", vars: [
+    { name: "max_vintage", scaling: "Min-Max", live: true, desc: "Longest digital-payment history (months) for the user across any merchant category on Razorpay." },
+    { name: "unique_city_transacted", scaling: "Min-Max", live: true, desc: "Number of distinct cities from which the user has made payments over the past year." },
+    { name: "unique_state_transacted", scaling: "Min-Max", live: true, desc: "Number of distinct states from which the user has made payments over the past year." },
+  ]},
+  "Credit propensity": { icon: "CP", groupDesc: "Loan stacking and credit card usage signals", vars: [
+    { name: "count_issuer_cc", scaling: "Min-Max", live: true, desc: "Count of distinct credit card issuers used for transactions in the last 5 years." },
+    { name: "loan_stacking_amount_l3m", scaling: "Min-Max", live: true, desc: "Total payment volume towards financial-services merchants in the last 3 months." },
+    { name: "loan_stacking_amount_l6m", scaling: "Min-Max", live: true, desc: "Total payment volume towards financial-services merchants in the last 6 months." },
+    { name: "unique_lenders_last_1_years", scaling: "Min-Max", live: true, desc: "Count of distinct financial-services merchants transacted with in the last 1 year." },
+  ]},
+};
+
+/* Risk Model variables (Section 3) — not part of enrichment catalogue */
+const RISK_MODEL_VARS = [
+  { name: "dpd_30_prob_band", scaling: "Min-Max", desc: "Probability of default within 30 days past due. A1 = highest probability, K1 = explicit zero." },
+  { name: "dpd_90_prob_band", scaling: "Min-Max", desc: "Probability of default within 90 days past due. A1 = highest probability, K1 = explicit zero." },
+  { name: "cd_dpd_30_prob_band", scaling: "Min-Max", desc: "Probability of default on Customer Durables loans (DPD-30). A1 = highest probability, K1 = explicit zero." },
+];
+
+/* Scaling lookup for the color engine */
+const VAR_SCALING = {};
+Object.values(TS2_ALL_VARS).forEach(cat => cat.vars.forEach(v => { VAR_SCALING[v.name] = v.scaling; }));
+RISK_MODEL_VARS.forEach(v => { VAR_SCALING[v.name] = v.scaling; });
+
+/* Live attribute list for the API request payload */
+const TS2_LIVE_ATTRS = Object.values(TS2_ALL_VARS).flatMap(c => c.vars.filter(v => v.live).map(v => v.name));
+const TS2_RISK_MODEL_ATTRS = RISK_MODEL_VARS.map(v => v.name);
+const HEADLINE_VAR_NAMES = Object.values(TS2_ALL_VARS).flatMap(c => c.vars.filter(v => v.headline).map(v => v.name));
+
+/* ============================================================
+ * STATE & PROXY HEALTH
+ * ============================================================ */
+let state = { phone:"", hash:"", lastResult:null };
+
+async function checkProxy(){
+  const chip = document.getElementById("proxyChip");
+  try {
+    const r = await fetch(`${PROXY}/api/health`, { method:"GET", cache:"no-store" });
+    if (!r.ok) throw new Error("proxy returned " + r.status);
+    const data = await r.json();
+    chip.classList.remove("down"); chip.classList.add("up");
+    document.getElementById("block-proxy-down").classList.remove("on");
+    if (data.setup === "required") {
+      document.getElementById("setupModal").classList.add("on");
+    } else {
+      document.getElementById("setupModal").classList.remove("on");
+      if (!state.lastResult) showEmpty();
+    }
+  } catch(e) {
+    chip.classList.remove("up"); chip.classList.add("down");
+    if (!state.lastResult) showProxyDown();
+  }
+}
+
+function toggleAdvanced(){
+  const blk = document.getElementById("advancedBlock");
+  const btn = document.getElementById("advancedToggle").querySelector("button");
+  const open = blk.classList.toggle("on");
+  btn.querySelector(".arrow").textContent = open ? "▾" : "▸";
+}
+async function saveSetup(){
+  const keyId = document.getElementById("setup-key-id").value.trim();
+  const keySecret = document.getElementById("setup-key-secret").value.trim();
+  const keyIdTs2 = document.getElementById("setup-key-id-ts2").value.trim();
+  const keySecretTs2 = document.getElementById("setup-key-secret-ts2").value.trim();
+  const err = document.getElementById("setup-err");
+  err.classList.remove("on");
+  if (!keyId || !keySecret) {
+    err.textContent = "Key ID and Key Secret are required.";
+    err.classList.add("on"); return;
+  }
+  if (!keyId.startsWith("rzp_")) {
+    err.textContent = "Key ID should start with rzp_live_ or rzp_test_";
+    err.classList.add("on"); return;
+  }
+  const btn = document.getElementById("setup-save");
+  btn.disabled = true; btn.textContent = "Saving...";
+  try {
+    const payload = { key_id: keyId, key_secret: keySecret };
+    if (keyIdTs2 || keySecretTs2) {
+      payload.key_id_ts2 = keyIdTs2 || keyId;
+      payload.key_secret_ts2 = keySecretTs2 || keySecret;
+    }
+    const r = await fetch(`${PROXY}/api/setup`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error((body.error && body.error.description) || body.error || "Setup failed");
+    document.getElementById("setupModal").classList.remove("on");
+    checkProxy();
+  } catch (e) {
+    err.textContent = e.message || String(e);
+    err.classList.add("on");
+  } finally {
+    btn.disabled = false; btn.textContent = "Save and start";
+  }
+}
+checkProxy();
+setInterval(checkProxy, 5000);
+
+/* ============================================================
+ * UI HELPERS
+ * ============================================================ */
+function showEmpty(){ hideAll(); document.getElementById("block-empty").classList.add("on"); }
+function showProxyDown(){ hideAll(); document.getElementById("block-proxy-down").classList.add("on"); }
+function showLoading(){ hideAll(); document.getElementById("block-loading").classList.add("on"); animateLoadingSteps(); }
+function showReport(){ hideAll(); document.getElementById("block-report").classList.add("on"); }
+
+function friendlyError(status, body){
+  const e = (body && body.error) || {};
+  const reason = e.reason || ""; const code = e.code || ""; const desc = e.description || "";
+  if (reason === "invalid_mobile_number" || /invalid mobile/i.test(desc) || /contact number provided is invalid/i.test(desc)) {
+    return { title: "Number not in our records", body: "We don't have data for this phone number yet. Try a different one." };
+  }
+  if (code === "SETUP_REQUIRED") return { title: "Setup needed", body: "API credentials aren't configured. Open setup to enter your Key ID and Secret." };
+  if (/authentication/i.test(desc) || status === 401) return { title: "Authentication issue", body: "Your API credentials may be invalid or expired. Please contact your admin to refresh them." };
+  if (status === 403) return { title: "Access denied", body: "Your account doesn't have access to TrustScan. Please contact your admin." };
+  if (status === 429) return { title: "Too many requests", body: "Daily or minute quota reached. Please wait a moment and try again." };
+  if (status === 404) return { title: "Number not in our records", body: "We don't have data for this customer yet. Try a different number." };
+  if (status >= 500) return { title: "Service temporarily unavailable", body: "The Razorpay API is having trouble. Please try again in a minute." };
+  if (code === "BAD_REQUEST_ERROR" && desc) return { title: "Couldn't process this number", body: desc };
+  return { title: "Couldn't fetch result", body: desc || "Unexpected error. Please try again." };
+}
+
+function showError(title, body, raw){
+  hideAll();
+  document.getElementById("errTitle").textContent = title;
+  document.getElementById("errBody").textContent = body;
+  const detailsRow = document.getElementById("errDetailsRow");
+  const p = document.getElementById("errPre");
+  if (raw) {
+    detailsRow.style.display = "block";
+    p.textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+    p.style.display = "none";
+    document.getElementById("errToggle").textContent = "Show technical details";
+  } else {
+    detailsRow.style.display = "none"; p.style.display = "none";
+  }
+  document.getElementById("block-error").classList.add("on");
+}
+function toggleErrDetails(){
+  const p = document.getElementById("errPre"); const t = document.getElementById("errToggle");
+  if (p.style.display === "none") { p.style.display = "block"; t.textContent = "Hide technical details"; }
+  else { p.style.display = "none"; t.textContent = "Show technical details"; }
+}
+function hideAll(){
+  ["empty","proxy-down","loading","error","report"].forEach(id =>
+    document.getElementById("block-" + id).classList.remove("on")
+  );
+}
+function animateLoadingSteps(){
+  const s = ["step1","step2","step3"].map(id=>document.getElementById(id));
+  s.forEach(x=>x.classList.remove("on","done"));
+  s[0].classList.add("on");
+  setTimeout(()=>{s[0].classList.remove("on");s[0].classList.add("done");s[1].classList.add("on");},400);
+}
+
+function setPhone(p){
+  document.getElementById("phone").value = p; state.phone = p; updateHash();
+}
+document.getElementById("phone").addEventListener("input", (e) => {
+  state.phone = e.target.value.replace(/\D/g, "").slice(0, 10);
+  e.target.value = state.phone;
+  updateHash();
+});
+
+async function sha256Hex(str){
+  const buf = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function updateHash(){
+  const el = document.getElementById("hashValue");
+  if (!/^\d{10}$/.test(state.phone)) { el.textContent = "(enter 10 digits to see hash)"; state.hash = ""; return; }
+  state.hash = await sha256Hex(state.phone);
+  el.textContent = state.hash;
+}
+
+/* ============================================================
+ * SCAN — runs both endpoints, merges into one report
+ * ============================================================ */
+async function runScan(){
+  if (!/^\d{10}$/.test(state.phone)) { alert("Please enter a valid 10-digit phone number."); return; }
+  showLoading();
+  try {
+    if (!state.hash) await updateHash();
+    const [ts1Settled, ts2Settled] = await Promise.allSettled([ runTs1(), runTs2() ]);
+    const ts1 = ts1Settled.status === "fulfilled" ? ts1Settled.value : { ok: false, errInfo: { title:"Network error", body: String(ts1Settled.reason) } };
+    const ts2 = ts2Settled.status === "fulfilled" ? ts2Settled.value : { ok: false, errInfo: { title:"Network error", body: String(ts2Settled.reason) } };
+    if (!ts1.ok && !ts2.ok) {
+      const failed = ts1.errInfo || ts2.errInfo;
+      showError(failed.title, failed.body, ts1.raw || ts2.raw || null);
+      return;
+    }
+    state.lastResult = { ts1, ts2 };
+    renderReport(ts1, ts2);
+  } catch (e) {
+    showError("Network error", e.message || String(e));
+  }
+}
+async function runTs1(){
+  const r = await fetch(`${PROXY}/api/ts1`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ contact: state.phone }) });
+  const body = await r.json().catch(()=>({error:"non_json", raw:""}));
+  if (!r.ok) return { ok:false, raw: body, errInfo: friendlyError(r.status, body) };
+  return { ok:true, body };
+}
+async function runTs2(){
+  if (!state.hash) await updateHash();
+  const allAttrs = [...TS2_RISK_MODEL_ATTRS, ...TS2_LIVE_ATTRS];
+  const CHUNK_SIZE = 40; const chunks = [];
+  for (let i = 0; i < allAttrs.length; i += CHUNK_SIZE) chunks.push(allAttrs.slice(i, i + CHUNK_SIZE));
+  const responses = await Promise.all(chunks.map(attrs =>
+    fetch(`${PROXY}/api/ts2`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ sha256: state.hash, attributes: attrs }) })
+      .then(async r => ({ status: r.status, ok: r.ok, body: await r.json().catch(() => ({})) }))
+  ));
+  const failed = responses.find(r => !r.ok);
+  if (failed) return { ok:false, raw: failed.body, errInfo: friendlyError(failed.status, failed.body) };
+  const merged = { as_of: (responses[0].body || {}).as_of || new Date().toISOString().slice(0,10), attributes: {} };
+  for (const r of responses) {
+    const attrs = (r.body && (r.body.attributes || (r.body.data && r.body.data.attributes))) || {};
+    Object.assign(merged.attributes, attrs);
+  }
+  return { ok:true, body: merged };
+}
+
+/* ============================================================
+ * EXTRACTION HELPERS
+ * ============================================================ */
+function extractTs1Band(body){
+  if (!body) return null;
+  if (typeof body.band === "string") return body.band;
+  if (body.credit_risk && typeof body.credit_risk.risk_band === "string") return body.credit_risk.risk_band;
+  if (body.trust_scan && typeof body.trust_scan.band === "string") return body.trust_scan.band;
+  if (body.data && typeof body.data.band === "string") return body.data.band;
+  if (typeof body.risk_band === "string") return body.risk_band;
+  if (typeof body.risk_profile_band === "string") return body.risk_profile_band;
+  return null;
+}
+function extractTs2Attr(body, key){
+  const pool = body && (body.attributes || (body.data && body.data.attributes) || body);
+  if (!pool) return null;
+  const v = pool[key];
+  if (v == null) return null;
+  if (typeof v === "string") return v;
+  if (typeof v === "object") return v.band || v.value || v.code || null;
+  return null;
+}
+function isHiddenBand(band){
+  if (!band) return true;
+  return String(band).toUpperCase().trim() === "Z2";
+}
+
+/* ============================================================
+ * CARD RENDERER (single source of truth for all .vcard instances)
+ * ============================================================ */
+function describeBandForVar(varName, band){
+  if (!band) return { label:"No data", desc:"API did not return a value for this variable" };
+  const b = String(band).toUpperCase().trim();
+
+  if (varName === "thick_thin_data") {
+    const t = THICK_THIN[b];
+    return t ? { label: t.label, desc: t.desc } : { label: b, desc: "Unknown thick/thin code" };
+  }
+  if (varName === "predicted_income_bucket") {
+    const i = INCOME_BUCKETS[b];
+    return i ? { label: i.range, desc: i.label } : { label: b, desc: "Unknown income bucket code" };
+  }
+  if (varName === "has_failed_high_value_txn") {
+    if (b === "1" || b === "TRUE") return { label: "Yes — risk flag", desc: "Has at least one high-value failed transaction" };
+    if (b === "0" || b === "FALSE") return { label: "No", desc: "No high-value failed transactions" };
+  }
+  const m = bandMeaning(b);
+  return { label: m.qual, desc: m.pct };
+}
+
+function renderVcard(varName, scaling, band, desc){
+  if (isHiddenBand(band)) return ""; // ← hide Z2 / missing
+  const colors = getBandColor(band, varName) || { bg:"var(--vc-neutral-bg)", fg:"var(--vc-neutral-fg)" };
+  const meaning = describeBandForVar(varName, band);
+  return `<div class="vcard">
+    <div class="vcard-h">
+      <div class="vcard-name">${varName}</div>
+      <span class="vcard-scale">${scaling}</span>
+    </div>
+    <div class="vcard-band" style="background:${colors.bg};color:${colors.fg}">${band}</div>
+    <div class="vcard-meaning">${meaning.label}${meaning.desc ? `<span class="qual">${meaning.desc}</span>` : ""}</div>
+    <div class="vcard-desc">${desc || ""}</div>
+  </div>`;
+}
+
+/* ============================================================
+ * REPORT RENDERER
+ * ============================================================ */
+function renderReport(ts1, ts2){
+  document.getElementById("r-cust").textContent = "+91 " + state.phone;
+  document.getElementById("r-hash").textContent = state.hash.slice(0,12) + "…" + state.hash.slice(-6);
+  const asOf = (ts2.ok && ts2.body && ts2.body.as_of) || (ts1.ok && ts1.body && ts1.body.as_of) || new Date().toISOString().slice(0,10);
+  document.getElementById("r-asof").textContent = "Data as of " + asOf;
+
+  renderBandSection(ts1);
+  renderHeadlineSection(ts2);
+  renderRiskModelSection(ts2);
+  renderEnrichmentSection(ts2);
+
+  showReport();
+}
+
+function renderBandSection(ts1){
+  const errMini = document.getElementById("r-band-err-mini");
+  const letterEl = document.getElementById("r-letter");
+  const nameEl = document.getElementById("r-band-name");
+  const synthEl = document.getElementById("r-band-synth");
+  const refGridEl = document.getElementById("refGrid");
+
+  if (!ts1.ok) {
+    errMini.style.display = "inline-block";
+    errMini.textContent = ts1.errInfo ? ts1.errInfo.title : "Unavailable";
+    letterEl.textContent = "—";
+    letterEl.style.background = "var(--bg)";
+    letterEl.style.color = "var(--ink-300)";
+    nameEl.textContent = "Risk Profile band unavailable";
+    synthEl.textContent = ts1.errInfo ? ts1.errInfo.body : "The Risk Profile endpoint did not return a result.";
+    refGridEl.innerHTML = renderRefGrid(null);
+    return;
+  }
+  errMini.style.display = "none";
+
+  const rawBand = extractTs1Band(ts1.body);
+  if (!rawBand) {
+    errMini.style.display = "inline-block"; errMini.textContent = "Parse error";
+    letterEl.textContent = "—"; nameEl.textContent = "Couldn't parse band";
+    synthEl.textContent = "API returned 200 but no recognizable band field.";
+    refGridEl.innerHTML = renderRefGrid(null); return;
+  }
+  const bandLetter = String(rawBand).trim().charAt(0).toUpperCase();
+  const ref = RISK_BANDS.find(b => b.code === bandLetter) || { code: bandLetter, name:"Band " + bandLetter };
+  letterEl.textContent = ref.code;
+  letterEl.style.background = `var(--band-${ref.code}-bg, var(--bg))`;
+  letterEl.style.color = `var(--band-${ref.code}-fg, var(--ink-700))`;
+  // ★ Sub-band suffix removed per design requirement
+  nameEl.textContent = ref.name;
+  synthEl.textContent = RISK_SYNTH[ref.code] || "—";
+  refGridEl.innerHTML = renderRefGrid(ref.code);
+}
+
+function renderRefGrid(currentBand){
+  return RISK_BANDS.map(b => {
+    const isCur = b.code === currentBand;
+    const bullets = (b.bullets || []).map(p => `<li>${p}</li>`).join("");
+    return `<div class="rband ${isCur?"current":""}">
+      ${isCur?'<div class="here">Current</div>':''}
+      <span class="chip" style="background:var(--band-${b.code}-bg);color:var(--band-${b.code}-fg)">${b.code}</span>
+      <div class="name">${b.name}</div>
+      <ul class="bullets">${bullets}</ul>
+    </div>`;
+  }).join("");
+}
+
+function renderHeadlineSection(ts2){
+  const grid = document.getElementById("headlineGrid");
+  const err = document.getElementById("r-headline-err-mini");
+  if (!ts2.ok) {
+    err.style.display = "inline-block";
+    err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
+    grid.innerHTML = `<div class="empty-section">Headline signals unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
+    return;
+  }
+  err.style.display = "none";
+  // Pull headline variables from the catalogue (thick_thin_data, predicted_income_bucket)
+  const cards = HEADLINE_VAR_NAMES.map(name => {
+    const def = findVarDef(name);
+    if (!def) return "";
+    const band = extractTs2Attr(ts2.body, name);
+    return renderVcard(name, def.scaling, band, def.desc);
+  }).filter(Boolean);
+  grid.innerHTML = cards.length ? cards.join("") : `<div class="empty-section">No headline signals returned for this customer.</div>`;
+}
+
+function renderRiskModelSection(ts2){
+  const grid = document.getElementById("riskGrid");
+  const err = document.getElementById("r-risk-err-mini");
+  if (!ts2.ok) {
+    err.style.display = "inline-block";
+    err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
+    grid.innerHTML = `<div class="empty-section">Default risk models unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
+    return;
+  }
+  err.style.display = "none";
+  const cards = RISK_MODEL_VARS.map(v => {
+    const band = extractTs2Attr(ts2.body, v.name);
+    return renderVcard(v.name, v.scaling, band, v.desc);
+  }).filter(Boolean);
+  grid.innerHTML = cards.length ? cards.join("") : `<div class="empty-section">No default-risk model bands returned for this customer.</div>`;
+}
+
+function renderEnrichmentSection(ts2){
+  const host = document.getElementById("enrichContainer");
+  const err = document.getElementById("r-enrich-err-mini");
+  const countEl = document.getElementById("r-live-count");
+
+  if (!ts2.ok) {
+    err.style.display = "inline-block";
+    err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
+    host.innerHTML = `<div class="empty-section">Enrichment layer unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
+    countEl.textContent = "0";
+    return;
+  }
+  err.style.display = "none";
+
+  // Build per-category cards, hiding Z2 results and headline-featured variables
+  let totalRendered = 0;
+  const html = Object.keys(TS2_ALL_VARS).map((catName, ci) => {
+    const cat = TS2_ALL_VARS[catName];
+    const visibleVars = cat.vars.filter(v => v.live && !v.headline);
+    const cards = visibleVars.map(v => {
+      const band = extractTs2Attr(ts2.body, v.name);
+      return renderVcard(v.name, v.scaling, band, v.desc);
+    }).filter(Boolean);
+    if (cards.length === 0) return ""; // hide empty categories
+    totalRendered += cards.length;
+    return `<div class="cat-row open" id="livecat-${ci}">
+      <div class="cat-head" onclick="toggleCat('livecat-${ci}')">
+        <div class="icon">${cat.icon}</div>
+        <div><h4>${catName}</h4><div class="desc">${cat.groupDesc}</div></div>
+        <div class="count">${cards.length} returned</div>
+        <div class="arrow">▾</div>
+      </div>
+      <div class="cat-body"><div class="vgrid">${cards.join("")}</div></div>
+    </div>`;
+  }).filter(Boolean).join("");
+
+  host.innerHTML = html || `<div class="empty-section">No enrichment variables returned for this customer.</div>`;
+  countEl.textContent = String(totalRendered);
+}
+
+function findVarDef(name){
+  for (const cat of Object.values(TS2_ALL_VARS)) {
+    const v = cat.vars.find(x => x.name === name);
+    if (v) return v;
+  }
+  return null;
+}
+function toggleCat(id){ document.getElementById(id).classList.toggle("open"); }
+</script>
+</body>
+</html>
