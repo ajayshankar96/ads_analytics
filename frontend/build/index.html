@@ -371,8 +371,8 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
     <div class="report-section" id="section-signals">
       <div class="report-section-h">
         <span class="num">2</span>
-        <h2>Customer Signals</h2>
-        <span class="lede">Income profile · Credit risk · Hover cards for details</span>
+        <h2>Income and Credit Risk Profile</h2>
+        <span class="lede">Hover cards for details</span>
         <span id="r-signals-err-mini" class="err-mini" style="display:none">Unavailable</span>
       </div>
       <div id="signalLabels" class="signals-label-bar"></div>
@@ -1206,11 +1206,6 @@ function renderSignalsSection(ts2){
     return renderVcard(v.name, v.scaling, band, v.desc, true);
   }).filter(Boolean);
 
-  // Label bar outside the grid so it doesn't break the single row
-  const labelParts = [];
-  if (incomeCards.length) labelParts.push(`<div class="signals-group-label" style="flex:${incomeCards.length}">Income Profile</div>`);
-  if (riskCards.length)   labelParts.push(`<div class="signals-group-label" style="flex:${riskCards.length}">Credit Risk</div>`);
-  labelsEl.innerHTML = labelParts.join("");
 
   const allCards = [...incomeCards, ...riskCards];
   grid.innerHTML = allCards.length
