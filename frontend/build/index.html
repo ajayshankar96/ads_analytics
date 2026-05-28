@@ -1107,7 +1107,6 @@ function renderVcard(varName, scaling, band, desc){
     </div>
     <div class="vcard-band" style="background:${colors.bg};color:${colors.fg};font-size:${badgeFontSize}">${meaning.label}</div>
     ${slider}
-    ${meaning.desc ? `<div class="vcard-meaning"><span class="qual" style="color:var(--ink-500);font-size:12px">${meaning.desc}</span></div>` : ""}
     <div class="vcard-desc">${desc || ""}</div>
   </div>`;
 }
