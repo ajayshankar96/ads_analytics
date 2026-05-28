@@ -1103,8 +1103,7 @@ function renderVcard(varName, scaling, band, desc, isSignal=false){
   return `<div class="vcard${extraClass}">
     <div class="vcard-h">
       <div class="vcard-name">
-        <div style="font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-900);margin-bottom:2px">${label}</div>
-        <div style="font-size:10.5px;color:var(--ink-300);font-weight:400;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.01em">${varName}</div>
+        <div style="font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-900)">${label}</div>
       </div>
     </div>
     <div class="vcard-band" style="background:${colors.bg};color:${colors.fg};font-size:${badgeFontSize}">${meaning.label}</div>
