@@ -156,14 +156,25 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 
 /* ---------- UNIFIED VARIABLE CARD (used in Sections 2, 3, 4) ---------- */
 .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.vcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:200px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
-.vcard:hover{border-color:var(--ink-200);box-shadow:var(--shadow)}
-.vcard-h{display:flex;justify-content:center;align-items:flex-start;gap:8px;min-height:32px;text-align:center}
+
+/* 5-column signals grid (sections 2+3 merged) */
+.signals-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+@media(max-width:1100px){.signals-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:680px){.signals-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* Sub-group label inside signals section */
+.signals-group-label{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-300);margin:0 0 10px;grid-column:1/-1}
+
+.vcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-sm);transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .25s ease;position:relative;z-index:1;cursor:default}
+.vcard:hover{transform:translateY(-8px);box-shadow:0 16px 40px rgba(10,25,41,.13);z-index:2}
+.vcard-h{display:flex;justify-content:center;align-items:flex-start;gap:8px;text-align:center}
 .vcard-name{flex:1;font-family:'SF Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--rp-blue-800);font-weight:600;line-height:1.4;word-break:break-all;text-align:center}
 .vcard-band{display:inline-block;font-size:20px;font-weight:700;letter-spacing:-.02em;padding:7px 14px;border-radius:8px;line-height:1.15;align-self:center;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
 .vcard-meaning{font-size:12.5px;color:var(--ink-900);line-height:1.45;font-weight:600}
 .vcard-meaning .qual{color:var(--ink-500);font-weight:400;margin-left:0;display:block;margin-top:2px}
-.vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;margin-top:auto;padding-top:10px;border-top:1px dashed var(--line-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+/* Description hidden by default; revealed on hover */
+.vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;max-height:0;opacity:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease,padding-top .25s ease;border-top:1px dashed transparent}
+.vcard:hover .vcard-desc{max-height:140px;opacity:1;padding-top:10px;border-top-color:var(--line-2)}
 
 /* ---------- BAND POSITION SLIDER ---------- */
 .band-slider{margin:2px 0 4px;width:100%}
@@ -353,32 +364,21 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
       </div>
     </div>
 
-    <!-- Section 2: Headline Signals (unified cards) -->
-    <div class="report-section" id="section-headline">
+    <!-- Section 2: Income Profile + Credit Risk (merged 5-card row) -->
+    <div class="report-section" id="section-signals">
       <div class="report-section-h">
         <span class="num">2</span>
-        <h2>Headline Signals</h2>
-        <span class="lede">Engagement depth and predicted income</span>
-        <span id="r-headline-err-mini" class="err-mini" style="display:none">Unavailable</span>
+        <h2>Customer Signals</h2>
+        <span class="lede">Income profile · Credit risk · Hover cards for details</span>
+        <span id="r-signals-err-mini" class="err-mini" style="display:none">Unavailable</span>
       </div>
-      <div class="vgrid" id="headlineGrid"></div>
+      <div class="signals-grid" id="signalsGrid"></div>
     </div>
 
-    <!-- Section 3: Default Risk Models (unified cards) -->
-    <div class="report-section" id="section-risk">
-      <div class="report-section-h">
-        <span class="num">3</span>
-        <h2>Default Risk Models</h2>
-        <span class="lede">DPD-30 · DPD-90 · Customer Durable Loans</span>
-        <span id="r-risk-err-mini" class="err-mini" style="display:none">Unavailable</span>
-      </div>
-      <div class="vgrid" id="riskGrid"></div>
-    </div>
-
-    <!-- Section 4: Enrichment (unified cards, category accordion) -->
+    <!-- Section 3: Enrichment (unified cards, category accordion) -->
     <div class="report-section" id="section-enrich">
       <div class="report-section-h">
-        <span class="num">4</span>
+        <span class="num">3</span>
         <h2>Enrichment · <span id="r-live-count">—</span> variables</h2>
         <span class="lede">Live variables returned, grouped by category</span>
         <span id="r-enrich-err-mini" class="err-mini" style="display:none">Unavailable</span>
@@ -1113,12 +1113,9 @@ function renderVcard(varName, scaling, band, desc){
  * REPORT RENDERER
  * ============================================================ */
 function renderReport(ts1, ts2){
-
   renderBandSection(ts1);
-  renderHeadlineSection(ts2);
-  renderRiskModelSection(ts2);
+  renderSignalsSection(ts2);
   renderEnrichmentSection(ts2);
-
   showReport();
 }
 
@@ -1173,41 +1170,41 @@ function renderRefGrid(currentBand){
   }).join("");
 }
 
-function renderHeadlineSection(ts2){
-  const grid = document.getElementById("headlineGrid");
-  const err = document.getElementById("r-headline-err-mini");
+function renderSignalsSection(ts2){
+  const grid = document.getElementById("signalsGrid");
+  const err  = document.getElementById("r-signals-err-mini");
   if (!ts2.ok) {
     err.style.display = "inline-block";
     err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
-    grid.innerHTML = `<div class="empty-section">Headline signals unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
+    grid.innerHTML = `<div class="empty-section">Signals unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
     return;
   }
   err.style.display = "none";
-  // Pull headline variables from the catalogue (thick_thin_data, predicted_income_bucket)
-  const cards = HEADLINE_VAR_NAMES.map(name => {
+
+  // Income Profile cards (thick_thin_data, predicted_income_bucket)
+  const incomeCards = HEADLINE_VAR_NAMES.map(name => {
     const def = findVarDef(name);
     if (!def) return "";
     const band = extractTs2Attr(ts2.body, name);
     return renderVcard(name, def.scaling, band, def.desc);
   }).filter(Boolean);
-  grid.innerHTML = cards.length ? cards.join("") : `<div class="empty-section">No headline signals returned for this customer.</div>`;
-}
 
-function renderRiskModelSection(ts2){
-  const grid = document.getElementById("riskGrid");
-  const err = document.getElementById("r-risk-err-mini");
-  if (!ts2.ok) {
-    err.style.display = "inline-block";
-    err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
-    grid.innerHTML = `<div class="empty-section">Default risk models unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
-    return;
-  }
-  err.style.display = "none";
-  const cards = RISK_MODEL_VARS.map(v => {
+  // Credit Risk cards (DPD-30, DPD-90, CD)
+  const riskCards = RISK_MODEL_VARS.map(v => {
     const band = extractTs2Attr(ts2.body, v.name);
     return renderVcard(v.name, v.scaling, band, v.desc);
   }).filter(Boolean);
-  grid.innerHTML = cards.length ? cards.join("") : `<div class="empty-section">No default-risk model bands returned for this customer.</div>`;
+
+  const incomeGroup = incomeCards.length
+    ? `<div class="signals-group-label">Income Profile</div>${incomeCards.join("")}`
+    : "";
+  const riskGroup = riskCards.length
+    ? `<div class="signals-group-label">Credit Risk</div>${riskCards.join("")}`
+    : "";
+
+  grid.innerHTML = (incomeGroup || riskGroup)
+    ? incomeGroup + riskGroup
+    : `<div class="empty-section">No signals returned for this customer.</div>`;
 }
 
 function renderEnrichmentSection(ts2){
