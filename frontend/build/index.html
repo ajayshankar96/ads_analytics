@@ -589,6 +589,7 @@ const INCOME_BUCKETS = {
 const THICK_THIN = {
   A1:{label:"Thick data",        desc:"More than 3 annual transactions on Razorpay. Strongest enrichment confidence."},
   B1:{label:"Thin data",         desc:"3 or fewer annual transactions. Variables computable but with low confidence."},
+  Z2:{label:"No history",        desc:"No Razorpay transaction history found for this customer. Enrichment variables will not be available."},
 };
 
 /* ============================================================
@@ -1068,16 +1069,17 @@ function renderBandSlider(varName, band) {
 
   /* ── Thick / Thin: A1–B1 ── */
   if (varName === "thick_thin_data") {
-    const ORDER = ["A1","B1"];
+    const ORDER        = ["A1","B1","Z2"];
+    const LABELS       = ["Thick","Thin","No history"];
+    const ACTIVE_COLORS = ["#16a34a","#d97706","#9AA5B1"];
+    const DIM_COLORS    = ["#86efac","#fcd34d","#CBD2D9"];
     const idx = ORDER.indexOf(b);
     if (idx === -1) return "";
-    const ACTIVE_COLORS = ["#16a34a","#d97706"];
-    const DIM_COLORS    = ["#86efac","#fcd34d"];
     const segs = ORDER.map((code, i) => {
       const active = i === idx;
-      return `<div class="bs-seg${active?" active":""}" data-label="${code}" style="background:${active?ACTIVE_COLORS[i]:DIM_COLORS[i]}"></div>`;
+      return `<div class="bs-seg${active?" active":""}" data-label="${active?code:LABELS[i]}" style="background:${active?ACTIVE_COLORS[i]:DIM_COLORS[i]}"></div>`;
     }).join("");
-    return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>Thick</span><span>Thin</span></div></div>`;
+    return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>Thick</span><span>No history</span></div></div>`;
   }
 
   /* ── Decile: A–J (10 bands) ── */
@@ -1096,7 +1098,9 @@ function renderBandSlider(varName, band) {
 }
 
 function renderVcard(varName, scaling, band, desc, isSignal=false){
-  if (isHiddenBand(band)) return ""; // ← hide Z2 / missing
+  if (!band) return "";
+  // Z2 = "no history": hidden for all vars except thick_thin_data where it's a real value
+  if (String(band).toUpperCase().trim() === "Z2" && varName !== "thick_thin_data") return "";
   const colors = getBandColor(band, varName) || { bg:"var(--vc-neutral-bg)", fg:"var(--vc-neutral-fg)" };
   const meaning = describeBandForVar(varName, band);
   const label = VAR_LABELS[varName] || varName;
