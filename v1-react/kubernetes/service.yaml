@@ -1,0 +1,40 @@
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustscan-backend
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: trustscan
+    component: backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: trustscan-frontend
+  namespace: analytics-tools
+  labels:
+    app: trustscan
+    component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: trustscan
+    component: frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
