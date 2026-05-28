@@ -157,13 +157,12 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 /* ---------- UNIFIED VARIABLE CARD (used in Sections 2, 3, 4) ---------- */
 .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
 
-/* 5-column signals grid (sections 2+3 merged) */
-.signals-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
-@media(max-width:1100px){.signals-grid{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:680px){.signals-grid{grid-template-columns:repeat(2,1fr)}}
+/* 5-column signals grid — always 5 cols, no responsive collapse */
+.signals-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;overflow:visible}
 
-/* Sub-group label inside signals section */
-.signals-group-label{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-300);margin:0 0 10px;grid-column:1/-1}
+/* Flex label bar sits above the signals grid */
+.signals-label-bar{display:flex;gap:12px;margin-bottom:6px}
+.signals-group-label{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-300)}
 
 .vcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-sm);transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .25s ease;position:relative;z-index:1;cursor:default}
 .vcard:hover{transform:translateY(-8px);box-shadow:0 16px 40px rgba(10,25,41,.13);z-index:2}
@@ -172,9 +171,12 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 .vcard-band{display:inline-block;font-size:20px;font-weight:700;letter-spacing:-.02em;padding:7px 14px;border-radius:8px;line-height:1.15;align-self:center;min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
 .vcard-meaning{font-size:12.5px;color:var(--ink-900);line-height:1.45;font-weight:600}
 .vcard-meaning .qual{color:var(--ink-500);font-weight:400;margin-left:0;display:block;margin-top:2px}
-/* Description hidden by default; revealed on hover */
-.vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;max-height:0;opacity:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease,padding-top .25s ease;border-top:1px dashed transparent}
-.vcard:hover .vcard-desc{max-height:140px;opacity:1;padding-top:10px;border-top-color:var(--line-2)}
+/* Enrichment cards: description always visible */
+.vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;padding-top:10px;border-top:1px dashed var(--line-2)}
+/* Signal cards: description as floating popup on hover */
+.vcard-signal{overflow:visible}
+.vcard-signal .vcard-desc{position:absolute;top:calc(100% + 4px);left:-1px;right:-1px;background:#fff;border:1px solid var(--line);border-radius:0 0 10px 10px;padding:0 12px;box-shadow:0 8px 24px rgba(10,25,41,.12);z-index:20;max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease,opacity .2s ease,padding .2s ease}
+.vcard-signal:hover .vcard-desc{max-height:200px;opacity:1;padding:10px 12px}
 
 /* ---------- BAND POSITION SLIDER ---------- */
 .band-slider{margin:2px 0 4px;width:100%}
@@ -372,6 +374,7 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
         <span class="lede">Income profile · Credit risk · Hover cards for details</span>
         <span id="r-signals-err-mini" class="err-mini" style="display:none">Unavailable</span>
       </div>
+      <div id="signalLabels" class="signals-label-bar"></div>
       <div class="signals-grid" id="signalsGrid"></div>
     </div>
 
@@ -1088,7 +1091,7 @@ function renderBandSlider(varName, band) {
   return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${leftLabel}</span><span>${rightLabel}</span></div></div>`;
 }
 
-function renderVcard(varName, scaling, band, desc){
+function renderVcard(varName, scaling, band, desc, isSignal=false){
   if (isHiddenBand(band)) return ""; // ← hide Z2 / missing
   const colors = getBandColor(band, varName) || { bg:"var(--vc-neutral-bg)", fg:"var(--vc-neutral-fg)" };
   const meaning = describeBandForVar(varName, band);
@@ -1096,7 +1099,8 @@ function renderVcard(varName, scaling, band, desc){
   const slider = renderBandSlider(varName, band);
   // Badge shows human-readable label; slider dot already shows the band code
   const badgeFontSize = meaning.label.length > 10 ? "13px" : meaning.label.length > 6 ? "15px" : "20px";
-  return `<div class="vcard">
+  const extraClass = isSignal ? " vcard-signal" : "";
+  return `<div class="vcard${extraClass}">
     <div class="vcard-h">
       <div class="vcard-name">
         <div style="font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-900);margin-bottom:2px">${label}</div>
@@ -1171,11 +1175,14 @@ function renderRefGrid(currentBand){
 }
 
 function renderSignalsSection(ts2){
-  const grid = document.getElementById("signalsGrid");
-  const err  = document.getElementById("r-signals-err-mini");
+  const grid      = document.getElementById("signalsGrid");
+  const labelsEl  = document.getElementById("signalLabels");
+  const err       = document.getElementById("r-signals-err-mini");
+
   if (!ts2.ok) {
     err.style.display = "inline-block";
     err.textContent = ts2.errInfo ? ts2.errInfo.title : "Unavailable";
+    labelsEl.innerHTML = "";
     grid.innerHTML = `<div class="empty-section">Signals unavailable. ${ts2.errInfo ? ts2.errInfo.body : ""}</div>`;
     return;
   }
@@ -1186,24 +1193,24 @@ function renderSignalsSection(ts2){
     const def = findVarDef(name);
     if (!def) return "";
     const band = extractTs2Attr(ts2.body, name);
-    return renderVcard(name, def.scaling, band, def.desc);
+    return renderVcard(name, def.scaling, band, def.desc, true);
   }).filter(Boolean);
 
   // Credit Risk cards (DPD-30, DPD-90, CD)
   const riskCards = RISK_MODEL_VARS.map(v => {
     const band = extractTs2Attr(ts2.body, v.name);
-    return renderVcard(v.name, v.scaling, band, v.desc);
+    return renderVcard(v.name, v.scaling, band, v.desc, true);
   }).filter(Boolean);
 
-  const incomeGroup = incomeCards.length
-    ? `<div class="signals-group-label">Income Profile</div>${incomeCards.join("")}`
-    : "";
-  const riskGroup = riskCards.length
-    ? `<div class="signals-group-label">Credit Risk</div>${riskCards.join("")}`
-    : "";
+  // Label bar outside the grid so it doesn't break the single row
+  const labelParts = [];
+  if (incomeCards.length) labelParts.push(`<div class="signals-group-label" style="flex:${incomeCards.length}">Income Profile</div>`);
+  if (riskCards.length)   labelParts.push(`<div class="signals-group-label" style="flex:${riskCards.length}">Credit Risk</div>`);
+  labelsEl.innerHTML = labelParts.join("");
 
-  grid.innerHTML = (incomeGroup || riskGroup)
-    ? incomeGroup + riskGroup
+  const allCards = [...incomeCards, ...riskCards];
+  grid.innerHTML = allCards.length
+    ? allCards.join("")
     : `<div class="empty-section">No signals returned for this customer.</div>`;
 }
 
