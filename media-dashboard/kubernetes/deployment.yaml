@@ -5,6 +5,9 @@ metadata:
   namespace: analytics-tools
   labels:
     app: media-dashboard
+    devstack_label: analytics
+    bu: ads
+    label: analytics
 spec:
   replicas: 1
   selector:
@@ -14,6 +17,7 @@ spec:
     metadata:
       labels:
         app: media-dashboard
+        devstack_label: analytics
     spec:
       containers:
       - name: app

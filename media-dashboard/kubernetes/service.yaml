@@ -5,6 +5,7 @@ metadata:
   namespace: analytics-tools
   labels:
     app: media-dashboard
+    devstack_label: analytics
 spec:
   type: ClusterIP
   selector:

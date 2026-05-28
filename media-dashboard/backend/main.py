@@ -45,21 +45,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
 
-# ── Serve React frontend static files (production) ───────────────────────────
-STATIC_DIR = Path(__file__).parent / "static"
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR / "static")), name="static")
-
-    @app.get("/", include_in_schema=False)
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_frontend(full_path: str = ""):
-        # Don't catch API or health routes
-        if full_path.startswith("api/") or full_path == "health":
-            raise HTTPException(status_code=404)
-        index = STATIC_DIR / "index.html"
-        if index.exists():
-            return FileResponse(str(index))
-
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -456,6 +441,20 @@ def refresh_cache():
         return {"message": "Cache refreshed", "rowCount": result["row_count"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Serve React frontend (must be LAST — catch-all after all API routes) ──────
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR / "static")), name="static")
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str = ""):
+        index = STATIC_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        raise HTTPException(status_code=404)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
