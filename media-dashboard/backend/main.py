@@ -448,6 +448,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR / "static")), name="static")
 
+    @app.get("/favicon.svg", include_in_schema=False)
+    async def favicon():
+        return FileResponse(str(STATIC_DIR / "favicon.svg"), media_type="image/svg+xml")
+
     @app.get("/", include_in_schema=False)
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_frontend(full_path: str = ""):
