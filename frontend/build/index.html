@@ -1083,7 +1083,7 @@ function renderBandSlider(varName, band) {
     const frac = dir === "low_is_good" ? i / 9 : 1 - i / 9; // 0=red, 1=green
     const hue = Math.round(frac * 120);
     const active = i === idx;
-    return `<div class="bs-seg${active?" active":""}" data-label="${l}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
+    return `<div class="bs-seg${active?" active":""}" data-label="${active?b:l}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
   }).join("");
   const [leftLabel, rightLabel] = dir === "low_is_good" ? ["High Risk","Low Risk"] : ["Low","High"];
   return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${leftLabel}</span><span>${rightLabel}</span></div></div>`;
