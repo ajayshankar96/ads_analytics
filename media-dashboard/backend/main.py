@@ -1,0 +1,462 @@
+"""
+Razorpay Media Dashboard — FastAPI backend.
+
+Run locally:
+    cd backend
+    uvicorn main:app --reload --port 8000
+"""
+
+import logging
+import os
+from typing import List, Optional
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from cache import cache, load_master_report_cache, start_background_refresh, MASTER_CACHE_KEY
+from data_logic import (
+    apply_filters,
+    calculate_aggregates,
+    compute_data_freshness,
+    get_advertiser_health,
+    get_advertiser_performance,
+    get_breakdowns,
+    get_budget_data,
+    get_filter_options,
+    get_filter_relationships,
+    get_monthly_spend_analysis,
+    get_publisher_performance,
+    get_time_series,
+    prepare_table_data,
+)
+from sheets_client import (
+    KPI_SPREADSHEET_ID,
+    append_rows,
+    read_kpi_sheet,
+    update_range,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """Pre-warm the cache and start background refresh."""
+    logger.info("Starting up — pre-warming master report cache...")
+    try:
+        load_master_report_cache()
+    except Exception as e:
+        logger.warning(f"Pre-warm failed (will retry on first request): {e}")
+
+    refresh_interval = int(os.environ.get("CACHE_REFRESH_INTERVAL", "300"))
+    start_background_refresh(interval_seconds=refresh_interval)
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+@app.get("/health")
+def health():
+    age = cache.age(MASTER_CACHE_KEY)
+    return {
+        "status": "ok",
+        "cache": "warm" if age is not None else "cold",
+        "cacheAgeSecs": age,
+    }
+
+
+# ── Filters ───────────────────────────────────────────────────────────────────
+@app.get("/api/filters")
+def get_filters(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+):
+    data = load_master_report_cache()
+    filters = {}
+    if advertiser:
+        filters["advertiser"] = advertiser
+    if publisher:
+        filters["publisher"] = publisher
+    return get_filter_options(data, filters)
+
+
+@app.get("/api/filter-relationships")
+def filter_relationships():
+    data = load_master_report_cache()
+    return get_filter_relationships(data)
+
+
+# ── Dashboard chunks ──────────────────────────────────────────────────────────
+@app.get("/api/dashboard/aggregates")
+def dashboard_aggregates(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    industry: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
+    brand: Optional[List[str]] = Query(None),
+    offer: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+):
+    filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
+    data = load_master_report_cache()
+    rows = apply_filters(data["rows"], filters)
+    aggs = calculate_aggregates(rows, data["headers"])
+    return {**aggs, "totalRows": len(rows), "cacheAge": data.get("cache_age", 0)}
+
+
+@app.get("/api/dashboard/timeseries")
+def dashboard_timeseries(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    industry: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
+    brand: Optional[List[str]] = Query(None),
+    offer: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    groupBy: str = "day",
+):
+    filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
+    data = load_master_report_cache()
+    rows = apply_filters(data["rows"], filters)
+    series = get_time_series(rows, data["headers"], group_by=groupBy)
+    return {"timeSeries": series, "groupBy": groupBy}
+
+
+@app.get("/api/dashboard/breakdowns")
+def dashboard_breakdowns(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    industry: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
+    brand: Optional[List[str]] = Query(None),
+    offer: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+):
+    filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
+    data = load_master_report_cache()
+    rows = apply_filters(data["rows"], filters)
+    return {"breakdowns": get_breakdowns(rows, data["headers"])}
+
+
+@app.get("/api/dashboard/table")
+def dashboard_table(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    industry: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
+    brand: Optional[List[str]] = Query(None),
+    offer: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 100,
+):
+    filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
+    data = load_master_report_cache()
+    rows = apply_filters(data["rows"], filters)
+    total = len(rows)
+    table = prepare_table_data(rows, data["headers"], offset=offset, limit=limit)
+    return {
+        "tableData": table,
+        "totalRows": total,
+        "offset": offset,
+        "limit": limit,
+        "hasMore": (offset + limit) < total,
+        "headers": data["headers"],
+    }
+
+
+# ── Performance ───────────────────────────────────────────────────────────────
+@app.get("/api/advertiser-performance")
+def advertiser_performance(
+    advertisers: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    viewMode: str = "weekly",
+):
+    data = load_master_report_cache()
+    filters = {"advertisers": advertisers or [], "dateFrom": dateFrom, "dateTo": dateTo}
+    result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
+    result["cacheAge"] = data.get("cache_age", 0)
+    return result
+
+
+@app.get("/api/publisher-performance")
+def publisher_performance(
+    publishers: Optional[List[str]] = Query(None),
+    segments: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    viewMode: str = "weekly",
+):
+    data = load_master_report_cache()
+    filters = {
+        "publishers": publishers or [],
+        "segments": segments or [],
+        "dateFrom": dateFrom,
+        "dateTo": dateTo,
+    }
+    result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
+    result["cacheAge"] = data.get("cache_age", 0)
+    return result
+
+
+# ── Advertiser Health ─────────────────────────────────────────────────────────
+@app.get("/api/advertiser-health")
+def advertiser_health(viewMode: str = "weekly"):
+    data = load_master_report_cache()
+    result = get_advertiser_health(data["rows"], data["headers"], view_mode=viewMode)
+    result["cacheAge"] = data.get("cache_age", 0)
+    return result
+
+
+# ── Data Freshness ────────────────────────────────────────────────────────────
+@app.get("/api/data-freshness")
+def data_freshness():
+    cache_key = "data_freshness"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    data = load_master_report_cache()
+    result = compute_data_freshness(data["rows"], data["headers"])
+    cache.set(cache_key, result, ttl=600)
+    return result
+
+
+# ── Monthly Spend ─────────────────────────────────────────────────────────────
+@app.get("/api/monthly-spend")
+def monthly_spend():
+    cache_key = "monthly_spend"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    data = load_master_report_cache()
+    result = get_monthly_spend_analysis(data["rows"], data["headers"])
+    cache.set(cache_key, result, ttl=600)
+    return result
+
+
+# ── Budget ────────────────────────────────────────────────────────────────────
+@app.get("/api/budget")
+def budget(
+    month: Optional[str] = None,
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+):
+    data = load_master_report_cache()
+    filters = {"month": month, "advertiser": advertiser or [], "publisher": publisher or []}
+    return get_budget_data(data["rows"], data["headers"], filters=filters)
+
+
+# ── Goals ─────────────────────────────────────────────────────────────────────
+@app.get("/api/goals")
+def get_goals():
+    try:
+        raw = read_kpi_sheet("Sheet1")  # Goals spreadsheet first sheet
+    except Exception as e:
+        logger.error(f"Error reading goals: {e}")
+        return []
+    if not raw or len(raw) < 2:
+        return []
+    headers = raw[0]
+    rows = raw[1:]
+
+    def fi(name):
+        for i, h in enumerate(headers):
+            if str(h).lower().strip() == name.lower():
+                return i
+        return -1
+
+    adv_i = fi("advertiser")
+    pub_i = fi("publisher")
+    goals_i = next((i for i, h in enumerate(headers)
+                    if "goals" in str(h).lower() and "campaign" in str(h).lower()), -1)
+
+    parsed = []
+    for row in rows:
+        if goals_i < 0 or len(row) <= goals_i:
+            continue
+        goals_json = row[goals_i]
+        if not goals_json:
+            continue
+        try:
+            import json
+            gdata = json.loads(str(goals_json))
+            adv = row[adv_i] if adv_i >= 0 and len(row) > adv_i else ""
+            pub = row[pub_i] if pub_i >= 0 and len(row) > pub_i else ""
+
+            for goal_type, goal_metrics in (gdata.get("goals") or {}).items():
+                if not isinstance(goal_metrics, dict):
+                    continue
+                for metric, val in goal_metrics.items():
+                    parsed.append({
+                        "advertiser": adv,
+                        "publisher": pub,
+                        "metric": metric,
+                        "goalValue": val,
+                        "type": goal_type,
+                        "direction": _goal_direction(metric),
+                    })
+        except Exception:
+            continue
+    return parsed
+
+
+def _goal_direction(metric_name: str) -> str:
+    lower = metric_name.lower()
+    if any(x in lower for x in ["cp", "cost", "cpa", "cpc", "cpm", "cpql", "cpqqg"]):
+        return "lower"
+    return "higher"
+
+
+# ── Global KPIs ───────────────────────────────────────────────────────────────
+GLOBAL_KPIS_SHEET = "Global_KPIs"
+KPI_HEADERS = ["ID", "KPI_Name", "KPI_Data", "Created_By", "Created_Date",
+               "Modified_By", "Modified_Date", "Is_Active"]
+
+
+def _read_global_kpis_raw():
+    try:
+        return read_kpi_sheet(GLOBAL_KPIS_SHEET)
+    except Exception:
+        return []
+
+
+@app.get("/api/kpis")
+def get_kpis():
+    import json as _json
+    raw = _read_global_kpis_raw()
+    if len(raw) <= 1:
+        return []
+
+    headers = raw[0]
+    rows = raw[1:]
+    id_i = headers.index("ID") if "ID" in headers else 0
+    name_i = headers.index("KPI_Name") if "KPI_Name" in headers else 1
+    data_i = headers.index("KPI_Data") if "KPI_Data" in headers else 2
+    active_i = headers.index("Is_Active") if "Is_Active" in headers else 7
+
+    result = []
+    for row in rows:
+        if len(row) <= active_i:
+            continue
+        if str(row[active_i]).upper() not in ("TRUE", "1", "YES"):
+            continue
+        try:
+            kpi = _json.loads(str(row[data_i]))
+            kpi["id"] = row[id_i]
+            kpi["name"] = row[name_i]
+            result.append(kpi)
+        except Exception:
+            continue
+    return result
+
+
+class KPIPayload(BaseModel):
+    name: str
+    advertiser: Optional[str] = None
+    publisher: Optional[str] = None
+    segment: Optional[str] = None
+    formula: Optional[str] = None
+    goalValue: Optional[float] = None
+    goalDirection: Optional[str] = "higher"
+    timePeriod: Optional[str] = "1week"
+
+
+@app.post("/api/kpis")
+def create_kpi(payload: KPIPayload):
+    import json as _json, uuid as _uuid
+    kpi_id = str(_uuid.uuid4())
+    from datetime import datetime
+    now = datetime.utcnow().isoformat()
+    kpi_data = payload.dict()
+    kpi_data["id"] = kpi_id
+
+    row = [
+        kpi_id,
+        payload.name,
+        _json.dumps(kpi_data),
+        "dashboard-user",
+        now,
+        "dashboard-user",
+        now,
+        "TRUE",
+    ]
+    try:
+        append_rows(KPI_SPREADSHEET_ID, GLOBAL_KPIS_SHEET, [row])
+        return {"id": kpi_id, "message": "KPI created"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/kpis/{kpi_id}")
+def delete_kpi(kpi_id: str):
+    """Soft delete by setting Is_Active = FALSE."""
+    raw = _read_global_kpis_raw()
+    if len(raw) <= 1:
+        raise HTTPException(status_code=404, detail="KPI not found")
+
+    headers = raw[0]
+    id_i = headers.index("ID") if "ID" in headers else 0
+    active_i = headers.index("Is_Active") if "Is_Active" in headers else 7
+
+    for row_num, row in enumerate(raw[1:], start=2):
+        if len(row) > id_i and row[id_i] == kpi_id:
+            try:
+                cell = f"{GLOBAL_KPIS_SHEET}!{chr(65 + active_i)}{row_num}"
+                update_range(KPI_SPREADSHEET_ID, cell, [["FALSE"]])
+                return {"message": "KPI deleted"}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+    raise HTTPException(status_code=404, detail="KPI not found")
+
+
+# ── Cache control ─────────────────────────────────────────────────────────────
+@app.post("/api/cache/refresh")
+def refresh_cache():
+    """Force-refresh the master report cache (useful for testing)."""
+    try:
+        result = load_master_report_cache(force=True)
+        return {"message": "Cache refreshed", "rowCount": result["row_count"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _build_filters(advertiser, publisher, industry, segment, brand, offer, date_from, date_to) -> dict:
+    f = {}
+    if advertiser:
+        f["advertiser"] = advertiser
+    if publisher:
+        f["publisher"] = publisher
+    if industry:
+        f["industry"] = industry
+    if segment:
+        f["segment"] = segment
+    if brand:
+        f["brand"] = brand
+    if offer:
+        f["offer"] = offer
+    if date_from:
+        f["dateFrom"] = date_from
+    if date_to:
+        f["dateTo"] = date_to
+    return f

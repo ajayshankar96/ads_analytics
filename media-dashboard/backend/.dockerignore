@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+service_account.json
+client_secret.json
+oauth_token.json
+token.pickle
+*.pickle
