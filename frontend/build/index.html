@@ -963,7 +963,7 @@ function describeBandForVar(varName, band){
     if (b === "0" || b === "FALSE") return { label: "No", desc: "No high-value failed transactions" };
   }
   const m = bandMeaning(b);
-  return { label: m.qual, desc: m.pct };
+  return { label: m.pct, desc: m.qual };
 }
 
 /* ============================================================
