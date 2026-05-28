@@ -1,20 +1,27 @@
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
 metadata:
-  name: media-dashboard-ingress
+  name: media-dashboard
   namespace: analytics-tools
   annotations:
-    kubernetes.io/ingress.class: "nginx"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    janitor/ttl: forever
+    kubernetes.io/ingress.class: traefik-concierge
+  labels:
+    app: media-dashboard
+    devstack_label: analytics
 spec:
-  rules:
-  - host: 3p-media-dashboard.dev.razorpay.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: media-dashboard
-            port:
-              number: 8000
+  entryPoints:
+  - web
+  routes:
+  - kind: Rule
+    match: Host(`3p-media-dashboard.dev.razorpay.in`) && Headers(`rzpctx-dev-serve-user`,`analytics`)
+    services:
+    - name: media-dashboard
+      port: 8000
+  - kind: Rule
+    match: Host(`3p-media-dashboard-analytics.dev.razorpay.in`)
+    middlewares:
+    - name: injectheader-analytics
+    services:
+    - name: media-dashboard
+      port: 8000
