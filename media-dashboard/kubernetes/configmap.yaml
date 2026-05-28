@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-dashboard-config
+  namespace: analytics-tools
+data:
+  MASTER_SPREADSHEET_ID: "1yvcrWEvWauUOOGJrN5votRlOP-kCaSrOKeh-YvjKjfI"
+  KPI_SPREADSHEET_ID: "1VDr2ewZw2Xl43PuYBoKt8PgepItHZs-icD49YnILBss"
+  CACHE_REFRESH_INTERVAL: "300"

@@ -1,0 +1,124 @@
+name: Build and Deploy Media Dashboard
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'media-dashboard/**'
+      - '.github/workflows/media-dashboard.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'media-dashboard/**'
+
+env:
+  BACKEND_IMAGE: c.rzp.io/razorpay/media-dashboard-backend
+  FRONTEND_IMAGE: c.rzp.io/razorpay/media-dashboard-frontend
+
+jobs:
+  build-backend:
+    name: Build Backend Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Harbor Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v2
+        with:
+          registry: c.rzp.io
+          username: ${{ secrets.HARBOR_DOCKER_USERNAME }}
+          password: ${{ secrets.HARBOR_DOCKER_PASSWORD }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./media-dashboard/backend
+          file: ./media-dashboard/backend/Dockerfile
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    name: Build Frontend Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Harbor Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v2
+        with:
+          registry: c.rzp.io
+          username: ${{ secrets.HARBOR_DOCKER_USERNAME }}
+          password: ${{ secrets.HARBOR_DOCKER_PASSWORD }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./media-dashboard/frontend
+          file: ./media-dashboard/frontend/Dockerfile
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+
+      - name: Apply OAuth token secret
+        run: |
+          kubectl create secret generic media-dashboard-secrets \
+            --namespace=analytics-tools \
+            --from-literal=OAUTH_TOKEN_JSON_CONTENT="${{ secrets.MEDIA_DASHBOARD_OAUTH_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f media-dashboard/kubernetes/configmap.yaml
+          kubectl apply -f media-dashboard/kubernetes/deployment.yaml
+          kubectl apply -f media-dashboard/kubernetes/service.yaml
+          kubectl apply -f media-dashboard/kubernetes/ingress.yaml
+
+      - name: Update image tags
+        run: |
+          kubectl set image deployment/media-dashboard-backend \
+            fastapi=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            -n analytics-tools
+          kubectl set image deployment/media-dashboard-frontend \
+            nginx=${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            -n analytics-tools
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/media-dashboard-backend -n analytics-tools --timeout=120s
+          kubectl rollout status deployment/media-dashboard-frontend -n analytics-tools --timeout=120s

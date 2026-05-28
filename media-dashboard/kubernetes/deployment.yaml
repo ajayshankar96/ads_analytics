@@ -1,0 +1,117 @@
+---
+# Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-dashboard-backend
+  namespace: analytics-tools
+  labels:
+    app: media-dashboard
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: media-dashboard
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: media-dashboard
+        component: backend
+    spec:
+      containers:
+      - name: fastapi
+        image: c.rzp.io/razorpay/media-dashboard-backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MASTER_SPREADSHEET_ID
+          valueFrom:
+            configMapKeyRef:
+              name: media-dashboard-config
+              key: MASTER_SPREADSHEET_ID
+        - name: KPI_SPREADSHEET_ID
+          valueFrom:
+            configMapKeyRef:
+              name: media-dashboard-config
+              key: KPI_SPREADSHEET_ID
+        - name: CACHE_REFRESH_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: media-dashboard-config
+              key: CACHE_REFRESH_INTERVAL
+        - name: OAUTH_TOKEN_JSON_CONTENT
+          valueFrom:
+            secretKeyRef:
+              name: media-dashboard-secrets
+              key: OAUTH_TOKEN_JSON_CONTENT
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+# Frontend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-dashboard-frontend
+  namespace: analytics-tools
+  labels:
+    app: media-dashboard
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: media-dashboard
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: media-dashboard
+        component: frontend
+    spec:
+      containers:
+      - name: nginx
+        image: c.rzp.io/razorpay/media-dashboard-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
