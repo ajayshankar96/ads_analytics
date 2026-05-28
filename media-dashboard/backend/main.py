@@ -8,10 +8,13 @@ Run locally:
 
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from cache import cache, load_master_report_cache, start_background_refresh, MASTER_CACHE_KEY
@@ -41,6 +44,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
+
+# ── Serve React frontend static files (production) ───────────────────────────
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR / "static")), name="static")
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str = ""):
+        # Don't catch API or health routes
+        if full_path.startswith("api/") or full_path == "health":
+            raise HTTPException(status_code=404)
+        index = STATIC_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(

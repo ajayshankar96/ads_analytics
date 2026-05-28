@@ -1,40 +1,16 @@
----
-# Backend Service
 apiVersion: v1
 kind: Service
 metadata:
-  name: media-dashboard-backend
+  name: media-dashboard
   namespace: analytics-tools
   labels:
     app: media-dashboard
-    component: backend
 spec:
   type: ClusterIP
   selector:
     app: media-dashboard
-    component: backend
   ports:
   - name: http
     port: 8000
     targetPort: 8000
-    protocol: TCP
----
-# Frontend Service
-apiVersion: v1
-kind: Service
-metadata:
-  name: media-dashboard-frontend
-  namespace: analytics-tools
-  labels:
-    app: media-dashboard
-    component: frontend
-spec:
-  type: ClusterIP
-  selector:
-    app: media-dashboard
-    component: frontend
-  ports:
-  - name: http
-    port: 80
-    targetPort: 80
     protocol: TCP
