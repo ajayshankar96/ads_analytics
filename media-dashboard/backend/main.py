@@ -432,6 +432,84 @@ def delete_kpi(kpi_id: str):
     raise HTTPException(status_code=404, detail="KPI not found")
 
 
+# ── Chatbot ───────────────────────────────────────────────────────────────────
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[list] = []
+
+
+@app.post("/api/chat")
+def chat(req: ChatRequest):
+    import json as _json
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Chatbot not configured (missing ANTHROPIC_API_KEY)")
+
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        raise HTTPException(status_code=503, detail="anthropic package not installed")
+
+    # Build data context from live cache
+    data = load_master_report_cache()
+    from data_logic import calculate_aggregates, compute_data_freshness, get_filter_options
+    aggs = calculate_aggregates(data["rows"], data["headers"])
+    freshness = compute_data_freshness(data["rows"], data["headers"])
+    filter_opts = get_filter_options(data, {})
+
+    adv_list = "\n".join(
+        f"  - {a['advertiser']}: {a['status'].replace('_', ' ')} "
+        f"(pub last: {a['pubLastDate']}, adv last: {a['advLastDate']})"
+        for a in freshness["advertisers"]
+    )
+
+    system_prompt = f"""You are a helpful data assistant for the Razorpay Media Network Dashboard.
+You answer questions about the live data powering this dashboard. Be concise and factual.
+
+=== CURRENT DATA SNAPSHOT (as of {freshness['computedAt']}) ===
+
+SUMMARY METRICS:
+- Impressions + Distribution: {aggs['impressionsAndDistribution']:,}
+- Clicks: {aggs['clicks']:,}
+- Publisher Spends: ₹{aggs['spends']:,}
+- Advertiser Spends: ₹{aggs['advertiserSpends']:,}
+- CTR: {aggs['ctr']}% | CPM: ₹{aggs['cpm']} | CPC: ₹{aggs['cpc']}
+- QL: {aggs['ql']:,} | QQG: {aggs['qqg']:,}
+- Total advertisers: {aggs['advertiserCount']} | Publishers: {aggs['publisherCount']}
+
+DATA FRESHNESS (reference date: {freshness.get('maxDataDate', 'unknown')}):
+- Up to date: {freshness['upToDateCount']} advertisers
+- Publisher data outdated: {freshness['publisherOutdatedCount']} advertisers
+- Advertiser data outdated: {freshness['advertiserOutdatedCount']} advertisers
+- Both outdated: {freshness['bothOutdatedCount']} advertisers
+
+ADVERTISER-LEVEL FRESHNESS:
+{adv_list}
+
+PUBLISHERS in data: {', '.join(filter_opts.get('publishers', []))}
+ADVERTISERS in data: {', '.join(filter_opts.get('advertisers', []))}
+
+Answer questions about this data directly. If asked about a specific advertiser or publisher, look them up above.
+If something is off (e.g. data not refreshed), explain clearly which entity and when it was last updated."""
+
+    client = _anthropic.Anthropic(api_key=api_key)
+
+    messages = (req.history or [])[-10:]  # keep last 10 turns for context
+    messages.append({"role": "user", "content": req.message})
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=512,
+            system=system_prompt,
+            messages=messages,
+        )
+        reply = response.content[0].text
+        return {"reply": reply}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Cache control ─────────────────────────────────────────────────────────────
 @app.post("/api/cache/refresh")
 def refresh_cache():

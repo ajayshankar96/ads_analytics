@@ -6,3 +6,4 @@ google-auth==2.27.0
 google-auth-httplib2==0.2.0
 httplib2==0.22.0
 apscheduler==3.10.4
+anthropic>=0.25.0

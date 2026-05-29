@@ -8,6 +8,7 @@ import Budget from "./components/Budget";
 import MonthlySpend from "./components/MonthlySpend";
 import GlobalKPIs from "./components/GlobalKPIs";
 import FilterBar from "./components/FilterBar";
+import ChatBot from "./components/ChatBot";
 import { getFilters, getHealth, refreshCache } from "./api";
 
 const TABS = [
@@ -194,6 +195,9 @@ export default function App() {
         {error && <div style={styles.errorBanner}>Error: {error}</div>}
         {renderTab()}
       </main>
+
+      {/* Chatbot */}
+      <ChatBot />
     </div>
   );
 }
