@@ -55,6 +55,12 @@ spec:
             secretKeyRef:
               name: media-dashboard-secrets
               key: OAUTH_TOKEN_JSON_CONTENT
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: media-dashboard-secrets
+              key: ANTHROPIC_API_KEY
+              optional: true
         resources:
           requests:
             memory: "512Mi"
