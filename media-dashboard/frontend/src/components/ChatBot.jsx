@@ -15,22 +15,34 @@ async function sendMessage(message, history) {
   return res.json();
 }
 
-const SUGGESTIONS = [
+const ALL_SUGGESTIONS = [
   "Which advertisers are not refreshed?",
   "When was data last updated?",
   "Which publishers have outdated data?",
   "What are the total impressions?",
+  "Which advertiser has the highest spends?",
+  "How many advertisers have both pub & adv data outdated?",
+  "What is the overall CTR?",
+  "Which publisher has the most impressions?",
+  "How many advertisers are up to date?",
+  "What is the total advertiser spend?",
 ];
 
+function pickRandom(arr, n) {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
 export default function ChatBot() {
-  const [open, setOpen]       = useState(false);
+  const [open, setOpen]         = useState(false);
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hi! I can answer questions about the dashboard data — freshness, metrics, advertiser/publisher status. What would you like to know?" }
   ]);
-  const [input, setInput]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]); // Claude API format
-  const bottomRef             = useRef(null);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [history, setHistory]   = useState([]);
+  const [suggestions]           = useState(() => pickRandom(ALL_SUGGESTIONS, 4));
+  const bottomRef               = useRef(null);
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -131,21 +143,33 @@ export default function ChatBot() {
               </div>
             )}
 
-            {/* Suggestions (only at start) */}
-            {messages.length === 1 && !loading && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-                {SUGGESTIONS.map((s, i) => (
-                  <button key={i} onClick={() => send(s)} style={{
-                    padding: "5px 10px", borderRadius: 14, border: "1px solid #cbd5e1",
-                    background: "#f8fafc", cursor: "pointer", fontSize: 11, color: "#475569",
-                  }}>
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-
             <div ref={bottomRef} />
+          </div>
+
+          {/* Suggestion chips — always visible */}
+          <div style={{
+            borderTop: "1px solid #e2e8f0",
+            padding: "8px 12px",
+            display: "flex", flexWrap: "wrap", gap: 5,
+            background: "#f8fafc",
+          }}>
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => send(s)}
+                disabled={loading}
+                style={{
+                  padding: "4px 10px", borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  background: loading ? "#f1f5f9" : "#fff",
+                  cursor: loading ? "default" : "pointer",
+                  fontSize: 11, color: "#475569",
+                  transition: "background 0.15s",
+                }}
+              >
+                {s}
+              </button>
+            ))}
           </div>
 
           {/* Input */}
