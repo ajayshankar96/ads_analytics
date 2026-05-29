@@ -716,11 +716,21 @@ def get_advertiser_health(rows: List, headers: List[str], view_mode: str = "week
 
 def compute_data_freshness(rows: List, headers: List[str]) -> dict:
     """
-    For each advertiser find their latest data date and compute staleness.
-    Mirrors computeDataFreshness_() from Code.gs.
+    For each advertiser track publisher vs advertiser data freshness separately.
+    Status: up_to_date / publisher_outdated / advertiser_outdated / both_outdated
     """
-    latest: Dict[str, date] = {}
     today = date.today()
+    STALE_DAYS = 1  # data older than 1 day is considered outdated
+
+    pub_spd_idx = _get_col(headers, "Publisher_Spends")
+    if pub_spd_idx < 0:
+        pub_spd_idx = COL["PUBLISHER_SPENDS"]
+    adv_spd_idx = _get_col(headers, "Advertiser_Spends")
+    if adv_spd_idx < 0:
+        adv_spd_idx = COL["ADVERTISER_SPENDS"]
+
+    pub_latest: Dict[str, date] = {}   # latest date where publisher_spends > 0
+    adv_latest: Dict[str, date] = {}   # latest date where advertiser_spends > 0
 
     for row in rows:
         if len(row) <= COL["DATE"]:
@@ -729,26 +739,62 @@ def compute_data_freshness(rows: List, headers: List[str]) -> dict:
         d = _parse_date(row[COL["DATE"]])
         if not adv or d is None:
             continue
-        if adv not in latest or d > latest[adv]:
-            latest[adv] = d
+        pub_spd = _safe_float(row[pub_spd_idx]) if len(row) > pub_spd_idx else 0.0
+        adv_spd = _safe_float(row[adv_spd_idx]) if len(row) > adv_spd_idx else 0.0
+        if pub_spd > 0:
+            if adv not in pub_latest or d > pub_latest[adv]:
+                pub_latest[adv] = d
+        if adv_spd > 0:
+            if adv not in adv_latest or d > adv_latest[adv]:
+                adv_latest[adv] = d
+
+    all_advertisers = sorted(set(pub_latest.keys()) | set(adv_latest.keys()))
 
     result = []
-    for adv, last_date in sorted(latest.items()):
-        days_stale = (today - last_date).days
-        result.append({
+    by_date: Dict[str, list] = defaultdict(list)
+
+    for adv in all_advertisers:
+        pd = pub_latest.get(adv)
+        ad = adv_latest.get(adv)
+        pub_stale = pd is None or (today - pd).days > STALE_DAYS
+        adv_stale = ad is None or (today - ad).days > STALE_DAYS
+
+        if not pub_stale and not adv_stale:
+            status = "up_to_date"
+        elif pub_stale and not adv_stale:
+            status = "publisher_outdated"
+        elif not pub_stale and adv_stale:
+            status = "advertiser_outdated"
+        else:
+            status = "both_outdated"
+
+        last_date = max(d for d in [pd, ad] if d) if (pd or ad) else None
+        last_date_str = last_date.isoformat() if last_date else "—"
+
+        entry = {
             "advertiser": adv,
-            "lastDate": last_date.isoformat(),
-            "daysStale": days_stale,
-            "status": "fresh" if days_stale <= 1 else ("warning" if days_stale <= 3 else "stale"),
-        })
+            "lastDate": last_date_str,
+            "pubLastDate": pd.isoformat() if pd else "—",
+            "advLastDate": ad.isoformat() if ad else "—",
+            "status": status,
+        }
+        result.append(entry)
+        by_date[last_date_str].append(entry)
+
+    by_date_sorted = [
+        {"date": d, "advertisers": sorted(advs, key=lambda x: x["advertiser"])}
+        for d, advs in sorted(by_date.items(), reverse=True)
+    ]
 
     return {
         "advertisers": result,
+        "byDate": by_date_sorted,
         "computedAt": datetime.utcnow().isoformat(),
         "totalAdvertisers": len(result),
-        "freshCount": sum(1 for a in result if a["status"] == "fresh"),
-        "warningCount": sum(1 for a in result if a["status"] == "warning"),
-        "staleCount": sum(1 for a in result if a["status"] == "stale"),
+        "upToDateCount": sum(1 for a in result if a["status"] == "up_to_date"),
+        "publisherOutdatedCount": sum(1 for a in result if a["status"] == "publisher_outdated"),
+        "advertiserOutdatedCount": sum(1 for a in result if a["status"] == "advertiser_outdated"),
+        "bothOutdatedCount": sum(1 for a in result if a["status"] == "both_outdated"),
     }
 
 
