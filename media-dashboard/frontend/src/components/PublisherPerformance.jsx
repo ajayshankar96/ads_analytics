@@ -1,5 +1,36 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { getPublisherPerformance, getFilters } from "../api";
+
+function MultiSelect({ options, value, onChange, placeholder = "All" }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+  const toggle = (v) => onChange(value.includes(v) ? value.filter(x => x !== v) : [...value, v]);
+  const label = value.length === 0 ? placeholder : value.length === 1 ? value[0] : `${value.length} selected`;
+  return (
+    <div ref={ref} style={{ position: "relative", minWidth: 200 }}>
+      <div onClick={() => setOpen(!open)} style={{ border: "1px solid #d1d5db", borderRadius: 5, padding: "5px 10px", fontSize: 13, cursor: "pointer", background: "#fff", userSelect: "none", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ color: value.length ? "#1e293b" : "#9ca3af" }}>{label}</span>
+        <span style={{ fontSize: 10, color: "#6b7280" }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 999, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: "100%", maxHeight: 260, overflowY: "auto" }}>
+          {value.length > 0 && <div onClick={() => { onChange([]); setOpen(false); }} style={{ padding: "7px 12px", fontSize: 12, color: "#ef4444", cursor: "pointer", borderBottom: "1px solid #f1f5f9", fontWeight: 600 }}>✕ Clear all</div>}
+          {options.map(opt => (
+            <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", fontSize: 13, background: value.includes(opt) ? "#eff6ff" : "#fff" }}>
+              <input type="checkbox" checked={value.includes(opt)} onChange={() => toggle(opt)} style={{ cursor: "pointer" }} />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const s = {
   card: { background: "#fff", borderRadius: 8, padding: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", marginBottom: 12 },
@@ -90,15 +121,7 @@ export default function PublisherPerformance({ filters }) {
             </button>
           ))}
         </div>
-        <select multiple value={selectedPub} style={{ ...s.select, height: 34 }}
-          onChange={(e) => setSelectedPub(Array.from(e.target.selectedOptions).map(o => o.value))}>
-          {pubOptions.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        {selectedPub.length > 0 && (
-          <button style={{ ...s.viewBtn, fontSize: 11 }} onClick={() => setSelectedPub([])}>
-            Clear ({selectedPub.length})
-          </button>
-        )}
+        <MultiSelect options={pubOptions} value={selectedPub} onChange={setSelectedPub} placeholder="All Publishers" />
       </div>
 
       {publishers.length === 0 ? (
