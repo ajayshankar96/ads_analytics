@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -70,6 +70,14 @@ export default function Dashboard({ filters }) {
   const [groupBy, setGroupBy] = useState("day");
   const [loading, setLoading] = useState(true);
   const [seriesMetric, setSeriesMetric] = useState("impressions");
+  const [rangeKey, setRangeKey] = useState("90d"); // default: last 90 days
+
+  const RANGES = [
+    { key: "30d",  label: "30D",  days: 30 },
+    { key: "90d",  label: "90D",  days: 90 },
+    { key: "6m",   label: "6M",   days: 183 },
+    { key: "all",  label: "All",  days: null },
+  ];
 
   useEffect(() => {
     setLoading(true);
@@ -86,6 +94,17 @@ export default function Dashboard({ filters }) {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [filters, groupBy]);
+
+  // Filter series to selected date range
+  const filteredSeries = useMemo(() => {
+    if (!series) return [];
+    const rangeDays = RANGES.find(r => r.key === rangeKey)?.days;
+    if (!rangeDays) return series; // "All"
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - rangeDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return series.filter(d => d.date >= cutoffStr);
+  }, [series, rangeKey]);
 
   if (loading) return <div style={s.loading}>Loading dashboard…</div>;
   if (!aggs) return <div style={s.loading}>No data</div>;
@@ -119,8 +138,26 @@ export default function Dashboard({ filters }) {
       {/* Time Series */}
       <div style={s.card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={s.cardTitle}>Time Series</div>
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={s.cardTitle}>Time Series</div>
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>
+              {filteredSeries.length} data points
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Range selector */}
+            <div style={s.groupBtns}>
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  style={{ ...s.groupBtn, ...(rangeKey === r.key ? s.groupBtnActive : {}) }}
+                  onClick={() => setRangeKey(r.key)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {/* Group by */}
             <div style={s.groupBtns}>
               {["day", "week", "month"].map((g) => (
                 <button
@@ -142,7 +179,7 @@ export default function Dashboard({ filters }) {
           </div>
         </div>
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={series} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+          <LineChart data={filteredSeries} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmt(v)} />

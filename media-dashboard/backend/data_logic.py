@@ -327,6 +327,7 @@ def get_time_series(rows: List, headers: List[str], group_by: str = "day") -> Li
 
     spd_idx = hcol("Publisher_Spends") or COL["PUBLISHER_SPENDS"]
 
+    today = date.today()
     for row in rows:
         if len(row) <= COL["DATE"]:
             continue
@@ -340,7 +341,7 @@ def get_time_series(rows: List, headers: List[str], group_by: str = "day") -> Li
             key_val = row[COL["DATE"]]
 
         d = _parse_date(key_val)
-        if d is None:
+        if d is None or d > today:   # skip future / bad dates
             continue
         key = d.isoformat()
 
