@@ -440,21 +440,12 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    import json as _json
-    try:
-        import anthropic as _anthropic
-    except ImportError:
-        raise HTTPException(status_code=503, detail="anthropic package not installed")
+    # Use Razorpay LiteLLM gateway (OpenAI-compatible endpoint)
+    litellm_key = os.environ.get("LITELLM_API_KEY", "")
+    base_url    = os.environ.get("ANTHROPIC_BASE_URL", "https://llm-gateway.razorpay.com")
 
-    # Support both direct Anthropic key and Razorpay LiteLLM gateway
-    litellm_key   = os.environ.get("LITELLM_API_KEY", "")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url      = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-
-    # Determine which key to use
-    api_key = anthropic_key or litellm_key
-    if not api_key:
-        raise HTTPException(status_code=503, detail="Chatbot not configured (missing LITELLM_API_KEY or ANTHROPIC_API_KEY)")
+    if not litellm_key:
+        raise HTTPException(status_code=503, detail="Chatbot not configured (missing LITELLM_API_KEY)")
 
     # Build data context from live cache
     data = load_master_report_cache()
@@ -498,31 +489,46 @@ ADVERTISERS in data: {', '.join(filter_opts.get('advertisers', []))}
 Answer questions about this data directly. If asked about a specific advertiser or publisher, look them up above.
 If something is off (e.g. data not refreshed), explain clearly which entity and when it was last updated."""
 
-    # When using LiteLLM gateway, pass litellm_key as x-litellm-api-key header
-    extra_headers = {}
-    if litellm_key and base_url != "https://api.anthropic.com":
-        extra_headers["x-litellm-api-key"] = f"Bearer {litellm_key}"
+    # Call via OpenAI-compatible endpoint on the LiteLLM gateway
+    import urllib.request as _urllib_req
+    import json as _json
 
-    client = _anthropic.Anthropic(
-        api_key=api_key,
-        base_url=base_url,
-        default_headers=extra_headers if extra_headers else None,
+    # Build OpenAI-format messages with system prompt prepended
+    oai_messages = [{"role": "system", "content": system_prompt}]
+    for m in (req.history or [])[-10:]:
+        oai_messages.append(m)
+    oai_messages.append({"role": "user", "content": req.message})
+
+    payload = _json.dumps({
+        "model": "gpt-5.4-mini",
+        "max_tokens": 512,
+        "messages": oai_messages,
+    }).encode()
+
+    gateway_url = base_url.rstrip("/") + "/v1/chat/completions"
+    http_req = _urllib_req.Request(
+        gateway_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {litellm_key}",
+        },
+        method="POST",
     )
 
-    messages = (req.history or [])[-10:]  # keep last 10 turns for context
-    messages.append({"role": "user", "content": req.message})
-
     try:
-        response = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=512,
-            system=system_prompt,
-            messages=messages,
-        )
-        reply = response.content[0].text
+        import ssl
+        ctx = ssl.create_default_context()
+        resp = _urllib_req.urlopen(http_req, context=ctx, timeout=30)
+        result = _json.loads(resp.read().decode())
+        reply = result["choices"][0]["message"]["content"]
         return {"reply": reply}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            err_body = e.read().decode()
+            raise HTTPException(status_code=500, detail=err_body[:400])
+        except AttributeError:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Cache control ─────────────────────────────────────────────────────────────
