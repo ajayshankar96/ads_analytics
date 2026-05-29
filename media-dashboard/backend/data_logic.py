@@ -739,8 +739,8 @@ def compute_data_freshness(rows: List, headers: List[str]) -> dict:
         d = _parse_date(row[COL["DATE"]])
         if not adv or d is None:
             continue
-        pub_spd = _safe_float(row[pub_spd_idx]) if len(row) > pub_spd_idx else 0.0
-        adv_spd = _safe_float(row[adv_spd_idx]) if len(row) > adv_spd_idx else 0.0
+        pub_spd = _to_float(row[pub_spd_idx]) if len(row) > pub_spd_idx else 0.0
+        adv_spd = _to_float(row[adv_spd_idx]) if len(row) > adv_spd_idx else 0.0
         if pub_spd > 0:
             if adv not in pub_latest or d > pub_latest[adv]:
                 pub_latest[adv] = d
