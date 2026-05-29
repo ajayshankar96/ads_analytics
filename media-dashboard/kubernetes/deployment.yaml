@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: python:3.11-slim
+        image: c.rzp.io/proxy_dockerhub/library/python:3.11-slim
         command:
           - /bin/bash
           - -c
@@ -60,6 +60,18 @@ spec:
             secretKeyRef:
               name: media-dashboard-secrets
               key: ANTHROPIC_API_KEY
+              optional: true
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: media-dashboard-secrets
+              key: LITELLM_API_KEY
+              optional: true
+        - name: ANTHROPIC_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: media-dashboard-config
+              key: ANTHROPIC_BASE_URL
               optional: true
         resources:
           requests:
