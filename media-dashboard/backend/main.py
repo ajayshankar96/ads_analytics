@@ -447,11 +447,13 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=503, detail="anthropic package not installed")
 
     # Support both direct Anthropic key and Razorpay LiteLLM gateway
-    litellm_key  = os.environ.get("LITELLM_API_KEY", "")
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "dummy")
-    base_url     = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    litellm_key   = os.environ.get("LITELLM_API_KEY", "")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url      = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
-    if not litellm_key and anthropic_key == "dummy":
+    # Determine which key to use
+    api_key = anthropic_key or litellm_key
+    if not api_key:
         raise HTTPException(status_code=503, detail="Chatbot not configured (missing LITELLM_API_KEY or ANTHROPIC_API_KEY)")
 
     # Build data context from live cache
@@ -496,14 +498,15 @@ ADVERTISERS in data: {', '.join(filter_opts.get('advertisers', []))}
 Answer questions about this data directly. If asked about a specific advertiser or publisher, look them up above.
 If something is off (e.g. data not refreshed), explain clearly which entity and when it was last updated."""
 
+    # When using LiteLLM gateway, pass litellm_key as x-litellm-api-key header
     extra_headers = {}
-    if litellm_key:
+    if litellm_key and base_url != "https://api.anthropic.com":
         extra_headers["x-litellm-api-key"] = f"Bearer {litellm_key}"
 
     client = _anthropic.Anthropic(
-        api_key=anthropic_key,
+        api_key=api_key,
         base_url=base_url,
-        default_headers=extra_headers,
+        default_headers=extra_headers if extra_headers else None,
     )
 
     messages = (req.history or [])[-10:]  # keep last 10 turns for context
