@@ -41,17 +41,22 @@ export default function ChatBot() {
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [history, setHistory]   = useState([]);
-  const [suggestions]           = useState(() => pickRandom(ALL_SUGGESTIONS, 4));
+  const [suggestions, setSuggestions] = useState(() => pickRandom(ALL_SUGGESTIONS, 4));
   const bottomRef               = useRef(null);
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
 
-  const send = async (text) => {
+  const send = async (text, fromChip = false) => {
     const msg = text || input.trim();
     if (!msg || loading) return;
     setInput("");
+    // Refresh chips when one is clicked — exclude the one just used
+    if (fromChip) {
+      const pool = ALL_SUGGESTIONS.filter(s => s !== msg);
+      setSuggestions(pickRandom(pool, 4));
+    }
 
     const userMsg = { role: "user", content: msg };
     setMessages(prev => [...prev, userMsg]);
@@ -156,7 +161,7 @@ export default function ChatBot() {
             {suggestions.map((s, i) => (
               <button
                 key={i}
-                onClick={() => send(s)}
+                onClick={() => send(s, true)}
                 disabled={loading}
                 style={{
                   padding: "4px 10px", borderRadius: 12,
