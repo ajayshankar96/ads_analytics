@@ -253,6 +253,8 @@ def calculate_aggregates(rows: List, headers: List[str]) -> dict:
     total_imp = total_clk = total_spd = total_dist = 0.0
     total_ql = total_qqg = total_coupon = total_redir = 0.0
     total_adv_spd = total_leads = total_orders = total_rev = 0.0
+    unique_advertisers: set = set()
+    unique_publishers: set = set()
 
     for row in rows:
         total_imp += safe_get(row, imp_idx)
@@ -267,6 +269,10 @@ def calculate_aggregates(rows: List, headers: List[str]) -> dict:
         total_leads += safe_get(row, leads_idx)
         total_orders += safe_get(row, orders_idx)
         total_rev += safe_get(row, rev_idx)
+        adv = _safe_str(row[COL["ADVERTISER"]]) if len(row) > COL["ADVERTISER"] else ""
+        pub = _safe_str(row[COL["PUBLISHER"]]) if len(row) > COL["PUBLISHER"] else ""
+        if adv: unique_advertisers.add(adv)
+        if pub: unique_publishers.add(pub)
 
     total_reach = total_imp + total_dist
     avg_ctr = (total_clk / total_reach * 100) if total_reach > 0 else 0
@@ -279,6 +285,9 @@ def calculate_aggregates(rows: List, headers: List[str]) -> dict:
         "totalRows": len(rows),
         "impressions": round(total_imp),
         "distribution": round(total_dist),
+        "impressionsAndDistribution": round(total_imp + total_dist),
+        "advertiserCount": len(unique_advertisers),
+        "publisherCount": len(unique_publishers),
         "clicks": round(total_clk),
         "spends": round(total_spd),
         "advertiserSpends": round(total_adv_spd),

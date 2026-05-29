@@ -105,13 +105,14 @@ export default function Dashboard({ filters }) {
     <div>
       {/* KPI Cards */}
       <div style={s.grid}>
-        <KPICard label="Impressions" value={fmt(aggs.impressions)} />
+        <KPICard label="Imp + Distribution" value={fmt(aggs.impressionsAndDistribution)} sub={`Imp: ${fmt(aggs.impressions)} | Dist: ${fmt(aggs.distribution)}`} />
         <KPICard label="Clicks" value={fmt(aggs.clicks)} sub={`CTR: ${aggs.ctr}%`} />
         <KPICard label="Pub Spends" value={`₹${fmt(aggs.spends)}`} sub={`CPM: ₹${aggs.cpm}`} />
         {aggs.hasQL && <KPICard label="QL" value={fmt(aggs.ql)} sub={`CPQL: ₹${aggs.cpql}`} />}
         {aggs.hasQQG && <KPICard label="QQG" value={fmt(aggs.qqg)} sub={`CPQQG: ₹${aggs.cpqqg}`} />}
         {aggs.hasCouponOrders && <KPICard label="Coupon Orders" value={fmt(aggs.couponOrders)} />}
         <KPICard label="Redirections" value={fmt(aggs.redirections)} />
+        <KPICard label="Advertisers" value={aggs.advertiserCount ?? "—"} sub={`${aggs.publisherCount ?? "—"} Publishers`} />
         <KPICard label="Data Rows" value={fmt(aggs.totalRows)} sub={`Cache: ${aggs.cacheAge}s ago`} />
       </div>
 
