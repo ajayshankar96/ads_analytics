@@ -717,10 +717,12 @@ def get_advertiser_health(rows: List, headers: List[str], view_mode: str = "week
 def compute_data_freshness(rows: List, headers: List[str]) -> dict:
     """
     For each advertiser track publisher vs advertiser data freshness separately.
+    Uses max valid date in dataset as reference (not calendar today) so that
+    data loaded 2 days ago is still "up to date" if that's the latest available.
+    Filters out future/bad dates (> today).
     Status: up_to_date / publisher_outdated / advertiser_outdated / both_outdated
     """
     today = date.today()
-    STALE_DAYS = 1  # data older than 1 day is considered outdated
 
     pub_spd_idx = _get_col(headers, "Publisher_Spends")
     if pub_spd_idx < 0:
@@ -729,15 +731,15 @@ def compute_data_freshness(rows: List, headers: List[str]) -> dict:
     if adv_spd_idx < 0:
         adv_spd_idx = COL["ADVERTISER_SPENDS"]
 
-    pub_latest: Dict[str, date] = {}   # latest date where publisher_spends > 0
-    adv_latest: Dict[str, date] = {}   # latest date where advertiser_spends > 0
+    pub_latest: Dict[str, date] = {}   # latest valid date where publisher_spends > 0
+    adv_latest: Dict[str, date] = {}   # latest valid date where advertiser_spends > 0
 
     for row in rows:
         if len(row) <= COL["DATE"]:
             continue
         adv = _safe_str(row[COL["ADVERTISER"]])
         d = _parse_date(row[COL["DATE"]])
-        if not adv or d is None:
+        if not adv or d is None or d > today:  # skip future/bad dates
             continue
         pub_spd = _to_float(row[pub_spd_idx]) if len(row) > pub_spd_idx else 0.0
         adv_spd = _to_float(row[adv_spd_idx]) if len(row) > adv_spd_idx else 0.0
@@ -750,20 +752,24 @@ def compute_data_freshness(rows: List, headers: List[str]) -> dict:
 
     all_advertisers = sorted(set(pub_latest.keys()) | set(adv_latest.keys()))
 
+    # Use most recent valid date in dataset as freshness reference
+    all_dates = [d for d in list(pub_latest.values()) + list(adv_latest.values())]
+    max_date = max(all_dates) if all_dates else today
+
     result = []
     by_date: Dict[str, list] = defaultdict(list)
 
     for adv in all_advertisers:
         pd = pub_latest.get(adv)
         ad = adv_latest.get(adv)
-        pub_stale = pd is None or (today - pd).days > STALE_DAYS
-        adv_stale = ad is None or (today - ad).days > STALE_DAYS
+        pub_fresh = pd == max_date
+        adv_fresh = ad == max_date
 
-        if not pub_stale and not adv_stale:
+        if pub_fresh and adv_fresh:
             status = "up_to_date"
-        elif pub_stale and not adv_stale:
+        elif not pub_fresh and adv_fresh:
             status = "publisher_outdated"
-        elif not pub_stale and adv_stale:
+        elif pub_fresh and not adv_fresh:
             status = "advertiser_outdated"
         else:
             status = "both_outdated"
@@ -791,6 +797,7 @@ def compute_data_freshness(rows: List, headers: List[str]) -> dict:
         "byDate": by_date_sorted,
         "computedAt": datetime.utcnow().isoformat(),
         "totalAdvertisers": len(result),
+        "maxDataDate": max_date.isoformat() if all_dates else None,
         "upToDateCount": sum(1 for a in result if a["status"] == "up_to_date"),
         "publisherOutdatedCount": sum(1 for a in result if a["status"] == "publisher_outdated"),
         "advertiserOutdatedCount": sum(1 for a in result if a["status"] == "advertiser_outdated"),
