@@ -15,6 +15,13 @@ async function sendMessage(message, history) {
   return res.json();
 }
 
+const DEFAULT_SUGGESTIONS = [
+  "When was data last updated?",
+  "Which advertisers are not refreshed?",
+  "Which publishers have outdated data?",
+  "How many advertisers are up to date?",
+];
+
 const ALL_SUGGESTIONS = [
   "Which advertisers are not refreshed?",
   "When was data last updated?",
@@ -41,7 +48,7 @@ export default function ChatBot() {
   const [input, setInput]       = useState("");
   const [loading, setLoading]   = useState(false);
   const [history, setHistory]   = useState([]);
-  const [suggestions, setSuggestions] = useState(() => pickRandom(ALL_SUGGESTIONS, 4));
+  const [suggestions, setSuggestions] = useState(DEFAULT_SUGGESTIONS);
   const bottomRef               = useRef(null);
 
   useEffect(() => {
