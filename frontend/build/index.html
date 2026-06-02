@@ -547,11 +547,19 @@ const VAR_DIRECTION = {
 /* ============================================================
  * DECILE / INCOME BUCKET / DISCRETE LOOKUPS
  * ============================================================ */
-function decilePct(letter){
-  const top = { A:100, B:90, C:80, D:70, E:60, F:50, G:40, H:30, I:20, J:10 };
-  if (!top[letter]) return "";
-  const lo = top[letter] - 10;
-  return `${lo+1}-${top[letter]}th percentile`;
+function ordinal(n){
+  const s=["th","st","nd","rd"], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+function bandPercentile(band){
+  if(!band) return "";
+  const b=String(band).toUpperCase().trim();
+  const m=b.match(/^([A-J])(\d{1,2})$/);
+  if(!m) return "";
+  const letterIdx=m[1].charCodeAt(0)-65;   // A=0 … J=9
+  const num=parseInt(m[2]);
+  const pct=100-letterIdx*10-(num-1);
+  return pct>0 ? ordinal(pct)+" percentile" : "";
 }
 function decileQual(letter){
   return ({
@@ -574,7 +582,7 @@ function bandMeaning(band){
   if(b === "Z2") return {pct:"Null", qual:"Variable could not be computed (no signal or no history)"};
   const m = b.match(/^([A-J])(\d{1,2})$/);
   if(!m) return {pct:b, qual:"—"};
-  return { pct: decilePct(m[1]), qual: decileQual(m[1]) };
+  return { pct: bandPercentile(b), qual: decileQual(m[1]) };
 }
 
 const INCOME_BUCKETS = {
@@ -1046,15 +1054,55 @@ const VAR_LABELS = {
 };
 
 /* ============================================================
+ * SLIDER LABELS — expanded semantic end labels per variable
+ * ============================================================ */
+const SLIDER_LABELS = {
+  // Min-Max risk model
+  dpd_30_prob_band:                        ["Highest Risk",        "No Risk"],
+  dpd_90_prob_band:                        ["Highest Risk",        "No Risk"],
+  cd_dpd_30_prob_band:                     ["Highest Risk",        "No Risk"],
+  // Min-Max growth
+  yoy_growth_percentage:                   ["No Growth",           "Highest Growth"],
+  // Error ratios (low_is_good)
+  error_ratio_card:                        ["Highest Error Rate",  "Lowest Error Rate"],
+  error_ratio_last_12_weeks_emandate:      ["Highest Error Rate",  "Lowest Error Rate"],
+  error_ratio_last_24_weeks_emandate:      ["Highest Error Rate",  "Lowest Error Rate"],
+  repayment_error_ratio_l12w:              ["Highest Error Rate",  "Lowest Error Rate"],
+  risky_fails_to_success_trxn_ratio_l12m: ["Riskiest",            "Safest"],
+  risky_fails_to_success_trxn_ratio_l6m:  ["Riskiest",            "Safest"],
+  weighted_error_ratio:                    ["Highest Error",       "Lowest Error"],
+  weighted_error_ratio_last_12_weeks:      ["Highest Error",       "Lowest Error"],
+  weighted_error_ratio_last_24_weeks:      ["Highest Error",       "Lowest Error"],
+  // Success rates (high_is_good)
+  success_rate_last_24_weeks_card:         ["Lowest Success Rate", "Highest Success Rate"],
+  success_rate_last_24_weeks_emandate:     ["Lowest Success Rate", "Highest Success Rate"],
+  weighted_success_rate:                   ["Lowest Success Rate", "Highest Success Rate"],
+  // Failed txns (low_is_good)
+  failed_txn_amount_sum:                   ["Most Failed Amount",  "Least Failed Amount"],
+  failed_txn_count:                        ["Most Failures",       "Fewest Failures"],
+  has_failed_high_value_txn:               ["Failed High Value",   "No Failures"],
+  // Volume / spend (high_is_good)
+  yearly_transaction_volume:               ["Lowest Volume",       "Highest Volume"],
+  avg_amount:                              ["Lowest Avg Amount",   "Highest Avg Amount"],
+  total_spend_last_12_weeks:               ["Lowest Spend",        "Highest Spend"],
+  upi_payment_amount:                      ["Lowest UPI Spend",    "Highest UPI Spend"],
+  // Credit propensity (low_is_good)
+  loan_stacking_amount_l3m:                ["Most Stacking",       "No Stacking"],
+  loan_stacking_amount_l6m:                ["Most Stacking",       "No Stacking"],
+  unique_lenders_last_1_years:             ["Most Lenders",        "Fewest Lenders"],
+};
+
+/* ============================================================
  * BAND POSITION SLIDER
  * ============================================================ */
 function renderBandSlider(varName, band) {
   if (!band) return "";
   const b = String(band).toUpperCase().trim();
-  if (b === "Z2" || b === "K1") return "";
+  if (b === "Z2") return "";                            // No history — skip slider
   const dir = VAR_DIRECTION[varName] || "high_is_good";
+  const scaling = VAR_SCALING[varName] || "Custom Decile";
 
-  /* ── Income bucket: A1–G1 ── */
+  /* ── Income bucket: A1–G1 (red→green left→right always) ── */
   if (varName === "predicted_income_bucket") {
     const ORDER = ["A1","B1","C1","D1","E1","F1","G1"];
     const idx = ORDER.indexOf(b);
@@ -1067,10 +1115,10 @@ function renderBandSlider(varName, band) {
     return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>₹0–3L</span><span>₹25L+</span></div></div>`;
   }
 
-  /* ── Thick / Thin: A1–B1 ── */
+  /* ── Thick / Thin: A1–B1–Z2 ── */
   if (varName === "thick_thin_data") {
-    const ORDER        = ["A1","B1","Z2"];
-    const LABELS       = ["Thick","Thin","No history"];
+    const ORDER         = ["A1","B1","Z2"];
+    const LABELS        = ["Thick","Thin","No history"];
     const ACTIVE_COLORS = ["#16a34a","#d97706","#9AA5B1"];
     const DIM_COLORS    = ["#86efac","#fcd34d","#CBD2D9"];
     const idx = ORDER.indexOf(b);
@@ -1082,19 +1130,42 @@ function renderBandSlider(varName, band) {
     return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>Thick</span><span>No history</span></div></div>`;
   }
 
-  /* ── Decile: A–J (10 bands) ── */
-  const LETTERS = ["A","B","C","D","E","F","G","H","I","J"];
+  /* ── Min-Max: A1–K1 (11 bands) ── */
+  if (scaling === "Min-Max") {
+    // low_is_good (risk vars): A1=highest risk → left=red, K1=no risk → right=green
+    // high_is_good (e.g. yoy_growth): A1=best → right=green, K1=zero → left=red (reversed)
+    const BASE = ["A1","B1","C1","D1","E1","F1","G1","H1","I1","J1","K1"];
+    const displayOrder = dir === "high_is_good" ? [...BASE].reverse() : BASE;
+    const idx = displayOrder.indexOf(b);
+    if (idx === -1) return "";
+    const N = displayOrder.length - 1;  // 10
+    const segs = displayOrder.map((code, i) => {
+      const hue = Math.round((i / N) * 120);            // i=0 → red, i=N → green
+      const active = i === idx;
+      return `<div class="bs-seg${active?" active":""}" data-label="${code}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
+    }).join("");
+    const lbls = SLIDER_LABELS[varName] || (dir === "low_is_good" ? ["Highest Risk","No Risk"] : ["Lowest","Highest"]);
+    return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
+  }
+
+  /* ── Custom Decile: A–J (10 letter segments, 100 bands total) ── */
+  if (b === "K1") return "";                            // K1 in non-min-max context: skip
+  // high_is_good: J (worst) → left=red … A (best) → right=green
+  // low_is_good:  A (worst) → left=red … J (best) → right=green
+  const displayOrder = dir === "high_is_good"
+    ? ["J","I","H","G","F","E","D","C","B","A"]
+    : ["A","B","C","D","E","F","G","H","I","J"];
   const letter = b.charAt(0);
-  const idx = LETTERS.indexOf(letter);
+  const idx = displayOrder.indexOf(letter);
   if (idx === -1) return "";
-  const segs = LETTERS.map((l, i) => {
-    const frac = dir === "low_is_good" ? i / 9 : 1 - i / 9; // 0=red, 1=green
-    const hue = Math.round(frac * 120);
+  const N = 9;
+  const segs = displayOrder.map((l, i) => {
+    const hue = Math.round((i / N) * 120);              // i=0 → red, i=N → green
     const active = i === idx;
     return `<div class="bs-seg${active?" active":""}" data-label="${active?b:l}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
   }).join("");
-  const [leftLabel, rightLabel] = dir === "low_is_good" ? ["High Risk","Low Risk"] : ["Low","High"];
-  return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${leftLabel}</span><span>${rightLabel}</span></div></div>`;
+  const lbls = SLIDER_LABELS[varName] || (dir === "low_is_good" ? ["High Risk","Low Risk"] : ["Lowest","Highest"]);
+  return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
 }
 
 function renderVcard(varName, scaling, band, desc, isSignal=false){
