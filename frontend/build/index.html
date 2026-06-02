@@ -619,9 +619,9 @@ function getBandColor(band, varName){
   } else if (varName === "thick_thin_data") {
     maxIdx = 1; // A–B
   } else {
-    // Decile-scaled variables only use A and B (A1–A10 + B1–B4)
+    // Narrow Decile variables only use A (top decile) and B (bottom decile)
     const sc = VAR_SCALING[varName];
-    if (sc === "Custom Decile" || sc === "Decile based") maxIdx = 1;
+    if (sc === "Narrow Decile") maxIdx = 1;  // A=best=green, B=worst=red
   }
 
   if (letterIdx < 0 || letterIdx > maxIdx) return null;
@@ -663,13 +663,13 @@ const TS2_ALL_VARS = {
   "Spend propensity": { icon: "SP", groupDesc: "Category-level spend, AOV, vintage, income signals", vars: [
     { name: "avg_amount", scaling: "Min-Max", live: true, desc: "Mean value of successful transactions. Proxy for the user's typical spending power per transaction." },
     { name: "has_failed_high_value_txn", scaling: "Min-Max", live: true, desc: "Binary flag indicating if user has any failed transaction with high value (above ~₹8,500). Risk signal." },
-    { name: "l12m_aov_astrology", scaling: "Custom Decile", live: true, desc: "Average transaction value in the astrology category in the last 12 months." },
+    { name: "l12m_aov_astrology", scaling: "Narrow Decile", live: true, desc: "Average transaction value in the astrology category in the last 12 months." },
     { name: "l12m_aov_real_estate", scaling: "Min-Max", live: true, desc: "Average order value for real-estate transactions (property classifieds, developers, rentals) in the last 12 months." },
-    { name: "l12m_spend_astrology", scaling: "Custom Decile", live: true, desc: "Total spend in the astrology category in the last 12 months." },
-    { name: "l12m_spend_micro_drama", scaling: "Custom Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 12 months." },
-    { name: "l3m_aov_astrology", scaling: "Custom Decile", live: true, desc: "Average transaction value in the astrology category in the last 3 months." },
-    { name: "l3m_spend_astrology", scaling: "Custom Decile", live: true, desc: "Total spend in the astrology category in the last 3 months." },
-    { name: "l3m_spend_micro_drama", scaling: "Custom Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 3 months." },
+    { name: "l12m_spend_astrology", scaling: "Narrow Decile", live: true, desc: "Total spend in the astrology category in the last 12 months." },
+    { name: "l12m_spend_micro_drama", scaling: "Narrow Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 12 months." },
+    { name: "l3m_aov_astrology", scaling: "Narrow Decile", live: true, desc: "Average transaction value in the astrology category in the last 3 months." },
+    { name: "l3m_spend_astrology", scaling: "Narrow Decile", live: true, desc: "Total spend in the astrology category in the last 3 months." },
+    { name: "l3m_spend_micro_drama", scaling: "Narrow Decile", live: true, desc: "Total spend on micro-drama content/platforms in the last 3 months." },
     { name: "log_aov_gold", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for gold purchase transactions in the last 1 year." },
     { name: "log_aov_last_12_weeks_ecommerce", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for e-commerce purchases in the last 12 weeks." },
     { name: "log_aov_last_12_weeks_services", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for services transactions in the last 12 weeks." },
@@ -677,8 +677,8 @@ const TS2_ALL_VARS = {
     { name: "log_aov_last_24_weeks_ecommerce", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for e-commerce purchases in the last 24 weeks." },
     { name: "log_aov_last_24_weeks_utilities", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for utility bill payments in the last 24 weeks." },
     { name: "log_aov_utilities", scaling: "Min-Max", live: true, desc: "Log-transformed average order value for utility bill payments (electricity, telecom, broadband) in the last 1 year." },
-    { name: "luxury_category_spend", scaling: "Custom Decile", live: true, desc: "Total spend on non-essential categories (dining, entertainment, travel, luxury) in the last 1 year." },
-    { name: "ott_trxns_last_1_year", scaling: "Custom Decile", live: true, desc: "Count of OTT subscription payments (streaming platforms) in the last 1 year." },
+    { name: "luxury_category_spend", scaling: "Narrow Decile", live: true, desc: "Total spend on non-essential categories (dining, entertainment, travel, luxury) in the last 1 year." },
+    { name: "ott_trxns_last_1_year", scaling: "Narrow Decile", live: true, desc: "Count of OTT subscription payments (streaming platforms) in the last 1 year." },
     { name: "perc_non_discretionary_spends", scaling: "Min-Max", live: true, desc: "Share of spend on essential categories (groceries, utilities, healthcare, financial commitments)." },
     { name: "predicted_income_bucket", scaling: "Discrete", live: true, headline: true, desc: "ML-model predicted annual income bracket based on ~98 spending, behaviour and affluence variables." },
     { name: "spend_last_12_weeks_lending", scaling: "Min-Max", live: true, desc: "Total lending/loan-repayment spend (INR) in the last 12 weeks." },
@@ -688,7 +688,7 @@ const TS2_ALL_VARS = {
     { name: "spend_last_1_year_tours_and_travel", scaling: "Min-Max", live: true, desc: "Total amount (INR) spent on travel-related merchants (hotels, airlines, agencies) in the last 1 year." },
     { name: "spend_last_24_weeks_lending", scaling: "Min-Max", live: true, desc: "Total lending/loan-repayment spend (INR) in the last 24 weeks." },
     { name: "total_spend_last_12_weeks", scaling: "Min-Max", live: true, desc: "Total payment amount (INR) across all merchant categories in the last 12 weeks." },
-    { name: "upi_payment_amount", scaling: "Custom Decile", live: true, desc: "Total UPI payment amount (INR) in the last 12 months." },
+    { name: "upi_payment_amount", scaling: "Narrow Decile", live: true, desc: "Total UPI payment amount (INR) in the last 12 months." },
     { name: "vintage_education", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever education-merchant payment on Razorpay." },
     { name: "vintage_investments", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever investment-related payment on Razorpay." },
     { name: "vintage_services", scaling: "Min-Max", live: true, desc: "Number of months since the user's first-ever services-merchant payment on Razorpay." },
@@ -1090,6 +1090,15 @@ const SLIDER_LABELS = {
   loan_stacking_amount_l3m:                ["Most Stacking",       "No Stacking"],
   loan_stacking_amount_l6m:                ["Most Stacking",       "No Stacking"],
   unique_lenders_last_1_years:             ["Most Lenders",        "Fewest Lenders"],
+  // Narrow Decile niche vars (A1–A10 best → B4 worst)
+  ott_trxns_last_1_year:                   ["Fewest OTT Txns",     "Most OTT Txns"],
+  luxury_category_spend:                   ["Lowest Luxury Spend", "Highest Luxury Spend"],
+  l12m_spend_astrology:                    ["Lowest Astrology Spend","Highest Astrology Spend"],
+  l3m_spend_astrology:                     ["Lowest Astrology Spend","Highest Astrology Spend"],
+  l12m_aov_astrology:                      ["Lowest Astrology AOV", "Highest Astrology AOV"],
+  l3m_aov_astrology:                       ["Lowest Astrology AOV", "Highest Astrology AOV"],
+  l3m_spend_micro_drama:                   ["Lowest Drama Spend",  "Highest Drama Spend"],
+  l12m_spend_micro_drama:                  ["Lowest Drama Spend",  "Highest Drama Spend"],
 };
 
 /* ============================================================
@@ -1130,26 +1139,23 @@ function renderBandSlider(varName, band) {
     return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>Thick</span><span>No history</span></div></div>`;
   }
 
-  /* ── Min-Max: A1–K1 (11 bands) ── */
-  if (scaling === "Min-Max") {
-    // Some Min-Max vars in practice return Custom Decile bands (e.g. I7, not I1).
-    // Only render the 11-segment slider when the band actually matches the X1 format.
-    const BASE = ["A1","B1","C1","D1","E1","F1","G1","H1","I1","J1","K1"];
-    const displayOrder = dir === "high_is_good" ? [...BASE].reverse() : BASE;
-    const idx = displayOrder.indexOf(b);
-    if (idx !== -1) {
-      // Genuine single-digit Min-Max band (A1 … K1)
-      const N = displayOrder.length - 1;  // 10
-      const segs = displayOrder.map((code, i) => {
-        const hue = Math.round((i / N) * 120);          // i=0 → red, i=N → green
-        const active = i === idx;
-        return `<div class="bs-seg${active?" active":""}" data-label="${code}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
-      }).join("");
-      const lbls = SLIDER_LABELS[varName] || (dir === "low_is_good" ? ["Highest Risk","No Risk"] : ["Lowest","Highest"]);
-      return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
-    }
-    // Multi-digit band (e.g. I7) — fall through to Custom Decile block below
+  /* ── Narrow Decile (niche vars): A1–A10 (best) + B1–B4 (worst), 14 segments ── */
+  if (scaling === "Narrow Decile") {
+    // All current Narrow Decile vars are high_is_good: A1=best=green right, B4=worst=red left
+    const ORDER = ["B4","B3","B2","B1","A10","A9","A8","A7","A6","A5","A4","A3","A2","A1"];
+    const idx = ORDER.indexOf(b);
+    if (idx === -1) return "";
+    const N = ORDER.length - 1;  // 13
+    const segs = ORDER.map((code, i) => {
+      const hue = Math.round((i / N) * 120);            // B4→0(red), A1→120(green)
+      const active = i === idx;
+      return `<div class="bs-seg${active?" active":""}" data-label="${active?code:code.charAt(0)}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
+    }).join("");
+    const lbls = SLIDER_LABELS[varName] || ["Lowest","Highest"];
+    return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
   }
+
+  /* ── Min-Max and Custom Decile: A1–J10 (fall-through from Min-Max block if needed) ── */
 
   /* ── Custom Decile: A–J (10 letter segments, 100 bands total) ── */
   if (b === "K1") return "";                            // K1 in non-min-max context: skip
