@@ -1132,20 +1132,23 @@ function renderBandSlider(varName, band) {
 
   /* ── Min-Max: A1–K1 (11 bands) ── */
   if (scaling === "Min-Max") {
-    // low_is_good (risk vars): A1=highest risk → left=red, K1=no risk → right=green
-    // high_is_good (e.g. yoy_growth): A1=best → right=green, K1=zero → left=red (reversed)
+    // Some Min-Max vars in practice return Custom Decile bands (e.g. I7, not I1).
+    // Only render the 11-segment slider when the band actually matches the X1 format.
     const BASE = ["A1","B1","C1","D1","E1","F1","G1","H1","I1","J1","K1"];
     const displayOrder = dir === "high_is_good" ? [...BASE].reverse() : BASE;
     const idx = displayOrder.indexOf(b);
-    if (idx === -1) return "";
-    const N = displayOrder.length - 1;  // 10
-    const segs = displayOrder.map((code, i) => {
-      const hue = Math.round((i / N) * 120);            // i=0 → red, i=N → green
-      const active = i === idx;
-      return `<div class="bs-seg${active?" active":""}" data-label="${code}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
-    }).join("");
-    const lbls = SLIDER_LABELS[varName] || (dir === "low_is_good" ? ["Highest Risk","No Risk"] : ["Lowest","Highest"]);
-    return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
+    if (idx !== -1) {
+      // Genuine single-digit Min-Max band (A1 … K1)
+      const N = displayOrder.length - 1;  // 10
+      const segs = displayOrder.map((code, i) => {
+        const hue = Math.round((i / N) * 120);          // i=0 → red, i=N → green
+        const active = i === idx;
+        return `<div class="bs-seg${active?" active":""}" data-label="${code}" style="background:hsl(${hue},60%,${active?46:70}%)"></div>`;
+      }).join("");
+      const lbls = SLIDER_LABELS[varName] || (dir === "low_is_good" ? ["Highest Risk","No Risk"] : ["Lowest","Highest"]);
+      return `<div class="band-slider"><div class="bs-track">${segs}</div><div class="bs-ends"><span>${lbls[0]}</span><span>${lbls[1]}</span></div></div>`;
+    }
+    // Multi-digit band (e.g. I7) — fall through to Custom Decile block below
   }
 
   /* ── Custom Decile: A–J (10 letter segments, 100 bands total) ── */
