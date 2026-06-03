@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -1182,6 +1182,128 @@ def _delete_from_registry(sheet_name: str, headers: List[str], report_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Dashboard View Tracker ────────────────────────────────────────────────────
+VIEWS_SHEET = "Dashboard_Views"
+VIEWS_HEADERS = ["Timestamp", "Identifier", "User_Agent"]
+
+
+def _ensure_views_sheet():
+    try:
+        from sheets_client import get_sheet_names
+        names = get_sheet_names(KPI_SPREADSHEET_ID)
+        if VIEWS_SHEET not in names:
+            ensure_sheet_tab(KPI_SPREADSHEET_ID, VIEWS_SHEET)
+            append_rows(KPI_SPREADSHEET_ID, VIEWS_SHEET, [VIEWS_HEADERS])
+    except Exception as e:
+        logger.warning(f"Could not ensure views sheet: {e}")
+
+
+@app.post("/api/views/record")
+def record_view(request: Request):
+    """Record a dashboard page view."""
+    from datetime import datetime as _dt
+    import hashlib
+
+    # Use IP + User-Agent hash as anonymous identifier
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
+    identifier = hashlib.md5(f"{ip}:{ua}".encode()).hexdigest()[:12]
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    try:
+        _ensure_views_sheet()
+        append_rows(KPI_SPREADSHEET_ID, VIEWS_SHEET, [[now, identifier, ua[:120]]])
+    except Exception as e:
+        logger.warning(f"Failed to record view: {e}")
+
+    return {"recorded": True}
+
+
+@app.get("/api/views/stats")
+def get_view_stats():
+    """Return dashboard view stats: today, yesterday, this week, last week, this/last month, this year, unique, total."""
+    from datetime import datetime as _dt, timedelta
+
+    try:
+        raw = read_kpi_sheet(VIEWS_SHEET)
+    except Exception:
+        raw = []
+
+    if len(raw) <= 1:
+        return _empty_stats()
+
+    rows = raw[1:]  # skip header
+    now = _dt.utcnow()
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+
+    # Week boundaries (Monday-based)
+    this_week_start = today - timedelta(days=today.weekday())
+    last_week_start = this_week_start - timedelta(days=7)
+    last_week_end = this_week_start - timedelta(days=1)
+
+    # Month boundaries
+    this_month = today.replace(day=1)
+    if this_month.month == 1:
+        last_month = this_month.replace(year=this_month.year - 1, month=12)
+    else:
+        last_month = this_month.replace(month=this_month.month - 1)
+
+    counts = {
+        "today": 0, "yesterday": 0,
+        "thisWeek": 0, "lastWeek": 0,
+        "thisMonth": 0, "lastMonth": 0,
+        "thisYear": 0, "total": 0,
+    }
+    identifiers = set()
+
+    from data_logic import _parse_date
+    for row in rows:
+        if not row:
+            continue
+        ts_str = str(row[0]).strip() if len(row) > 0 else ""
+        identifier = str(row[1]).strip() if len(row) > 1 else ""
+
+        # Parse timestamp
+        try:
+            ts = _dt.strptime(ts_str[:19], "%Y-%m-%d %H:%M:%S")
+            d = ts.date()
+        except Exception:
+            continue
+
+        counts["total"] += 1
+        if identifier:
+            identifiers.add(identifier)
+
+        if d == today:
+            counts["today"] += 1
+        if d == yesterday:
+            counts["yesterday"] += 1
+        if this_week_start <= d <= today:
+            counts["thisWeek"] += 1
+        if last_week_start <= d <= last_week_end:
+            counts["lastWeek"] += 1
+        if d >= this_month:
+            counts["thisMonth"] += 1
+        if last_month <= d < this_month:
+            counts["lastMonth"] += 1
+        if d.year == today.year:
+            counts["thisYear"] += 1
+
+    counts["uniqueViews"] = len(identifiers)
+    return counts
+
+
+def _empty_stats():
+    return {
+        "today": 0, "yesterday": 0,
+        "thisWeek": 0, "lastWeek": 0,
+        "thisMonth": 0, "lastMonth": 0,
+        "thisYear": 0, "thisYear": 0,
+        "uniqueViews": 0, "total": 0,
+    }
 
 
 # ── Cache control ─────────────────────────────────────────────────────────────

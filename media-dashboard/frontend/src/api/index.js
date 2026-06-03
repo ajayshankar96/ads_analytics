@@ -85,6 +85,13 @@ export const deleteKPI = (id) =>
 export const refreshCache = () =>
   apiFetch("/api/cache/refresh", { method: "POST" });
 
+// ── View Stats ────────────────────────────────────────────────────────────────
+export const recordView = () =>
+  apiFetch("/api/views/record", { method: "POST" });
+
+export const getViewStats = () =>
+  apiFetch("/api/views/stats");
+
 // ── Advertiser Reporting ──────────────────────────────────────────────────────
 export const getAdvertiserReports = () =>
   apiFetch("/api/reporting/advertiser/list");

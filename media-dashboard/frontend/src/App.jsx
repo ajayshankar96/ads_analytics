@@ -12,7 +12,7 @@ import ChatBot from "./components/ChatBot";
 import CampaignOnboarding from "./components/CampaignOnboarding";
 import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
-import { getFilters, getHealth, refreshCache } from "./api";
+import { getFilters, getHealth, refreshCache, recordView, getViewStats } from "./api";
 
 const TABS = [
   { id: "dashboard",        label: "📊 Dashboard" },
@@ -28,20 +28,88 @@ const TABS = [
   { id: "pub-reporting",    label: "📉 Publisher Reporting" },
 ];
 
+const STAT_ITEMS = [
+  { key: "today",       label: "TODAY" },
+  { key: "yesterday",   label: "YESTERDAY" },
+  { key: "thisWeek",    label: "THIS WEEK" },
+  { key: "lastWeek",    label: "LAST WEEK" },
+  { key: "thisMonth",   label: "THIS MONTH" },
+  { key: "lastMonth",   label: "LAST MONTH" },
+  { key: "thisYear",    label: "THIS YEAR" },
+  { key: "uniqueViews", label: "UNIQUE VIEWS" },
+  { key: "total",       label: "TOTAL" },
+];
+
 const styles = {
   app: { minHeight: "100vh", background: "#f5f5f5" },
   header: {
     background: "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)",
     color: "#fff",
-    padding: "12px 24px",
+    padding: "10px 24px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+    gap: 16,
   },
-  headerTitle: { fontSize: 20, fontWeight: 700, letterSpacing: 0.5 },
-  headerSub: { fontSize: 12, opacity: 0.8, marginTop: 2 },
-  cacheInfo: { fontSize: 11, opacity: 0.75, textAlign: "right" },
+  headerLeft: { flexShrink: 0 },
+  headerTitle: { fontSize: 18, fontWeight: 700, letterSpacing: 0.5 },
+  headerSub: { fontSize: 11, opacity: 0.75, marginTop: 1 },
+
+  // ── Stats strip (centre of header) ────────────────────────────────
+  statsStrip: {
+    display: "flex",
+    alignItems: "center",
+    gap: 0,
+    flex: 1,
+    justifyContent: "center",
+    borderLeft: "1px solid rgba(255,255,255,0.15)",
+    borderRight: "1px solid rgba(255,255,255,0.15)",
+    padding: "0 16px",
+    overflowX: "auto",
+  },
+  statsLabel: {
+    fontSize: 9,
+    fontWeight: 800,
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    marginRight: 14,
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: 5,
+  },
+  statItem: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "4px 12px",
+    borderRight: "1px solid rgba(255,255,255,0.1)",
+    flexShrink: 0,
+    minWidth: 52,
+  },
+  statItemLast: {
+    borderRight: "none",
+  },
+  statLabel: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 2,
+    whiteSpace: "nowrap",
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: "#fff",
+    lineHeight: 1,
+  },
+
+  // ── Right side (cache / refresh) ──────────────────────────────────
+  cacheInfo: { fontSize: 11, opacity: 0.75, textAlign: "right", flexShrink: 0 },
   refreshBtn: {
     background: "rgba(255,255,255,0.15)",
     border: "1px solid rgba(255,255,255,0.3)",
@@ -52,6 +120,7 @@ const styles = {
     fontSize: 12,
     marginTop: 4,
   },
+
   tabBar: {
     background: "#fff",
     borderBottom: "1px solid #e0e0e0",
@@ -93,6 +162,7 @@ export default function App() {
   const [cacheAge, setCacheAge] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [viewStats, setViewStats] = useState(null);
 
   // Check API health on mount
   useEffect(() => {
@@ -110,6 +180,14 @@ export default function App() {
     getFilters()
       .then(setFilterOptions)
       .catch((e) => console.error("Filter load error:", e));
+  }, []);
+
+  // Record this view and fetch stats
+  useEffect(() => {
+    recordView().catch(() => {});
+    getViewStats()
+      .then(setViewStats)
+      .catch(() => {});
   }, []);
 
   const handleRefreshCache = async () => {
@@ -134,14 +212,14 @@ export default function App() {
   const renderTab = () => {
     const props = { filters };
     switch (activeTab) {
-      case "dashboard":    return <Dashboard {...props} />;
-      case "adv-perf":     return <AdvertiserPerformance {...props} />;
-      case "pub-perf":     return <PublisherPerformance {...props} />;
-      case "adv-health":   return <AdvertiserHealth />;
-      case "freshness":    return <DataFreshness />;
-      case "budget":       return <Budget />;
-      case "monthly":      return <MonthlySpend />;
-      case "kpis":         return <GlobalKPIs />;
+      case "dashboard":      return <Dashboard {...props} />;
+      case "adv-perf":       return <AdvertiserPerformance {...props} />;
+      case "pub-perf":       return <PublisherPerformance {...props} />;
+      case "adv-health":     return <AdvertiserHealth />;
+      case "freshness":      return <DataFreshness />;
+      case "budget":         return <Budget />;
+      case "monthly":        return <MonthlySpend />;
+      case "kpis":           return <GlobalKPIs />;
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
@@ -151,15 +229,42 @@ export default function App() {
 
   return (
     <div style={styles.app}>
-      {/* Header */}
+      {/* ── Header ── */}
       <header style={styles.header}>
-        <div>
+
+        {/* Left: title */}
+        <div style={styles.headerLeft}>
           <div style={styles.headerTitle}>Razorpay Media Network Dashboard</div>
           <div style={styles.headerSub}>Advertising Analytics Platform</div>
         </div>
+
+        {/* Centre: view stats strip */}
+        <div style={styles.statsStrip}>
+          <div style={styles.statsLabel}>
+            <span>📊</span> STATS
+          </div>
+          {STAT_ITEMS.map((item, idx) => (
+            <div
+              key={item.key}
+              style={{
+                ...styles.statItem,
+                ...(idx === STAT_ITEMS.length - 1 ? styles.statItemLast : {}),
+              }}
+            >
+              <div style={styles.statLabel}>{item.label}</div>
+              <div style={styles.statValue}>
+                {viewStats === null
+                  ? "—"
+                  : (viewStats[item.key] ?? 0).toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Right: cache status */}
         <div style={styles.cacheInfo}>
           {apiStatus === "error" ? (
-            <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable — is uvicorn running?</span>
+            <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable</span>
           ) : (
             <>
               Cache: {apiStatus === "warm" ? "🟢 warm" : "🟡 cold"}
@@ -175,9 +280,10 @@ export default function App() {
             {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
           </button>
         </div>
+
       </header>
 
-      {/* Tab bar */}
+      {/* ── Tab bar ── */}
       <nav style={styles.tabBar}>
         {TABS.map((tab) => (
           <button
@@ -190,7 +296,7 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Filter bar (shown on most tabs) */}
+      {/* ── Filter bar (shown on most tabs) ── */}
       {!["freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting"].includes(activeTab) && (
         <FilterBar
           options={filterOptions}
@@ -199,13 +305,13 @@ export default function App() {
         />
       )}
 
-      {/* Content */}
+      {/* ── Content ── */}
       <main style={styles.content}>
         {error && <div style={styles.errorBanner}>Error: {error}</div>}
         {renderTab()}
       </main>
 
-      {/* Chatbot */}
+      {/* ── Chatbot ── */}
       <ChatBot />
     </div>
   );
