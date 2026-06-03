@@ -416,54 +416,54 @@ function NewCampaignForm({ filterOptions }) {
           {/* Goals JSON */}
           <div style={S.fieldGroup}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Goals JSON</label>
+              <label style={S.label}>Goals (Campaign Level)</label>
               <button style={S.loadBtn} onClick={() => loadTemplate("goals_json")}>Load Template</button>
             </div>
             <textarea
               style={{ ...S.jsonArea, ...(jsonErrors.goals_json ? S.jsonError : {}) }}
               value={form.goals_json}
               onChange={e => set("goals_json", e.target.value)}
-              placeholder='{"primary": {"metric": "CTR", "target": "2%", "timeframe": "30d"}, "secondary": []}'
+              placeholder="Enter Goals JSON"
             />
             {jsonErrors.goals_json
               ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Define campaign goals as JSON</span>
+              : <span style={S.jsonHint}>Define daily, weekly, monthly, and date-agnostic goals</span>
             }
           </div>
 
           {/* Metrics JSON */}
           <div style={S.fieldGroup}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Metrics JSON</label>
+              <label style={S.label}>Metrics</label>
               <button style={S.loadBtn} onClick={() => loadTemplate("metrics_json")}>Load Template</button>
             </div>
             <textarea
               style={{ ...S.jsonArea, ...(jsonErrors.metrics_json ? S.jsonError : {}) }}
               value={form.metrics_json}
               onChange={e => set("metrics_json", e.target.value)}
-              placeholder='{"impressions": {"track": true, "target": "1M"}, "ctr": {"track": true, "target": "2%"}}'
+              placeholder="Enter Metrics JSON"
             />
             {jsonErrors.metrics_json
               ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Specify which metrics to track and targets</span>
+              : <span style={S.jsonHint}>Define metrics to extract from advertiser data and calculations</span>
             }
           </div>
 
           {/* Campaign Details JSON */}
           <div style={S.fieldGroup}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Campaign Details JSON</label>
+              <label style={S.label}>Campaign Details</label>
               <button style={S.loadBtn} onClick={() => loadTemplate("campaign_details_json")}>Load Template</button>
             </div>
             <textarea
               style={{ ...S.jsonArea, minHeight: 160, ...(jsonErrors.campaign_details_json ? S.jsonError : {}) }}
               value={form.campaign_details_json}
               onChange={e => set("campaign_details_json", e.target.value)}
-              placeholder='{"campaign_name": "...", "start_date": "...", "budget": "..."}'
+              placeholder="Enter Campaign Details JSON"
             />
             {jsonErrors.campaign_details_json
               ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Full campaign configuration as JSON</span>
+              : <span style={S.jsonHint}>Brand info, tracking links, incentives, assets, targeting, budget, and Rzp_cut %</span>
             }
           </div>
 
@@ -474,7 +474,7 @@ function NewCampaignForm({ filterOptions }) {
               style={{ ...S.jsonArea, minHeight: 80, fontFamily: "inherit", fontSize: 13 }}
               value={form.additional_context}
               onChange={e => set("additional_context", e.target.value)}
-              placeholder="Any additional notes, special requirements, or context..."
+              placeholder="Any additional notes or context about this campaign"
             />
           </div>
         </div>
