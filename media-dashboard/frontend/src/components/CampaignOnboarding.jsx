@@ -2,292 +2,265 @@ import React, { useState, useEffect, useCallback } from "react";
 
 const API = process.env.REACT_APP_API_URL || "";
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ─────────────────────────── Styles ──────────────────────────────────────────
 const S = {
-  container: { maxWidth: 900, margin: "0 auto" },
-  subTabs: {
-    display: "flex",
-    gap: 8,
-    marginBottom: 20,
-    borderBottom: "2px solid #e0e0e0",
-    paddingBottom: 0,
-  },
-  subTab: {
-    padding: "8px 20px",
-    border: "none",
-    borderBottom: "3px solid transparent",
-    background: "none",
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: 500,
-    color: "#666",
-    marginBottom: -2,
-    transition: "all 0.15s",
-  },
-  subTabActive: {
-    color: "#2563eb",
-    borderBottom: "3px solid #2563eb",
-    fontWeight: 700,
-  },
-  card: {
-    background: "#fff",
-    borderRadius: 10,
-    boxShadow: "0 1px 6px rgba(0,0,0,0.08)",
-    padding: 28,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: "#1e3a5f",
-    marginBottom: 16,
-    paddingBottom: 8,
-    borderBottom: "1px solid #f0f0f0",
-  },
-  grid2: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "14px 20px",
-  },
-  grid1: {
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 14,
-  },
+  container: { maxWidth: 960, margin: "0 auto" },
+  subTabs: { display: "flex", gap: 8, marginBottom: 20, borderBottom: "2px solid #e0e0e0", paddingBottom: 0 },
+  subTab: { padding: "8px 20px", border: "none", borderBottom: "3px solid transparent", background: "none", cursor: "pointer", fontSize: 14, fontWeight: 500, color: "#666", marginBottom: -2, transition: "all 0.15s" },
+  subTabActive: { color: "#2563eb", borderBottom: "3px solid #2563eb", fontWeight: 700 },
+
+  card: { background: "#fff", borderRadius: 10, boxShadow: "0 1px 6px rgba(0,0,0,0.08)", padding: 24, marginBottom: 20 },
+  sectionHeader: { display: "flex", alignItems: "center", gap: 10, marginBottom: 16, paddingBottom: 10, borderBottom: "1px solid #f0f0f0" },
+  sectionNum: { width: 26, height: 26, borderRadius: "50%", background: "#2563eb", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 },
+  sectionTitle: { fontSize: 15, fontWeight: 700, color: "#1e3a5f" },
+
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 20px" },
+  grid3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px 16px" },
+  grid1: { display: "grid", gridTemplateColumns: "1fr", gap: 14 },
+
   fieldGroup: { display: "flex", flexDirection: "column", gap: 4 },
   label: { fontSize: 12, fontWeight: 600, color: "#555", textTransform: "uppercase", letterSpacing: 0.4 },
+  labelNormal: { fontSize: 13, fontWeight: 500, color: "#374151" },
   required: { color: "#dc2626", marginLeft: 2 },
-  input: {
-    padding: "8px 10px",
-    border: "1px solid #d1d5db",
-    borderRadius: 6,
-    fontSize: 13,
-    outline: "none",
-    transition: "border-color 0.15s",
-  },
-  inputFocus: { borderColor: "#2563eb" },
-  select: {
-    padding: "8px 10px",
-    border: "1px solid #d1d5db",
-    borderRadius: 6,
-    fontSize: 13,
-    background: "#fff",
-    outline: "none",
-    cursor: "pointer",
-  },
-  jsonArea: {
-    padding: "10px 12px",
-    border: "1px solid #d1d5db",
-    borderRadius: 6,
-    fontSize: 12,
-    fontFamily: "monospace",
-    minHeight: 120,
-    resize: "vertical",
-    outline: "none",
-    lineHeight: 1.5,
-  },
-  jsonError: { border: "1px solid #f87171" },
-  jsonHint: { fontSize: 11, color: "#888", marginTop: 2 },
-  jsonErrMsg: { fontSize: 11, color: "#dc2626", marginTop: 2 },
-  loadBtn: {
-    padding: "4px 10px",
-    background: "#f0f4ff",
-    border: "1px solid #93c5fd",
-    borderRadius: 5,
-    color: "#2563eb",
-    fontSize: 11,
-    fontWeight: 600,
-    cursor: "pointer",
-    alignSelf: "flex-start",
-    marginTop: 2,
-  },
+  input: { padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none" },
+  inputErr: { borderColor: "#f87171" },
+  select: { padding: "8px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, background: "#fff", outline: "none", cursor: "pointer" },
+  hint: { fontSize: 11, color: "#888", marginTop: 2 },
+  errMsg: { fontSize: 11, color: "#dc2626", marginTop: 2 },
+
+  // Goal rows
+  goalRow: { display: "grid", gridTemplateColumns: "1fr 160px 120px 36px", gap: 8, alignItems: "end", marginBottom: 8 },
+  // Metric card
+  metricCard: { border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 12, position: "relative", background: "#fafbff" },
+  metricCardGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 },
+
+  addBtn: { display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, color: "#16a34a", fontSize: 13, fontWeight: 600, cursor: "pointer", marginTop: 8 },
+  removeBtn: { padding: "4px 8px", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 5, color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  removeBtnAbs: { position: "absolute", top: 10, right: 10, padding: "3px 8px", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 5, color: "#dc2626", fontSize: 11, fontWeight: 700, cursor: "pointer" },
+
+  // KPI toggle
+  toggleRow: { display: "flex", alignItems: "center", gap: 12, marginBottom: 14 },
+  toggleLabel: { fontSize: 13, fontWeight: 600, color: "#374151" },
+  toggle: { display: "flex", gap: 0 },
+  toggleOpt: { padding: "5px 16px", border: "1px solid #d1d5db", fontSize: 13, cursor: "pointer", background: "#f9fafb", color: "#374151" },
+  toggleOptActive: { background: "#2563eb", color: "#fff", borderColor: "#2563eb" },
+
+  // Campaign details section tabs
+  cdTabs: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 },
+  cdTab: { padding: "5px 12px", border: "1px solid #d1d5db", borderRadius: 20, fontSize: 12, cursor: "pointer", background: "#f9fafb", color: "#555", fontWeight: 500 },
+  cdTabActive: { background: "#2563eb", color: "#fff", borderColor: "#2563eb" },
+
+  // Submit
   submitRow: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 },
-  btn: {
-    padding: "10px 24px",
-    borderRadius: 7,
-    border: "none",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "opacity 0.15s",
-  },
+  btn: { padding: "10px 24px", borderRadius: 7, border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "opacity 0.15s" },
   btnPrimary: { background: "#2563eb", color: "#fff" },
-  btnSecondary: {
-    background: "#f1f5f9",
-    color: "#374151",
-    border: "1px solid #d1d5db",
-  },
+  btnSecondary: { background: "#f1f5f9", color: "#374151", border: "1px solid #d1d5db" },
   btnDisabled: { opacity: 0.5, cursor: "not-allowed" },
-  alert: {
-    borderRadius: 7,
-    padding: "12px 16px",
-    fontSize: 13,
-    marginBottom: 16,
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
+
+  alert: { borderRadius: 7, padding: "12px 16px", fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 },
   alertSuccess: { background: "#d1fae5", color: "#065f46", border: "1px solid #6ee7b7" },
   alertError: { background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5" },
-  // Manage tab
+
+  // Manage
   tableWrap: { overflowX: "auto" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-  th: {
-    background: "#f8fafc",
-    padding: "10px 12px",
-    textAlign: "left",
-    fontWeight: 700,
-    color: "#374151",
-    borderBottom: "2px solid #e0e0e0",
-    whiteSpace: "nowrap",
-  },
-  td: {
-    padding: "9px 12px",
-    borderBottom: "1px solid #f0f0f0",
-    color: "#374151",
-    verticalAlign: "top",
-    maxWidth: 200,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  statusBadge: {
-    display: "inline-block",
-    padding: "2px 10px",
-    borderRadius: 12,
-    fontSize: 11,
-    fontWeight: 700,
-  },
+  th: { background: "#f8fafc", padding: "10px 12px", textAlign: "left", fontWeight: 700, color: "#374151", borderBottom: "2px solid #e0e0e0", whiteSpace: "nowrap" },
+  td: { padding: "9px 12px", borderBottom: "1px solid #f0f0f0", color: "#374151", verticalAlign: "top", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  statusBadge: { display: "inline-block", padding: "2px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700 },
   empty: { textAlign: "center", color: "#999", padding: "40px 0", fontSize: 14 },
   spinner: { textAlign: "center", color: "#888", padding: "40px 0" },
 };
 
-// ── Status badge colors ───────────────────────────────────────────────────────
-function statusStyle(status) {
-  const s = (status || "").toLowerCase();
-  if (s === "pending")   return { background: "#fef9c3", color: "#854d0e" };
-  if (s === "live")      return { background: "#d1fae5", color: "#065f46" };
-  if (s === "active")    return { background: "#d1fae5", color: "#065f46" };
-  if (s === "paused")    return { background: "#fef3c7", color: "#92400e" };
-  if (s === "completed") return { background: "#dbeafe", color: "#1e40af" };
-  if (s === "cancelled") return { background: "#fee2e2", color: "#991b1b" };
+// ─── Status badge colours ─────────────────────────────────────────────────────
+function statusStyle(s) {
+  const v = (s || "").toLowerCase();
+  if (v === "pending")   return { background: "#fef9c3", color: "#854d0e" };
+  if (v === "live")      return { background: "#d1fae5", color: "#065f46" };
+  if (v === "active")    return { background: "#d1fae5", color: "#065f46" };
+  if (v === "paused")    return { background: "#fef3c7", color: "#92400e" };
+  if (v === "completed") return { background: "#dbeafe", color: "#1e40af" };
+  if (v === "cancelled") return { background: "#fee2e2", color: "#991b1b" };
   return { background: "#f1f5f9", color: "#374151" };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function isValidJson(str) {
-  if (!str || !str.trim()) return false;
-  try { JSON.parse(str); return true; }
-  catch { return false; }
-}
-
-function Datalist({ id, value, onChange, options, placeholder }) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function Datalist({ id, value, onChange, options, placeholder, style, err }) {
   return (
     <>
-      <input
-        list={id + "_list"}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={S.input}
-      />
-      <datalist id={id + "_list"}>
-        {options.map(o => <option key={o} value={o} />)}
-      </datalist>
+      <input list={id + "_dl"} value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder} style={{ ...S.input, ...(err ? S.inputErr : {}), ...style }} />
+      <datalist id={id + "_dl"}>{options.map(o => <option key={o} value={o} />)}</datalist>
     </>
   );
 }
 
-// ── New Campaign Form ─────────────────────────────────────────────────────────
-const EMPTY_FORM = {
+function Field({ label, required, hint, err, children }) {
+  return (
+    <div style={S.fieldGroup}>
+      <label style={S.label}>{label}{required && <span style={S.required}>*</span>}</label>
+      {children}
+      {err  && <span style={S.errMsg}>{err}</span>}
+      {hint && !err && <span style={S.hint}>{hint}</span>}
+    </div>
+  );
+}
+
+// ─── JSON builders ────────────────────────────────────────────────────────────
+const PERIOD_MAP = { daily: "daily", weekly: "weekly", monthly: "monthly", date_agnostic: "date_agnostic" };
+
+function buildGoalsJson(goals) {
+  const out = { goals: { daily: {}, weekly: {}, monthly: {}, date_agnostic: {} } };
+  goals.forEach(({ goal, period, value }) => {
+    if (goal.trim() && period && value !== "") {
+      out.goals[period][goal.trim()] = isNaN(value) ? value : Number(value);
+    }
+  });
+  return JSON.stringify(out);
+}
+
+function buildMetricsJson(metrics) {
+  const lib = {};
+  metrics.forEach(({ display_name, definition, calculation }, i) => {
+    if (display_name.trim()) {
+      lib[`metric_${i + 1}`] = { display_name: display_name.trim(), definition, calculation };
+    }
+  });
+  return JSON.stringify({ metrics_library: lib });
+}
+
+function buildCampaignDetailsJson(cd) {
+  return JSON.stringify({
+    campaign_details: {
+      brand_name: cd.brand_name,
+      offer_title: cd.offer_title,
+      tc: cd.tc,
+      how_to_redeem: cd.how_to_redeem,
+      tracking: { landing_link: cd.landing_link, utm_redirection_link: cd.utm_redirection_link },
+      incentives: {
+        codes: cd.codes ? cd.codes.split(",").map(s => s.trim()).filter(Boolean) : [],
+        codes_validity: { start_date: cd.start_date, expiry_date: cd.expiry_date },
+      },
+      assets: { creative_url: cd.creative_url, logo_url: cd.logo_url },
+      targeting: {
+        Segment_link: cd.segment_link,
+        "Segment Description": cd.segment_description,
+        Size: cd.size,
+        "Cohort Name": cd.cohort_name,
+      },
+      budget_and_metrics: {
+        total_budget: parseFloat(cd.total_budget) || 0,
+        cpc: parseFloat(cd.cpc) || 0,
+        cpm: parseFloat(cd.cpm) || 0,
+        publisher_spends_calc: cd.publisher_spends_calc || "Spends",
+        advertiser_spends_calc: cd.advertiser_spends_calc || "Spends",
+        committed_kpi: cd.committed_kpi || "NO",
+        committed_kpi_config: {
+          metric: cd.kpi_metric,
+          operation: cd.kpi_operation,
+          goal: cd.kpi_goal,
+          formula: cd.kpi_formula,
+        },
+      },
+      Rzp_cut: parseFloat(cd.rzp_cut) || 0,
+    },
+  });
+}
+
+// ─── Default states ───────────────────────────────────────────────────────────
+const EMPTY_BASIC = {
   campaign_type: "Single Campaign Sheet",
-  advertiser: "",
-  publisher: "",
-  advertiser_industry: "",
-  brand: "",
-  offer: "",
-  advertiser_data_url: "",
-  publisher_data_url: "",
-  goals_json: "",
-  metrics_json: "",
-  segment_pub: "",
-  segment_adv: "",
+  advertiser: "", publisher: "", advertiser_industry: "", brand: "", offer: "",
+  advertiser_data_url: "", publisher_data_url: "",
+  segment_pub: "", segment_adv: "",
   additional_context: "",
-  campaign_details_json: "",
 };
 
-function NewCampaignForm({ filterOptions }) {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [jsonErrors, setJsonErrors] = useState({});
+const EMPTY_GOAL   = () => ({ id: Date.now() + Math.random(), goal: "", period: "date_agnostic", value: "" });
+const EMPTY_METRIC = () => ({ id: Date.now() + Math.random(), display_name: "", definition: "", calculation: "" });
+
+const EMPTY_CD = {
+  brand_name: "", offer_title: "", tc: "", how_to_redeem: "",
+  landing_link: "", utm_redirection_link: "",
+  codes: "", start_date: "", expiry_date: "",
+  creative_url: "", logo_url: "",
+  segment_link: "", segment_description: "", size: "", cohort_name: "",
+  total_budget: "", cpc: "", cpm: "", rzp_cut: "",
+  publisher_spends_calc: "Spends", advertiser_spends_calc: "Spends",
+  committed_kpi: "NO",
+  kpi_metric: "", kpi_operation: "", kpi_goal: "", kpi_formula: "",
+};
+
+// ─── Campaign Details sections ────────────────────────────────────────────────
+const CD_SECTIONS = [
+  { id: "basic",     label: "Basic Info" },
+  { id: "tracking",  label: "Tracking" },
+  { id: "incentives",label: "Incentives" },
+  { id: "assets",    label: "Assets" },
+  { id: "targeting", label: "Targeting" },
+  { id: "budget",    label: "Budget & Metrics" },
+];
+
+// ─── New Campaign Form ────────────────────────────────────────────────────────
+export function NewCampaignForm({ filterOptions }) {
+  const [basic, setBasic] = useState(EMPTY_BASIC);
+  const [goals, setGoals] = useState([EMPTY_GOAL()]);
+  const [metrics, setMetrics] = useState([
+    { id: 1, display_name: "", definition: "", calculation: "" },
+    { id: 2, display_name: "", definition: "", calculation: "" },
+  ]);
+  const [cd, setCd] = useState(EMPTY_CD);
+  const [cdSection, setCdSection] = useState("basic");
+
+  const [errs, setErrs] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState(null);
-  const [templates, setTemplates] = useState(null);
 
-  // Load JSON templates on mount
-  useEffect(() => {
-    fetch(`${API}/api/onboarding/templates`)
-      .then(r => r.json())
-      .then(setTemplates)
-      .catch(() => {});
-  }, []);
+  const setB = (k, v) => setBasic(b => ({ ...b, [k]: v }));
+  const setC = (k, v) => setCd(c => ({ ...c, [k]: v }));
 
-  const set = (key, val) => {
-    setForm(f => ({ ...f, [key]: val }));
-    // Clear JSON error on change
-    if (["goals_json", "metrics_json", "campaign_details_json"].includes(key)) {
-      setJsonErrors(e => ({ ...e, [key]: val.trim() && !isValidJson(val) }));
-    }
-  };
+  // Goals
+  const addGoal    = () => setGoals(g => [...g, EMPTY_GOAL()]);
+  const removeGoal = id => setGoals(g => g.filter(x => x.id !== id));
+  const setGoal    = (id, k, v) => setGoals(g => g.map(x => x.id === id ? { ...x, [k]: v } : x));
 
-  const loadTemplate = (key) => {
-    if (!templates) return;
-    const map = { goals_json: "goals", metrics_json: "metrics", campaign_details_json: "campaign_details" };
-    set(key, templates[map[key]]);
-  };
+  // Metrics
+  const addMetric    = () => setMetrics(m => [...m, EMPTY_METRIC()]);
+  const removeMetric = id => setMetrics(m => m.filter(x => x.id !== id));
+  const setMetric    = (id, k, v) => setMetrics(m => m.map(x => x.id === id ? { ...x, [k]: v } : x));
 
   const validate = () => {
-    const errors = {};
-    // Required fields match Apps Script: advertiser, publisher, advertiserDataUrl, publisherDataUrl, segmentPub, segmentAdv
-    const required = ["advertiser", "publisher", "advertiser_data_url", "publisher_data_url", "segment_pub", "segment_adv"];
-    for (const k of required) {
-      if (!form[k].trim()) { errors[k] = true; }
-    }
-    for (const k of ["goals_json", "metrics_json", "campaign_details_json"]) {
-      if (form[k].trim() && !isValidJson(form[k])) errors[k] = true;
-    }
-    return errors;
+    const e = {};
+    ["advertiser", "publisher", "advertiser_data_url", "publisher_data_url", "segment_pub", "segment_adv"]
+      .forEach(k => { if (!basic[k].trim()) e[k] = "Required"; });
+    return e;
   };
 
   const handleSubmit = async () => {
-    const errors = validate();
-    if (Object.keys(errors).length) {
-      setJsonErrors(errors);
-      setAlert({ type: "error", msg: "Please fix the errors above before submitting." });
-      return;
-    }
-    setSubmitting(true);
-    setAlert(null);
+    const e = validate();
+    if (Object.keys(e).length) { setErrs(e); setAlert({ type: "error", msg: "Please fill in all required fields." }); return; }
+    setErrs({}); setSubmitting(true); setAlert(null);
     try {
-      const res = await fetch(`${API}/api/onboarding/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+      const payload = {
+        ...basic,
+        goals_json:            buildGoalsJson(goals),
+        metrics_json:          buildMetricsJson(metrics),
+        campaign_details_json: buildCampaignDetailsJson(cd),
+      };
+      const res  = await fetch(`${API}/api/onboarding/submit`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Submission failed");
-      setAlert({ type: "success", msg: "Campaign submitted successfully! It will appear in Manage Campaigns." });
-      setForm(EMPTY_FORM);
-      setJsonErrors({});
-    } catch (e) {
-      setAlert({ type: "error", msg: e.message });
-    } finally {
-      setSubmitting(false);
-    }
+      setAlert({ type: "success", msg: "Campaign submitted successfully!" });
+      setBasic(EMPTY_BASIC); setGoals([EMPTY_GOAL()]); setMetrics([EMPTY_METRIC(), EMPTY_METRIC()]); setCd(EMPTY_CD);
+    } catch (ex) {
+      setAlert({ type: "error", msg: ex.message });
+    } finally { setSubmitting(false); }
   };
 
   const advOptions = filterOptions?.advertisers || [];
-  const pubOptions = filterOptions?.publishers || [];
-  const indOptions = filterOptions?.industries || [];
+  const pubOptions = filterOptions?.publishers  || [];
+  const indOptions = filterOptions?.industries  || [];
 
   return (
     <div>
@@ -297,211 +270,262 @@ function NewCampaignForm({ filterOptions }) {
         </div>
       )}
 
-      {/* Basic Info */}
+      {/* ── 1. Basic Information ── */}
       <div style={S.card}>
-        <div style={S.sectionTitle}>📋 Basic Information</div>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>1</div><div style={S.sectionTitle}>Basic Information</div></div>
         <div style={S.grid2}>
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Campaign Type</label>
-            <input
-              style={S.input}
-              value={form.campaign_type}
-              onChange={e => set("campaign_type", e.target.value)}
-              placeholder="e.g. Single Campaign Sheet, Two different Sheets"
-            />
-          </div>
-
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Advertiser Industry</label>
-            <Datalist
-              id="industry"
-              value={form.advertiser_industry}
-              onChange={v => set("advertiser_industry", v)}
-              options={indOptions}
-              placeholder="e.g. BFSI, E-commerce..."
-            />
-          </div>
-
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Advertiser <span style={S.required}>*</span></label>
-            <Datalist
-              id="advertiser"
-              value={form.advertiser}
-              onChange={v => set("advertiser", v)}
-              options={advOptions}
-              placeholder="Select or type advertiser name"
-            />
-          </div>
-
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Publisher <span style={S.required}>*</span></label>
-            <Datalist
-              id="publisher"
-              value={form.publisher}
-              onChange={v => set("publisher", v)}
-              options={pubOptions}
-              placeholder="Select or type publisher name"
-            />
-          </div>
-
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Brand</label>
-            <input style={S.input} value={form.brand} onChange={e => set("brand", e.target.value)} placeholder="Brand name" />
-          </div>
-
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Offer</label>
-            <input style={S.input} value={form.offer} onChange={e => set("offer", e.target.value)} placeholder="Offer name" />
-          </div>
+          <Field label="Campaign Type" hint="Type of campaign structure">
+            <input style={S.input} value={basic.campaign_type} onChange={e => setB("campaign_type", e.target.value)}
+              placeholder="e.g. Single Campaign Sheet, Two different Sheets" />
+          </Field>
+          <Field label="Advertiser Industry">
+            <Datalist id="ind" value={basic.advertiser_industry} onChange={v => setB("advertiser_industry", v)}
+              options={indOptions} placeholder="e.g. Insurance, E-commerce, Fintech" />
+          </Field>
+          <Field label="Advertiser" required err={errs.advertiser}>
+            <Datalist id="adv" value={basic.advertiser} onChange={v => setB("advertiser", v)}
+              options={advOptions} placeholder="Advertiser name" err={!!errs.advertiser} />
+          </Field>
+          <Field label="Publisher" required err={errs.publisher}>
+            <Datalist id="pub" value={basic.publisher} onChange={v => setB("publisher", v)}
+              options={pubOptions} placeholder="Publisher name" err={!!errs.publisher} />
+          </Field>
+          <Field label="Brand">
+            <input style={S.input} value={basic.brand} onChange={e => setB("brand", e.target.value)} placeholder="Brand name" />
+          </Field>
+          <Field label="Offer">
+            <input style={S.input} value={basic.offer} onChange={e => setB("offer", e.target.value)} placeholder="Offer name" />
+          </Field>
+          <Field label="Advertiser Data Sheet URL" required err={errs.advertiser_data_url}>
+            <input style={{ ...S.input, ...(errs.advertiser_data_url ? S.inputErr : {}) }}
+              value={basic.advertiser_data_url} onChange={e => setB("advertiser_data_url", e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </Field>
+          <Field label="Publisher Data Sheet URL" required err={errs.publisher_data_url}>
+            <input style={{ ...S.input, ...(errs.publisher_data_url ? S.inputErr : {}) }}
+              value={basic.publisher_data_url} onChange={e => setB("publisher_data_url", e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </Field>
+          <Field label="Segment Names (Shared by Publisher in reports)" required err={errs.segment_pub}
+            hint="Segment name as it appears in publisher reports">
+            <input style={{ ...S.input, ...(errs.segment_pub ? S.inputErr : {}) }}
+              value={basic.segment_pub} onChange={e => setB("segment_pub", e.target.value)}
+              placeholder="e.g. Seg 1A" />
+          </Field>
+          <Field label="Segment Name (Shared by Advertiser in reports)" required err={errs.segment_adv}
+            hint="Segment name as it appears in advertiser reports">
+            <input style={{ ...S.input, ...(errs.segment_adv ? S.inputErr : {}) }}
+              value={basic.segment_adv} onChange={e => setB("segment_adv", e.target.value)}
+              placeholder="e.g. Partnership_Razorpay / Placement1a" />
+          </Field>
         </div>
       </div>
 
-      {/* Data Sources */}
+      {/* ── 2. Goals ── */}
       <div style={S.card}>
-        <div style={S.sectionTitle}>🔗 Data Sources</div>
-        <div style={S.grid1}>
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Advertiser Data Sheet URL <span style={S.required}>*</span></label>
-            <input
-              style={{ ...S.input, ...(jsonErrors.advertiser_data_url ? { borderColor: "#f87171" } : {}) }}
-              value={form.advertiser_data_url}
-              onChange={e => set("advertiser_data_url", e.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-            />
-          </div>
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Publisher Data Sheet URL <span style={S.required}>*</span></label>
-            <input
-              style={{ ...S.input, ...(jsonErrors.publisher_data_url ? { borderColor: "#f87171" } : {}) }}
-              value={form.publisher_data_url}
-              onChange={e => set("publisher_data_url", e.target.value)}
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-            />
-          </div>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>2</div><div style={S.sectionTitle}>Goals</div></div>
+        {/* Header row */}
+        <div style={{ ...S.goalRow, marginBottom: 4 }}>
+          <span style={{ ...S.label, fontSize: 11 }}>GOAL</span>
+          <span style={{ ...S.label, fontSize: 11 }}>PERIOD</span>
+          <span style={{ ...S.label, fontSize: 11 }}>VALUE</span>
+          <span />
         </div>
+        {goals.map(g => (
+          <div key={g.id} style={S.goalRow}>
+            <input style={S.input} value={g.goal} onChange={e => setGoal(g.id, "goal", e.target.value)}
+              placeholder="e.g. CPL" />
+            <select style={S.select} value={g.period} onChange={e => setGoal(g.id, "period", e.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="date_agnostic">Date Agnostic</option>
+            </select>
+            <input style={S.input} type="number" value={g.value} onChange={e => setGoal(g.id, "value", e.target.value)}
+              placeholder="e.g. 500" />
+            <button style={S.removeBtn} onClick={() => removeGoal(g.id)}>✕</button>
+          </div>
+        ))}
+        <button style={S.addBtn} onClick={addGoal}>+ Add Goal</button>
       </div>
 
-      {/* Segment Mapping */}
+      {/* ── 3. Metrics Library ── */}
       <div style={S.card}>
-        <div style={S.sectionTitle}>🎯 Segment Mapping</div>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>3</div><div style={S.sectionTitle}>Metrics Library</div></div>
+        <span style={{ ...S.hint, display: "block", marginBottom: 12 }}>Define metrics to extract from advertiser data and their calculations</span>
+        {metrics.map((m, idx) => (
+          <div key={m.id} style={S.metricCard}>
+            <button style={S.removeBtnAbs} onClick={() => removeMetric(m.id)}>Remove</button>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#374151", marginBottom: 12 }}>Metric {idx + 1}</div>
+            <div style={S.metricCardGrid}>
+              <Field label="Display Name" hint="e.g. Leads">
+                <input style={S.input} value={m.display_name} onChange={e => setMetric(m.id, "display_name", e.target.value)}
+                  placeholder="e.g. Leads" />
+              </Field>
+              <Field label="Definition" hint="e.g. Leads data from advertiser sheet">
+                <input style={S.input} value={m.definition} onChange={e => setMetric(m.id, "definition", e.target.value)}
+                  placeholder="e.g. Leads data from advertiser sheet" />
+              </Field>
+              <Field label="Calculation" hint="e.g. $leadsCol">
+                <input style={S.input} value={m.calculation} onChange={e => setMetric(m.id, "calculation", e.target.value)}
+                  placeholder="e.g. $leadsCol" />
+              </Field>
+            </div>
+          </div>
+        ))}
+        <button style={S.addBtn} onClick={addMetric}>+ Add Metric</button>
+      </div>
+
+      {/* ── 4. Committed KPI Configuration ── */}
+      <div style={S.card}>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>4</div><div style={S.sectionTitle}>Committed KPI Configuration</div></div>
+        <span style={{ ...S.hint, display: "block", marginBottom: 14 }}>
+          Configure Publisher and Advertiser Spends calculations. Formula builder appears when Committed KPI = YES.
+        </span>
         <div style={S.grid2}>
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Segment Names (Shared by Publisher in reports) <span style={S.required}>*</span></label>
-            <input
-              style={{ ...S.input, ...(jsonErrors.segment_pub ? { borderColor: "#f87171" } : {}) }}
-              value={form.segment_pub}
-              onChange={e => set("segment_pub", e.target.value)}
-              placeholder="e.g. Seg 1A"
-            />
-            <span style={S.jsonHint}>Segment name as it appears in publisher reports</span>
-          </div>
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Segment Name (Shared by Advertiser in reports) <span style={S.required}>*</span></label>
-            <input
-              style={{ ...S.input, ...(jsonErrors.segment_adv ? { borderColor: "#f87171" } : {}) }}
-              value={form.segment_adv}
-              onChange={e => set("segment_adv", e.target.value)}
-              placeholder="e.g. Partnership_Razorpay / Placement1a"
-            />
-            <span style={S.jsonHint}>Segment name as it appears in advertiser reports</span>
+          <Field label="Publisher Spends Calculation" hint="e.g. Spends / 1.2 or Spends / 3.2">
+            <input style={S.input} value={cd.publisher_spends_calc} onChange={e => setC("publisher_spends_calc", e.target.value)}
+              placeholder="e.g. Spends / 1.2" />
+          </Field>
+          <Field label="Advertiser Spends Calculation" hint="Enter a formula to calculate Advertiser Spends (use column names like Spends, Total_Budget, etc.)">
+            <input style={S.input} value={cd.advertiser_spends_calc} onChange={e => setC("advertiser_spends_calc", e.target.value)}
+              placeholder="e.g. Spends * 1.2 or Total_Budget / 10" />
+          </Field>
+        </div>
+        <div style={{ ...S.toggleRow, marginTop: 14 }}>
+          <span style={S.toggleLabel}>Committed KPI</span>
+          <div style={S.toggle}>
+            {["NO", "YES"].map((opt, i) => (
+              <button key={opt} onClick={() => setC("committed_kpi", opt)}
+                style={{
+                  ...S.toggleOpt,
+                  ...(cd.committed_kpi === opt ? S.toggleOptActive : {}),
+                  borderRadius: i === 0 ? "5px 0 0 5px" : "0 5px 5px 0",
+                }}>
+                {opt}
+              </button>
+            ))}
           </div>
         </div>
+        {cd.committed_kpi === "YES" && (
+          <div style={{ ...S.grid2, marginTop: 14, padding: 16, background: "#f0f4ff", borderRadius: 8, border: "1px solid #bfdbfe" }}>
+            <Field label="Metric" hint="e.g. Leads, QL">
+              <input style={S.input} value={cd.kpi_metric} onChange={e => setC("kpi_metric", e.target.value)} placeholder="Metric name" />
+            </Field>
+            <Field label="Operation" hint="e.g. >=, <=, =">
+              <input style={S.input} value={cd.kpi_operation} onChange={e => setC("kpi_operation", e.target.value)} placeholder="e.g. >=" />
+            </Field>
+            <Field label="Goal" hint="Target value">
+              <input style={S.input} value={cd.kpi_goal} onChange={e => setC("kpi_goal", e.target.value)} placeholder="e.g. 100" />
+            </Field>
+            <Field label="Formula" hint="Calculation formula">
+              <input style={S.input} value={cd.kpi_formula} onChange={e => setC("kpi_formula", e.target.value)} placeholder="e.g. Leads / Spends" />
+            </Field>
+          </div>
+        )}
       </div>
 
-      {/* JSON Fields */}
+      {/* ── 5. Campaign Details ── */}
       <div style={S.card}>
-        <div style={S.sectionTitle}>📊 Goals, Metrics & Campaign Details</div>
-        <div style={S.grid1}>
-
-          {/* Goals JSON */}
-          <div style={S.fieldGroup}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Goals (Campaign Level)</label>
-              <button style={S.loadBtn} onClick={() => loadTemplate("goals_json")}>Load Template</button>
-            </div>
-            <textarea
-              style={{ ...S.jsonArea, ...(jsonErrors.goals_json ? S.jsonError : {}) }}
-              value={form.goals_json}
-              onChange={e => set("goals_json", e.target.value)}
-              placeholder="Enter Goals JSON"
-            />
-            {jsonErrors.goals_json
-              ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Define daily, weekly, monthly, and date-agnostic goals</span>
-            }
-          </div>
-
-          {/* Metrics JSON */}
-          <div style={S.fieldGroup}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Metrics</label>
-              <button style={S.loadBtn} onClick={() => loadTemplate("metrics_json")}>Load Template</button>
-            </div>
-            <textarea
-              style={{ ...S.jsonArea, ...(jsonErrors.metrics_json ? S.jsonError : {}) }}
-              value={form.metrics_json}
-              onChange={e => set("metrics_json", e.target.value)}
-              placeholder="Enter Metrics JSON"
-            />
-            {jsonErrors.metrics_json
-              ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Define metrics to extract from advertiser data and calculations</span>
-            }
-          </div>
-
-          {/* Campaign Details JSON */}
-          <div style={S.fieldGroup}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label style={S.label}>Campaign Details</label>
-              <button style={S.loadBtn} onClick={() => loadTemplate("campaign_details_json")}>Load Template</button>
-            </div>
-            <textarea
-              style={{ ...S.jsonArea, minHeight: 160, ...(jsonErrors.campaign_details_json ? S.jsonError : {}) }}
-              value={form.campaign_details_json}
-              onChange={e => set("campaign_details_json", e.target.value)}
-              placeholder="Enter Campaign Details JSON"
-            />
-            {jsonErrors.campaign_details_json
-              ? <span style={S.jsonErrMsg}>Invalid JSON — please fix before submitting</span>
-              : <span style={S.jsonHint}>Brand info, tracking links, incentives, assets, targeting, budget, and Rzp_cut %</span>
-            }
-          </div>
-
-          {/* Additional Context */}
-          <div style={S.fieldGroup}>
-            <label style={S.label}>Additional Context</label>
-            <textarea
-              style={{ ...S.jsonArea, minHeight: 80, fontFamily: "inherit", fontSize: 13 }}
-              value={form.additional_context}
-              onChange={e => set("additional_context", e.target.value)}
-              placeholder="Any additional notes or context about this campaign"
-            />
-          </div>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>5</div><div style={S.sectionTitle}>Campaign Details</div></div>
+        <span style={{ ...S.hint, display: "block", marginBottom: 12 }}>Select a section to edit its fields. All sections are optional.</span>
+        <div style={S.cdTabs}>
+          {CD_SECTIONS.map(s => (
+            <button key={s.id} onClick={() => setCdSection(s.id)}
+              style={{ ...S.cdTab, ...(cdSection === s.id ? S.cdTabActive : {}) }}>
+              {s.label}
+            </button>
+          ))}
         </div>
+
+        {cdSection === "basic" && (
+          <div style={S.grid2}>
+            <Field label="Brand Name"><input style={S.input} value={cd.brand_name} onChange={e => setC("brand_name", e.target.value)} placeholder="Brand name" /></Field>
+            <Field label="Offer Title"><input style={S.input} value={cd.offer_title} onChange={e => setC("offer_title", e.target.value)} placeholder="Offer title" /></Field>
+            <Field label="T&C"><input style={S.input} value={cd.tc} onChange={e => setC("tc", e.target.value)} placeholder="Terms & conditions link or text" /></Field>
+            <Field label="How to Redeem"><input style={S.input} value={cd.how_to_redeem} onChange={e => setC("how_to_redeem", e.target.value)} placeholder="Redemption instructions" /></Field>
+            <Field label="Rzp Cut (%)" hint="Razorpay's revenue cut percentage">
+              <input style={S.input} type="number" value={cd.rzp_cut} onChange={e => setC("rzp_cut", e.target.value)} placeholder="0" />
+            </Field>
+          </div>
+        )}
+
+        {cdSection === "tracking" && (
+          <div style={S.grid1}>
+            <Field label="Landing Link"><input style={S.input} value={cd.landing_link} onChange={e => setC("landing_link", e.target.value)} placeholder="https://..." /></Field>
+            <Field label="UTM Redirection Link"><input style={S.input} value={cd.utm_redirection_link} onChange={e => setC("utm_redirection_link", e.target.value)} placeholder="https://..." /></Field>
+          </div>
+        )}
+
+        {cdSection === "incentives" && (
+          <div style={S.grid2}>
+            <Field label="Promo Codes" hint="Comma-separated list"><input style={S.input} value={cd.codes} onChange={e => setC("codes", e.target.value)} placeholder="CODE1, CODE2" /></Field>
+            <div />
+            <Field label="Validity Start Date"><input style={S.input} type="date" value={cd.start_date} onChange={e => setC("start_date", e.target.value)} /></Field>
+            <Field label="Validity Expiry Date"><input style={S.input} type="date" value={cd.expiry_date} onChange={e => setC("expiry_date", e.target.value)} /></Field>
+          </div>
+        )}
+
+        {cdSection === "assets" && (
+          <div style={S.grid2}>
+            <Field label="Creative URL"><input style={S.input} value={cd.creative_url} onChange={e => setC("creative_url", e.target.value)} placeholder="https://..." /></Field>
+            <Field label="Logo URL"><input style={S.input} value={cd.logo_url} onChange={e => setC("logo_url", e.target.value)} placeholder="https://..." /></Field>
+          </div>
+        )}
+
+        {cdSection === "targeting" && (
+          <div style={S.grid2}>
+            <Field label="Segment Link"><input style={S.input} value={cd.segment_link} onChange={e => setC("segment_link", e.target.value)} placeholder="Drive/Sheets link to segment" /></Field>
+            <Field label="Cohort Name"><input style={S.input} value={cd.cohort_name} onChange={e => setC("cohort_name", e.target.value)} placeholder="e.g. Risk Band" /></Field>
+            <Field label="Segment Description">
+              <textarea style={{ ...S.input, minHeight: 70, resize: "vertical", fontFamily: "inherit" }}
+                value={cd.segment_description} onChange={e => setC("segment_description", e.target.value)}
+                placeholder="Describe the target segment" />
+            </Field>
+            <Field label="Size" hint="Segment size in millions">
+              <input style={S.input} value={cd.size} onChange={e => setC("size", e.target.value)} placeholder="e.g. 6.5" />
+            </Field>
+          </div>
+        )}
+
+        {cdSection === "budget" && (
+          <div style={S.grid3}>
+            <Field label="Total Budget"><input style={S.input} type="number" value={cd.total_budget} onChange={e => setC("total_budget", e.target.value)} placeholder="0" /></Field>
+            <Field label="CPC Target"><input style={S.input} type="number" value={cd.cpc} onChange={e => setC("cpc", e.target.value)} placeholder="0" /></Field>
+            <Field label="CPM Target"><input style={S.input} type="number" value={cd.cpm} onChange={e => setC("cpm", e.target.value)} placeholder="0" /></Field>
+          </div>
+        )}
+      </div>
+
+      {/* ── 6. Additional Context ── */}
+      <div style={S.card}>
+        <div style={S.sectionHeader}><div style={S.sectionNum}>6</div><div style={S.sectionTitle}>Additional Information</div></div>
+        <Field label="Additional Context">
+          <textarea style={{ ...S.input, minHeight: 80, resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
+            value={basic.additional_context} onChange={e => setB("additional_context", e.target.value)}
+            placeholder="Any additional notes or context about this campaign" />
+        </Field>
       </div>
 
       <div style={S.submitRow}>
-        <button style={{ ...S.btn, ...S.btnSecondary }} onClick={() => { setForm(EMPTY_FORM); setAlert(null); setJsonErrors({}); }}>
-          Clear Form
-        </button>
-        <button
-          style={{ ...S.btn, ...S.btnPrimary, ...(submitting ? S.btnDisabled : {}) }}
-          onClick={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? "Submitting…" : "✅ Submit Campaign"}
+        <button style={{ ...S.btn, ...S.btnSecondary }} onClick={() => {
+          setBasic(EMPTY_BASIC); setGoals([EMPTY_GOAL()]); setMetrics([EMPTY_METRIC(), EMPTY_METRIC()]); setCd(EMPTY_CD); setErrs({}); setAlert(null);
+        }}>Clear Form</button>
+        <button style={{ ...S.btn, ...S.btnPrimary, ...(submitting ? S.btnDisabled : {}) }}
+          onClick={handleSubmit} disabled={submitting}>
+          {submitting ? "Submitting…" : "✅ Create Campaign"}
         </button>
       </div>
     </div>
   );
 }
 
-// ── Manage Campaigns Table ────────────────────────────────────────────────────
+// ─── Manage Campaigns ─────────────────────────────────────────────────────────
 function ManageCampaigns() {
   const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [search, setSearch] = useState("");
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
+  const [search, setSearch]       = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -511,7 +535,6 @@ function ManageCampaigns() {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
   const filtered = campaigns.filter(c => {
@@ -523,102 +546,58 @@ function ManageCampaigns() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <input
-          style={{ ...S.input, width: 260 }}
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 Search by advertiser, publisher…"
-        />
-        <button style={{ ...S.btn, ...S.btnSecondary, padding: "7px 16px", fontSize: 12 }} onClick={load}>
-          ⟳ Refresh
-        </button>
+        <input style={{ ...S.input, width: 260 }} value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="🔍 Search by advertiser, publisher…" />
+        <button style={{ ...S.btn, ...S.btnSecondary, padding: "7px 16px", fontSize: 12 }} onClick={load}>⟳ Refresh</button>
       </div>
-
-      {error && (
-        <div style={{ ...S.alert, ...S.alertError }}>❌ {error}</div>
-      )}
-
+      {error && <div style={{ ...S.alert, ...S.alertError }}>❌ {error}</div>}
       <div style={S.card}>
-        {loading ? (
-          <div style={S.spinner}>Loading campaigns…</div>
-        ) : filtered.length === 0 ? (
-          <div style={S.empty}>{search ? "No campaigns match your search." : "No campaigns submitted yet."}</div>
-        ) : (
-          <div style={S.tableWrap}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  {["#", "Type", "Advertiser", "Publisher", "Industry", "Brand", "Offer", "Merged Sheet", "Adv Data", "Pub Data", "Status", "Status Date"].map(h => (
-                    <th key={h} style={S.th}>{h}</th>
+        {loading ? <div style={S.spinner}>Loading campaigns…</div>
+          : filtered.length === 0 ? <div style={S.empty}>{search ? "No campaigns match your search." : "No campaigns submitted yet."}</div>
+          : (
+            <div style={S.tableWrap}>
+              <table style={S.table}>
+                <thead>
+                  <tr>{["#","Type","Advertiser","Publisher","Industry","Brand","Offer","Merged Sheet","Adv Data","Pub Data","Status","Status Date"]
+                    .map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {filtered.map((c, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                      <td style={S.td}>{i + 1}</td>
+                      <td style={S.td}>{c.campaign_type}</td>
+                      <td style={{ ...S.td, fontWeight: 600 }}>{c.advertiser}</td>
+                      <td style={S.td}>{c.publisher}</td>
+                      <td style={S.td}>{c.advertiser_industry}</td>
+                      <td style={S.td}>{c.brand}</td>
+                      <td style={S.td}>{c.offer}</td>
+                      <td style={S.td}>{c.merged_sheet_url ? <a href={c.merged_sheet_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>Open ↗</a> : <span style={{ color: "#aaa" }}>Pending</span>}</td>
+                      <td style={S.td}>{c.advertiser_data_url ? <a href={c.advertiser_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a> : "—"}</td>
+                      <td style={S.td}>{c.publisher_data_url ? <a href={c.publisher_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a> : "—"}</td>
+                      <td style={S.td}><span style={{ ...S.statusBadge, ...statusStyle(c.status) }}>{c.status || "Unknown"}</span></td>
+                      <td style={S.td}>{c.status_date || "—"}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                    <td style={S.td}>{i + 1}</td>
-                    <td style={S.td}>{c.campaign_type}</td>
-                    <td style={{ ...S.td, fontWeight: 600 }}>{c.advertiser}</td>
-                    <td style={S.td}>{c.publisher}</td>
-                    <td style={S.td}>{c.advertiser_industry}</td>
-                    <td style={S.td}>{c.brand}</td>
-                    <td style={S.td}>{c.offer}</td>
-                    <td style={S.td}>
-                      {c.merged_sheet_url ? (
-                        <a href={c.merged_sheet_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>Open ↗</a>
-                      ) : <span style={{ color: "#aaa" }}>Pending</span>}
-                    </td>
-                    <td style={S.td}>
-                      {c.advertiser_data_url ? (
-                        <a href={c.advertiser_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a>
-                      ) : "—"}
-                    </td>
-                    <td style={S.td}>
-                      {c.publisher_data_url ? (
-                        <a href={c.publisher_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a>
-                      ) : "—"}
-                    </td>
-                    <td style={S.td}>
-                      <span style={{ ...S.statusBadge, ...statusStyle(c.status) }}>
-                        {c.status || "Unknown"}
-                      </span>
-                    </td>
-                    <td style={S.td}>{c.status_date || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>
-              Showing {filtered.length} of {campaigns.length} campaigns
+                </tbody>
+              </table>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>Showing {filtered.length} of {campaigns.length} campaigns</div>
             </div>
-          </div>
-        )}
+          )}
       </div>
     </div>
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
 export default function CampaignOnboarding({ filterOptions }) {
   const [subTab, setSubTab] = useState("new");
-
   return (
     <div style={S.container}>
       <div style={S.subTabs}>
-        {[
-          { id: "new",    label: "➕ New Campaign" },
-          { id: "manage", label: "📂 Manage Campaigns" },
-        ].map(t => (
-          <button
-            key={t.id}
-            style={{ ...S.subTab, ...(subTab === t.id ? S.subTabActive : {}) }}
-            onClick={() => setSubTab(t.id)}
-          >
-            {t.label}
-          </button>
+        {[{ id: "new", label: "➕ New Campaign" }, { id: "manage", label: "📂 Manage Campaigns" }].map(t => (
+          <button key={t.id} style={{ ...S.subTab, ...(subTab === t.id ? S.subTabActive : {}) }} onClick={() => setSubTab(t.id)}>{t.label}</button>
         ))}
       </div>
-
       {subTab === "new"    && <NewCampaignForm filterOptions={filterOptions} />}
       {subTab === "manage" && <ManageCampaigns />}
     </div>
