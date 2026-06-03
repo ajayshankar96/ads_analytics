@@ -182,12 +182,15 @@ export default function App() {
       .catch((e) => console.error("Filter load error:", e));
   }, []);
 
-  // Record this view and fetch stats
+  // Record this view first, then fetch stats (avoid race condition)
   useEffect(() => {
-    recordView().catch(() => {});
-    getViewStats()
-      .then(setViewStats)
-      .catch(() => {});
+    recordView()
+      .catch(() => {})
+      .finally(() => {
+        getViewStats()
+          .then(setViewStats)
+          .catch(() => {});
+      });
   }, []);
 
   const handleRefreshCache = async () => {

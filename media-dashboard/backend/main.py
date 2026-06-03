@@ -1301,7 +1301,7 @@ def _empty_stats():
         "today": 0, "yesterday": 0,
         "thisWeek": 0, "lastWeek": 0,
         "thisMonth": 0, "lastMonth": 0,
-        "thisYear": 0, "thisYear": 0,
+        "thisYear": 0,
         "uniqueViews": 0, "total": 0,
     }
 
