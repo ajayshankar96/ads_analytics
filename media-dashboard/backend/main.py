@@ -38,6 +38,33 @@ from sheets_client import (
     append_rows,
     read_kpi_sheet,
     update_range,
+    create_spreadsheet,
+    write_sheet_tab,
+    share_spreadsheet,
+    ensure_sheet_tab,
+)
+from reporting_logic import (
+    FORCED_COLS,
+    REPORT_SHARE_EMAILS,
+    ADVERTISER_REGISTRY_SHEET,
+    PUBLISHER_REGISTRY_SHEET,
+    ADV_REG_HEADERS,
+    PUB_REG_HEADERS,
+    get_available_columns,
+    get_publisher_extra_metrics,
+    get_publisher_advertisers,
+    filter_by_advertiser,
+    filter_by_publisher,
+    filter_by_date,
+    build_consolidated,
+    build_monthly,
+    build_weekly,
+    build_segment_weekly,
+    build_pub_daily,
+    build_pub_weekly,
+    build_pub_mtd,
+    parse_adv_registry,
+    parse_pub_registry,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -728,6 +755,433 @@ def onboarding_templates():
         "metrics": _json_mod.dumps(metrics_template, indent=2),
         "campaign_details": _json_mod.dumps(campaign_details_template, indent=2),
     }
+
+
+# ── Reporting: shared helpers ─────────────────────────────────────────────────
+
+def _ensure_registry(sheet_name: str, headers: List[str]):
+    """Create registry sheet with headers if it doesn't already exist."""
+    try:
+        from sheets_client import get_sheet_names
+        names = get_sheet_names(KPI_SPREADSHEET_ID)
+        if sheet_name not in names:
+            ensure_sheet_tab(KPI_SPREADSHEET_ID, sheet_name)
+            append_rows(KPI_SPREADSHEET_ID, sheet_name, [headers])
+    except Exception as e:
+        logger.warning(f"Could not ensure registry sheet {sheet_name}: {e}")
+
+
+def _read_registry(sheet_name: str) -> List:
+    try:
+        rows = read_kpi_sheet(sheet_name)
+        return rows or []
+    except Exception:
+        return []
+
+
+# ── Advertiser Reporting ───────────────────────────────────────────────────────
+
+@app.get("/api/reporting/advertiser/list")
+def list_advertiser_reports():
+    _ensure_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS)
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
+    return {"reports": reports}
+
+
+@app.get("/api/reporting/advertiser/columns")
+def get_adv_columns():
+    data = load_master_report_cache()
+    cols = get_available_columns(data["headers"])
+    return {"columns": cols, "forcedColumns": FORCED_COLS}
+
+
+class AdvReportConfig(BaseModel):
+    reportName: str
+    advertiser: str
+    dateFrom: Optional[str] = None
+    selectedColumns: List[str]
+    viewsToCreate: List[str]  # consolidated, monthly, weekly, segmentWeekly
+
+
+@app.post("/api/reporting/advertiser/create")
+def create_advertiser_report(config: AdvReportConfig):
+    import json as _json
+    from datetime import datetime as _dt
+
+    data = load_master_report_cache()
+    rows = filter_by_advertiser(data["rows"], data["headers"], config.advertiser)
+    rows = filter_by_date(rows, data["headers"], config.dateFrom)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail=f"No data found for advertiser '{config.advertiser}'")
+
+    # Build sheets content for each view
+    view_map = {
+        "consolidated": build_consolidated,
+        "monthly":      build_monthly,
+        "weekly":       build_weekly,
+        "segmentWeekly": build_segment_weekly,
+    }
+
+    tab_data = {}
+    for view in config.viewsToCreate:
+        if view in view_map:
+            tab_data[view] = view_map[view](rows, data["headers"], config.selectedColumns)
+
+    # Create Google Spreadsheet
+    title = f"{config.advertiser} — {config.reportName}"
+    try:
+        ss = create_spreadsheet(title)
+        ss_id = ss["spreadsheetId"]
+        ss_url = ss["spreadsheetUrl"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create spreadsheet: {e}")
+
+    # Write each view as a tab
+    sheets_created = []
+    for view_name, sheet_data in tab_data.items():
+        tab_title = {
+            "consolidated": "Consolidated",
+            "monthly":      "Monthly",
+            "weekly":       "Weekly",
+            "segmentWeekly": "Segment Weekly",
+        }.get(view_name, view_name)
+        try:
+            ensure_sheet_tab(ss_id, tab_title)
+            write_sheet_tab(ss_id, tab_title, sheet_data)
+            sheets_created.append(tab_title)
+        except Exception as e:
+            logger.error(f"Failed to write tab {tab_title}: {e}")
+
+    # Share with team
+    try:
+        share_spreadsheet(ss_id, REPORT_SHARE_EMAILS)
+    except Exception as e:
+        logger.warning(f"Could not share spreadsheet {ss_id}: {e}")
+
+    # Register in registry
+    report_id = str(__import__("uuid").uuid4())
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    date_from_str = config.dateFrom or "All"
+    reg_row = [
+        report_id,
+        config.reportName,
+        config.advertiser,
+        date_from_str,
+        ",".join(config.viewsToCreate),
+        ",".join(config.selectedColumns),
+        ss_url,
+        ss_id,
+        "dashboard-user",
+        now,
+        now,
+    ]
+    try:
+        _ensure_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS)
+        append_rows(KPI_SPREADSHEET_ID, ADVERTISER_REGISTRY_SHEET, [reg_row])
+    except Exception as e:
+        logger.error(f"Failed to register report: {e}")
+
+    return {
+        "success": True,
+        "reportId": report_id,
+        "spreadsheetUrl": ss_url,
+        "sheets": sheets_created,
+    }
+
+
+@app.post("/api/reporting/advertiser/refresh/{report_id}")
+def refresh_advertiser_report(report_id: str):
+    from datetime import datetime as _dt
+
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
+    report = next((r for r in reports if r["id"] == report_id), None)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    data = load_master_report_cache()
+    rows = filter_by_advertiser(data["rows"], data["headers"], report["advertiser"])
+    rows = filter_by_date(rows, data["headers"], report["dateFrom"] if report["dateFrom"] != "All" else None)
+
+    view_map = {
+        "consolidated": build_consolidated,
+        "monthly":      build_monthly,
+        "weekly":       build_weekly,
+        "segmentWeekly": build_segment_weekly,
+    }
+
+    ss_id = report["spreadsheetId"]
+    for view in report["views"]:
+        if view not in view_map:
+            continue
+        sheet_data = view_map[view](rows, data["headers"], report["selectedColumns"])
+        tab_title = {"consolidated": "Consolidated", "monthly": "Monthly",
+                     "weekly": "Weekly", "segmentWeekly": "Segment Weekly"}.get(view, view)
+        try:
+            ensure_sheet_tab(ss_id, tab_title)
+            write_sheet_tab(ss_id, tab_title, sheet_data)
+        except Exception as e:
+            logger.error(f"Refresh: failed tab {tab_title}: {e}")
+
+    # Update last refreshed in registry
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    _update_registry_field(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS, report_id, "Last_Refreshed", now)
+    return {"success": True, "lastRefreshed": now}
+
+
+@app.delete("/api/reporting/advertiser/{report_id}")
+def delete_advertiser_report(report_id: str):
+    return _delete_from_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS, report_id)
+
+
+@app.post("/api/reporting/advertiser/refresh-all")
+def refresh_all_advertiser_reports():
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
+    results = []
+    for r in reports:
+        try:
+            refresh_advertiser_report(r["id"])
+            results.append({"id": r["id"], "status": "ok"})
+        except Exception as e:
+            results.append({"id": r["id"], "status": "error", "message": str(e)})
+    return {"results": results}
+
+
+# ── Publisher Reporting ───────────────────────────────────────────────────────
+
+@app.get("/api/reporting/publisher/list")
+def list_publisher_reports():
+    _ensure_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS)
+    raw = _read_registry(PUBLISHER_REGISTRY_SHEET)
+    reports = parse_pub_registry(raw)
+    return {"reports": reports}
+
+
+@app.get("/api/reporting/publisher/metrics")
+def get_pub_metrics():
+    data = load_master_report_cache()
+    from reporting_logic import PUB_FIXED_METRICS
+    extra = get_publisher_extra_metrics(data["headers"])
+    return {"fixedMetrics": PUB_FIXED_METRICS, "extraMetrics": extra}
+
+
+@app.get("/api/reporting/publisher/advertisers")
+def get_pub_advertisers(
+    publisher: str,
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+):
+    data = load_master_report_cache()
+    advertisers = get_publisher_advertisers(data["rows"], data["headers"], publisher, dateFrom, dateTo)
+    return {"advertisers": advertisers}
+
+
+class PubAdvertiserConfig(BaseModel):
+    name: str
+    segments: Optional[List[str]] = []
+    metrics: Optional[List[str]] = []
+
+
+class PubReportConfig(BaseModel):
+    reportName: str
+    publisher: str
+    dateFrom: Optional[str] = None
+    dateTo: Optional[str] = None
+    reportingLevels: List[str]  # daily, weekly, mtd
+    advertisers: List[PubAdvertiserConfig]
+    extraMetrics: Optional[List[str]] = []
+
+
+@app.post("/api/reporting/publisher/create")
+def create_publisher_report(config: PubReportConfig):
+    import json as _json
+    from datetime import datetime as _dt
+    from reporting_logic import PUB_FIXED_METRICS
+
+    data = load_master_report_cache()
+    rows = filter_by_publisher(data["rows"], data["headers"], config.publisher)
+    rows = filter_by_date(rows, data["headers"], config.dateFrom, config.dateTo)
+
+    if not rows:
+        raise HTTPException(status_code=400, detail=f"No data found for publisher '{config.publisher}'")
+
+    selected_adv_names = {a.name for a in config.advertisers}
+    if selected_adv_names:
+        adv_col = __import__("reporting_logic")._get_col(data["headers"], "Advertiser")
+        rows = [r for r in rows if adv_col >= 0 and len(r) > adv_col and r[adv_col] in selected_adv_names]
+
+    all_metrics = PUB_FIXED_METRICS + [m for m in (config.extraMetrics or []) if m not in PUB_FIXED_METRICS]
+
+    level_builders = {
+        "daily":  build_pub_daily,
+        "weekly": build_pub_weekly,
+        "mtd":    build_pub_mtd,
+    }
+
+    tab_data = {}
+    for level in config.reportingLevels:
+        if level in level_builders:
+            tab_data[level] = level_builders[level](rows, data["headers"], all_metrics)
+
+    # Create Google Spreadsheet
+    title = f"{config.publisher} — {config.reportName}"
+    try:
+        ss = create_spreadsheet(title)
+        ss_id = ss["spreadsheetId"]
+        ss_url = ss["spreadsheetUrl"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create spreadsheet: {e}")
+
+    # Write tabs
+    tab_titles = {"daily": "Daily", "weekly": "Weekly", "mtd": "MTD"}
+    for level, sheet_data in tab_data.items():
+        tab_title = tab_titles.get(level, level)
+        try:
+            ensure_sheet_tab(ss_id, tab_title)
+            write_sheet_tab(ss_id, tab_title, sheet_data)
+        except Exception as e:
+            logger.error(f"Failed to write publisher tab {tab_title}: {e}")
+
+    # Share
+    try:
+        share_spreadsheet(ss_id, REPORT_SHARE_EMAILS)
+    except Exception as e:
+        logger.warning(f"Could not share publisher spreadsheet {ss_id}: {e}")
+
+    # Register
+    report_id = str(__import__("uuid").uuid4())
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    adv_list = [{"name": a.name, "segments": a.segments, "metrics": a.metrics} for a in config.advertisers]
+    reg_row = [
+        report_id,
+        config.reportName,
+        config.publisher,
+        _json.dumps(adv_list),
+        config.dateFrom or "All",
+        config.dateTo or "",
+        ",".join(config.reportingLevels),
+        ss_url,
+        ss_id,
+        "dashboard-user",
+        now,
+        now,
+    ]
+    try:
+        _ensure_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS)
+        append_rows(KPI_SPREADSHEET_ID, PUBLISHER_REGISTRY_SHEET, [reg_row])
+    except Exception as e:
+        logger.error(f"Failed to register publisher report: {e}")
+
+    return {
+        "success": True,
+        "reportId": report_id,
+        "spreadsheetUrl": ss_url,
+        "advertisers": [a.name for a in config.advertisers],
+    }
+
+
+@app.post("/api/reporting/publisher/refresh/{report_id}")
+def refresh_publisher_report(report_id: str):
+    import json as _json
+    from datetime import datetime as _dt
+    from reporting_logic import PUB_FIXED_METRICS
+
+    raw = _read_registry(PUBLISHER_REGISTRY_SHEET)
+    reports = parse_pub_registry(raw)
+    report = next((r for r in reports if r["id"] == report_id), None)
+    if not report:
+        raise HTTPException(status_code=404, detail="Publisher report not found")
+
+    data = load_master_report_cache()
+    rows = filter_by_publisher(data["rows"], data["headers"], report["publisher"])
+    date_from = report["dateFrom"] if report["dateFrom"] not in ("All", "") else None
+    date_to = report["dateTo"] if report.get("dateTo") else None
+    rows = filter_by_date(rows, data["headers"], date_from, date_to)
+
+    # Figure out metrics from stored advertisers config
+    extra_metrics = []
+    for adv in report.get("advertisers", []):
+        if isinstance(adv, dict):
+            for m in adv.get("metrics", []):
+                if m not in PUB_FIXED_METRICS and m not in extra_metrics:
+                    extra_metrics.append(m)
+    all_metrics = PUB_FIXED_METRICS + extra_metrics
+
+    level_builders = {
+        "daily":  build_pub_daily,
+        "weekly": build_pub_weekly,
+        "mtd":    build_pub_mtd,
+    }
+    tab_titles = {"daily": "Daily", "weekly": "Weekly", "mtd": "MTD"}
+    ss_id = report["spreadsheetId"]
+
+    for level in report["reportingLevels"]:
+        if level not in level_builders:
+            continue
+        sheet_data = level_builders[level](rows, data["headers"], all_metrics)
+        tab_title = tab_titles.get(level, level)
+        try:
+            ensure_sheet_tab(ss_id, tab_title)
+            write_sheet_tab(ss_id, tab_title, sheet_data)
+        except Exception as e:
+            logger.error(f"Refresh publisher tab {tab_title}: {e}")
+
+    now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    _update_registry_field(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS, report_id, "Last_Refreshed", now)
+    return {"success": True, "lastRefreshed": now}
+
+
+@app.delete("/api/reporting/publisher/{report_id}")
+def delete_publisher_report(report_id: str):
+    return _delete_from_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS, report_id)
+
+
+# ── Registry mutation helpers ─────────────────────────────────────────────────
+
+def _update_registry_field(sheet_name: str, headers: List[str], report_id: str, field: str, value: str):
+    """Update a single field in a registry row identified by ID."""
+    try:
+        raw = _read_registry(sheet_name)
+        if len(raw) < 2:
+            return
+        hdr = [str(h).strip() for h in raw[0]]
+        id_i = hdr.index("ID") if "ID" in hdr else 0
+        field_i = hdr.index(field) if field in hdr else -1
+        if field_i < 0:
+            return
+        for row_num, row in enumerate(raw[1:], start=2):
+            if len(row) > id_i and str(row[id_i]).strip() == report_id:
+                col_letter = chr(65 + field_i)
+                cell_ref = f"{sheet_name}!{col_letter}{row_num}"
+                update_range(KPI_SPREADSHEET_ID, cell_ref, [[value]])
+                return
+    except Exception as e:
+        logger.error(f"Failed to update registry field {field}: {e}")
+
+
+def _delete_from_registry(sheet_name: str, headers: List[str], report_id: str):
+    """Soft-delete by clearing the row (overwrite ID with empty string)."""
+    try:
+        raw = _read_registry(sheet_name)
+        if len(raw) < 2:
+            raise HTTPException(status_code=404, detail="Report not found")
+        hdr = [str(h).strip() for h in raw[0]]
+        id_i = hdr.index("ID") if "ID" in hdr else 0
+        for row_num, row in enumerate(raw[1:], start=2):
+            if len(row) > id_i and str(row[id_i]).strip() == report_id:
+                # Clear all cells in the row
+                empty_row = [[""] * len(hdr)]
+                row_range = f"{sheet_name}!A{row_num}:{chr(64 + len(hdr))}{row_num}"
+                update_range(KPI_SPREADSHEET_ID, row_range, empty_row)
+                return {"success": True}
+        raise HTTPException(status_code=404, detail="Report not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Cache control ─────────────────────────────────────────────────────────────

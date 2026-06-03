@@ -84,3 +84,49 @@ export const deleteKPI = (id) =>
 // Cache
 export const refreshCache = () =>
   apiFetch("/api/cache/refresh", { method: "POST" });
+
+// ── Advertiser Reporting ──────────────────────────────────────────────────────
+export const getAdvertiserReports = () =>
+  apiFetch("/api/reporting/advertiser/list");
+
+export const getAdvertiserReportColumns = () =>
+  apiFetch("/api/reporting/advertiser/columns");
+
+export const createAdvertiserReport = (config) =>
+  apiFetch("/api/reporting/advertiser/create", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+
+export const refreshAdvertiserReport = (id) =>
+  apiFetch(`/api/reporting/advertiser/refresh/${id}`, { method: "POST" });
+
+export const deleteAdvertiserReport = (id) =>
+  apiFetch(`/api/reporting/advertiser/${id}`, { method: "DELETE" });
+
+export const refreshAllAdvertiserReports = () =>
+  apiFetch("/api/reporting/advertiser/refresh-all", { method: "POST" });
+
+// ── Publisher Reporting ───────────────────────────────────────────────────────
+export const getPublisherReports = () =>
+  apiFetch("/api/reporting/publisher/list");
+
+export const getPublisherMetrics = () =>
+  apiFetch("/api/reporting/publisher/metrics");
+
+export const getPublisherAdvertisers = (publisher, dateFrom, dateTo) =>
+  apiFetch(
+    `/api/reporting/publisher/advertisers${buildQuery({ publisher, dateFrom, dateTo })}`
+  );
+
+export const createPublisherReport = (config) =>
+  apiFetch("/api/reporting/publisher/create", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+
+export const refreshPublisherReport = (id) =>
+  apiFetch(`/api/reporting/publisher/refresh/${id}`, { method: "POST" });
+
+export const deletePublisherReport = (id) =>
+  apiFetch(`/api/reporting/publisher/${id}`, { method: "DELETE" });

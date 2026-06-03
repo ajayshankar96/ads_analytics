@@ -10,18 +10,22 @@ import GlobalKPIs from "./components/GlobalKPIs";
 import FilterBar from "./components/FilterBar";
 import ChatBot from "./components/ChatBot";
 import CampaignOnboarding from "./components/CampaignOnboarding";
+import AdvertiserReporting from "./components/AdvertiserReporting";
+import PublisherReporting from "./components/PublisherReporting";
 import { getFilters, getHealth, refreshCache } from "./api";
 
 const TABS = [
-  { id: "dashboard",    label: "📊 Dashboard" },
-  { id: "adv-perf",     label: "🏢 Advertiser Performance" },
-  { id: "pub-perf",     label: "📡 Publisher Performance" },
-  { id: "adv-health",   label: "❤️ Advertiser Health" },
-  { id: "freshness",    label: "🕐 Data Freshness" },
-  { id: "budget",       label: "💰 Budget" },
-  { id: "monthly",      label: "📅 Monthly Spend" },
-  { id: "kpis",         label: "🎯 Global KPIs" },
-  { id: "onboarding",   label: "📋 Campaign Onboarding" },
+  { id: "dashboard",        label: "📊 Dashboard" },
+  { id: "adv-perf",         label: "🏢 Advertiser Performance" },
+  { id: "pub-perf",         label: "📡 Publisher Performance" },
+  { id: "adv-health",       label: "❤️ Advertiser Health" },
+  { id: "freshness",        label: "🕐 Data Freshness" },
+  { id: "budget",           label: "💰 Budget" },
+  { id: "monthly",          label: "📅 Monthly Spend" },
+  { id: "kpis",             label: "🎯 Global KPIs" },
+  { id: "onboarding",       label: "📋 Campaign Onboarding" },
+  { id: "adv-reporting",    label: "📈 Advertiser Reporting" },
+  { id: "pub-reporting",    label: "📉 Publisher Reporting" },
 ];
 
 const styles = {
@@ -138,8 +142,10 @@ export default function App() {
       case "budget":       return <Budget />;
       case "monthly":      return <MonthlySpend />;
       case "kpis":         return <GlobalKPIs />;
-      case "onboarding":   return <CampaignOnboarding filterOptions={filterOptions} />;
-      default:             return null;
+      case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
+      case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
+      case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
+      default:               return null;
     }
   };
 
@@ -185,7 +191,7 @@ export default function App() {
       </nav>
 
       {/* Filter bar (shown on most tabs) */}
-      {!["freshness", "kpis", "onboarding"].includes(activeTab) && (
+      {!["freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting"].includes(activeTab) && (
         <FilterBar
           options={filterOptions}
           filters={filters}
