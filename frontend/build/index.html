@@ -174,6 +174,8 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 .vcard-meaning .qual{color:var(--ink-500);font-weight:400;margin-left:0;display:block;margin-top:2px}
 /* Enrichment cards: description always visible */
 .vcard-desc{font-size:11px;color:var(--ink-500);line-height:1.5;padding-top:10px;border-top:1px dashed var(--line-2)}
+.band-ctx{font-size:10.5px;font-weight:600;color:var(--ink-700);margin-bottom:6px;padding-bottom:6px;border-bottom:1px dashed var(--line-2)}
+.band-ctx-scale{font-weight:400;color:var(--ink-400);font-size:10px}
 /* Signal cards: description as floating popup on hover */
 .vcard-signal{overflow:visible}
 .vcard-signal .vcard-desc{position:absolute;top:calc(100% + 4px);left:-1px;right:-1px;background:#fff;border:1px solid var(--line);border-radius:0 0 10px 10px;padding:0 12px;box-shadow:0 8px 24px rgba(10,25,41,.12);z-index:20;max-height:0;overflow:hidden;opacity:0;transition:max-height .25s ease,opacity .2s ease,padding .2s ease}
@@ -1185,10 +1187,21 @@ function renderVcard(varName, scaling, band, desc, isSignal=false){
   const meaning = describeBandForVar(varName, band);
   const label = VAR_LABELS[varName] || varName;
   const slider = renderBandSlider(varName, band);
-  // Badge shows human-readable label; slider dot already shows the band code
   const badgeFontSize = meaning.label.length > 10 ? "13px" : meaning.label.length > 6 ? "15px" : "20px";
   const labelFontSize = label.length > 22 ? "10.5px" : label.length > 16 ? "11.5px" : "12.5px";
   const extraClass = isSignal ? " vcard-signal" : "";
+
+  // Band context line: "Band I7 — Weak, below-average · 100-band scale (A1 best → J10 lowest)"
+  const sc = VAR_SCALING[varName] || "";
+  const DISCRETE_VARS = ["thick_thin_data","predicted_income_bucket","has_failed_high_value_txn"];
+  let bandCtx = "";
+  if (!DISCRETE_VARS.includes(varName) && meaning.desc) {
+    const scaleHint = sc === "Narrow Decile"
+      ? "A–B scale (A1 best → B4 lowest)"
+      : "100-band scale (A1 best → J10 lowest)";
+    bandCtx = `<div class="band-ctx">Band ${String(band).toUpperCase().trim()} — ${meaning.desc} <span class="band-ctx-scale">· ${scaleHint}</span></div>`;
+  }
+
   return `<div class="vcard${extraClass}">
     <div class="vcard-h">
       <div class="vcard-name">
@@ -1197,7 +1210,7 @@ function renderVcard(varName, scaling, band, desc, isSignal=false){
     </div>
     <div class="vcard-band" style="background:${colors.bg};color:${colors.fg};font-size:${badgeFontSize}">${meaning.label}</div>
     ${slider}
-    <div class="vcard-desc">${desc || ""}</div>
+    <div class="vcard-desc">${bandCtx}${desc || ""}</div>
   </div>`;
 }
 
