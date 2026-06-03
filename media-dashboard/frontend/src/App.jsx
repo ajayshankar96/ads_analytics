@@ -9,6 +9,7 @@ import MonthlySpend from "./components/MonthlySpend";
 import GlobalKPIs from "./components/GlobalKPIs";
 import FilterBar from "./components/FilterBar";
 import ChatBot from "./components/ChatBot";
+import CampaignOnboarding from "./components/CampaignOnboarding";
 import { getFilters, getHealth, refreshCache } from "./api";
 
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
   { id: "budget",       label: "💰 Budget" },
   { id: "monthly",      label: "📅 Monthly Spend" },
   { id: "kpis",         label: "🎯 Global KPIs" },
+  { id: "onboarding",   label: "📋 Campaign Onboarding" },
 ];
 
 const styles = {
@@ -136,6 +138,7 @@ export default function App() {
       case "budget":       return <Budget />;
       case "monthly":      return <MonthlySpend />;
       case "kpis":         return <GlobalKPIs />;
+      case "onboarding":   return <CampaignOnboarding filterOptions={filterOptions} />;
       default:             return null;
     }
   };
@@ -182,7 +185,7 @@ export default function App() {
       </nav>
 
       {/* Filter bar (shown on most tabs) */}
-      {!["freshness", "kpis"].includes(activeTab) && (
+      {!["freshness", "kpis", "onboarding"].includes(activeTab) && (
         <FilterBar
           options={filterOptions}
           filters={filters}

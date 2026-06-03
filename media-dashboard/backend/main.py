@@ -531,6 +531,169 @@ If something is off (e.g. data not refreshed), explain clearly which entity and 
             raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Campaign Onboarding ───────────────────────────────────────────────────────
+ONBOARDING_SHEET = "Sheet1"
+
+class OnboardingSubmitRequest(BaseModel):
+    campaign_type: str
+    advertiser: str
+    publisher: str
+    advertiser_industry: str
+    brand: str
+    offer: str
+    advertiser_data_url: str
+    publisher_data_url: str
+    goals_json: str
+    metrics_json: str
+    segment_pub: str
+    segment_adv: str
+    additional_context: str
+    campaign_details_json: str
+
+
+@app.post("/api/onboarding/submit")
+def onboarding_submit(req: OnboardingSubmitRequest):
+    """Append a new campaign onboarding row to Sheet1 of the KPI spreadsheet."""
+    import json as _json_mod
+    from datetime import datetime
+
+    # Validate JSON fields
+    for field_name, value in [
+        ("goals_json", req.goals_json),
+        ("metrics_json", req.metrics_json),
+        ("campaign_details_json", req.campaign_details_json),
+    ]:
+        try:
+            _json_mod.loads(value)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{field_name} is not valid JSON")
+
+    # Build row matching Apps Script 17-column layout (A-Q)
+    row = [
+        req.campaign_type,           # A: Campaign Type
+        req.advertiser,              # B: Advertiser
+        req.publisher,               # C: Publisher
+        req.advertiser_industry,     # D: Advertiser Industry
+        req.brand,                   # E: Brand
+        req.offer,                   # F: Offer
+        req.advertiser_data_url,     # G: Advertiser Data URL
+        req.publisher_data_url,      # H: Publisher Data URL
+        "",                          # I: Merged Sheet URL (empty — filled later)
+        req.goals_json,              # J: Goals JSON
+        req.metrics_json,            # K: Metrics JSON
+        req.segment_pub,             # L: Segment Pub
+        req.segment_adv,             # M: Segment Adv
+        req.additional_context,      # N: Additional Context
+        req.campaign_details_json,   # O: Campaign Details JSON
+        "",                          # P: Changes (empty)
+        "Pending",                   # Q: Status
+    ]
+
+    try:
+        append_rows(KPI_SPREADSHEET_ID, ONBOARDING_SHEET, [row])
+        return {"success": True, "message": "Campaign submitted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/onboarding/campaigns")
+def onboarding_campaigns():
+    """Read all campaign onboarding rows from Sheet1."""
+    try:
+        rows = read_kpi_sheet(ONBOARDING_SHEET)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if not rows:
+        return {"campaigns": [], "total": 0}
+
+    # First row is header if it starts with a known column name
+    if rows and rows[0] and rows[0][0] in ("Campaign Type", "campaign_type", "A"):
+        headers = rows[0]
+        data_rows = rows[1:]
+    else:
+        headers = [
+            "Campaign Type", "Advertiser", "Publisher", "Advertiser Industry",
+            "Brand", "Offer", "Advertiser Data URL", "Publisher Data URL",
+            "Merged Sheet URL", "Goals JSON", "Metrics JSON",
+            "Segment Pub", "Segment Adv", "Additional Context",
+            "Campaign Details JSON", "Changes", "Status",
+        ]
+        data_rows = rows
+
+    campaigns = []
+    for i, row in enumerate(data_rows):
+        # Pad row to 17 columns
+        padded = row + [""] * (17 - len(row))
+        campaigns.append({
+            "index": i,
+            "campaign_type":         padded[0],
+            "advertiser":            padded[1],
+            "publisher":             padded[2],
+            "advertiser_industry":   padded[3],
+            "brand":                 padded[4],
+            "offer":                 padded[5],
+            "advertiser_data_url":   padded[6],
+            "publisher_data_url":    padded[7],
+            "merged_sheet_url":      padded[8],
+            "goals_json":            padded[9],
+            "metrics_json":          padded[10],
+            "segment_pub":           padded[11],
+            "segment_adv":           padded[12],
+            "additional_context":    padded[13],
+            "campaign_details_json": padded[14],
+            "changes":               padded[15],
+            "status":                padded[16],
+        })
+
+    return {"campaigns": campaigns, "total": len(campaigns)}
+
+
+@app.get("/api/onboarding/templates")
+def onboarding_templates():
+    """Return JSON template strings for Goals, Metrics, and Campaign Details."""
+    import json as _json_mod
+
+    goals_template = {
+        "primary": {
+            "metric": "",
+            "target": "",
+            "timeframe": ""
+        },
+        "secondary": []
+    }
+
+    metrics_template = {
+        "impressions": {"track": True, "target": ""},
+        "clicks": {"track": True, "target": ""},
+        "ctr": {"track": True, "target": ""},
+        "conversions": {"track": False, "target": ""},
+        "spend": {"track": True, "target": ""},
+        "cpc": {"track": False, "target": ""},
+        "cpm": {"track": False, "target": ""}
+    }
+
+    campaign_details_template = {
+        "campaign_name": "",
+        "start_date": "",
+        "end_date": "",
+        "budget": "",
+        "targeting": {
+            "geo": [],
+            "device": [],
+            "audience": []
+        },
+        "creatives": [],
+        "notes": ""
+    }
+
+    return {
+        "goals": _json_mod.dumps(goals_template, indent=2),
+        "metrics": _json_mod.dumps(metrics_template, indent=2),
+        "campaign_details": _json_mod.dumps(campaign_details_template, indent=2),
+    }
+
+
 # ── Cache control ─────────────────────────────────────────────────────────────
 @app.post("/api/cache/refresh")
 def refresh_cache():
