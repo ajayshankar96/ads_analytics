@@ -165,10 +165,12 @@ const S = {
 // ── Status badge colors ───────────────────────────────────────────────────────
 function statusStyle(status) {
   const s = (status || "").toLowerCase();
-  if (s === "pending")    return { background: "#fef9c3", color: "#854d0e" };
-  if (s === "active")     return { background: "#d1fae5", color: "#065f46" };
-  if (s === "completed")  return { background: "#dbeafe", color: "#1e40af" };
-  if (s === "cancelled")  return { background: "#fee2e2", color: "#991b1b" };
+  if (s === "pending")   return { background: "#fef9c3", color: "#854d0e" };
+  if (s === "live")      return { background: "#d1fae5", color: "#065f46" };
+  if (s === "active")    return { background: "#d1fae5", color: "#065f46" };
+  if (s === "paused")    return { background: "#fef3c7", color: "#92400e" };
+  if (s === "completed") return { background: "#dbeafe", color: "#1e40af" };
+  if (s === "cancelled") return { background: "#fee2e2", color: "#991b1b" };
   return { background: "#f1f5f9", color: "#374151" };
 }
 
@@ -198,7 +200,7 @@ function Datalist({ id, value, onChange, options, placeholder }) {
 
 // ── New Campaign Form ─────────────────────────────────────────────────────────
 const EMPTY_FORM = {
-  campaign_type: "SSP",
+  campaign_type: "Single Campaign Sheet",
   advertiser: "",
   publisher: "",
   advertiser_industry: "",
@@ -245,7 +247,8 @@ function NewCampaignForm({ filterOptions }) {
 
   const validate = () => {
     const errors = {};
-    const required = ["campaign_type", "advertiser", "publisher", "advertiser_data_url", "publisher_data_url"];
+    // Required fields match Apps Script: advertiser, publisher, advertiserDataUrl, publisherDataUrl, segmentPub, segmentAdv
+    const required = ["advertiser", "publisher", "advertiser_data_url", "publisher_data_url", "segment_pub", "segment_adv"];
     for (const k of required) {
       if (!form[k].trim()) { errors[k] = true; }
     }
@@ -299,13 +302,13 @@ function NewCampaignForm({ filterOptions }) {
         <div style={S.sectionTitle}>📋 Basic Information</div>
         <div style={S.grid2}>
           <div style={S.fieldGroup}>
-            <label style={S.label}>Campaign Type <span style={S.required}>*</span></label>
-            <select style={S.select} value={form.campaign_type} onChange={e => set("campaign_type", e.target.value)}>
-              <option value="SSP">SSP</option>
-              <option value="DSP">DSP</option>
-              <option value="Direct">Direct</option>
-              <option value="Programmatic">Programmatic</option>
-            </select>
+            <label style={S.label}>Campaign Type</label>
+            <input
+              style={S.input}
+              value={form.campaign_type}
+              onChange={e => set("campaign_type", e.target.value)}
+              placeholder="e.g. Single Campaign Sheet, Two different Sheets"
+            />
           </div>
 
           <div style={S.fieldGroup}>
@@ -383,12 +386,24 @@ function NewCampaignForm({ filterOptions }) {
         <div style={S.sectionTitle}>🎯 Segment Mapping</div>
         <div style={S.grid2}>
           <div style={S.fieldGroup}>
-            <label style={S.label}>Publisher Segment</label>
-            <input style={S.input} value={form.segment_pub} onChange={e => set("segment_pub", e.target.value)} placeholder="Publisher segment identifier" />
+            <label style={S.label}>Segment Names (Shared by Publisher in reports) <span style={S.required}>*</span></label>
+            <input
+              style={{ ...S.input, ...(jsonErrors.segment_pub ? { borderColor: "#f87171" } : {}) }}
+              value={form.segment_pub}
+              onChange={e => set("segment_pub", e.target.value)}
+              placeholder="e.g. Seg 1A"
+            />
+            <span style={S.jsonHint}>Segment name as it appears in publisher reports</span>
           </div>
           <div style={S.fieldGroup}>
-            <label style={S.label}>Advertiser Segment</label>
-            <input style={S.input} value={form.segment_adv} onChange={e => set("segment_adv", e.target.value)} placeholder="Advertiser segment identifier" />
+            <label style={S.label}>Segment Name (Shared by Advertiser in reports) <span style={S.required}>*</span></label>
+            <input
+              style={{ ...S.input, ...(jsonErrors.segment_adv ? { borderColor: "#f87171" } : {}) }}
+              value={form.segment_adv}
+              onChange={e => set("segment_adv", e.target.value)}
+              placeholder="e.g. Partnership_Razorpay / Placement1a"
+            />
+            <span style={S.jsonHint}>Segment name as it appears in advertiser reports</span>
           </div>
         </div>
       </div>
@@ -533,7 +548,7 @@ function ManageCampaigns() {
             <table style={S.table}>
               <thead>
                 <tr>
-                  {["#", "Type", "Advertiser", "Publisher", "Industry", "Brand", "Offer", "Adv Data", "Pub Data", "Status"].map(h => (
+                  {["#", "Type", "Advertiser", "Publisher", "Industry", "Brand", "Offer", "Merged Sheet", "Adv Data", "Pub Data", "Status", "Status Date"].map(h => (
                     <th key={h} style={S.th}>{h}</th>
                   ))}
                 </tr>
@@ -549,13 +564,18 @@ function ManageCampaigns() {
                     <td style={S.td}>{c.brand}</td>
                     <td style={S.td}>{c.offer}</td>
                     <td style={S.td}>
+                      {c.merged_sheet_url ? (
+                        <a href={c.merged_sheet_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>Open ↗</a>
+                      ) : <span style={{ color: "#aaa" }}>Pending</span>}
+                    </td>
+                    <td style={S.td}>
                       {c.advertiser_data_url ? (
-                        <a href={c.advertiser_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View Sheet ↗</a>
+                        <a href={c.advertiser_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a>
                       ) : "—"}
                     </td>
                     <td style={S.td}>
                       {c.publisher_data_url ? (
-                        <a href={c.publisher_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View Sheet ↗</a>
+                        <a href={c.publisher_data_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb" }}>View ↗</a>
                       ) : "—"}
                     </td>
                     <td style={S.td}>
@@ -563,6 +583,7 @@ function ManageCampaigns() {
                         {c.status || "Unknown"}
                       </span>
                     </td>
+                    <td style={S.td}>{c.status_date || "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -607,24 +607,16 @@ def onboarding_campaigns():
     if not rows:
         return {"campaigns": [], "total": 0}
 
-    # First row is header if it starts with a known column name
-    if rows and rows[0] and rows[0][0] in ("Campaign Type", "campaign_type", "A"):
-        headers = rows[0]
+    # Skip header row — actual sheet header starts with "Campaign type" (lowercase t)
+    if rows and rows[0] and rows[0][0].lower().startswith("campaign"):
         data_rows = rows[1:]
     else:
-        headers = [
-            "Campaign Type", "Advertiser", "Publisher", "Advertiser Industry",
-            "Brand", "Offer", "Advertiser Data URL", "Publisher Data URL",
-            "Merged Sheet URL", "Goals JSON", "Metrics JSON",
-            "Segment Pub", "Segment Adv", "Additional Context",
-            "Campaign Details JSON", "Changes", "Status",
-        ]
         data_rows = rows
 
     campaigns = []
     for i, row in enumerate(data_rows):
-        # Pad row to 17 columns
-        padded = row + [""] * (17 - len(row))
+        # Pad row to 19 columns (sheet has Status Date + Code Based Campaign beyond the 17 written by the form)
+        padded = row + [""] * (19 - len(row))
         campaigns.append({
             "index": i,
             "campaign_type":         padded[0],
@@ -644,6 +636,8 @@ def onboarding_campaigns():
             "campaign_details_json": padded[14],
             "changes":               padded[15],
             "status":                padded[16],
+            "status_date":           padded[17],
+            "code_based_campaign":   padded[18],
         })
 
     return {"campaigns": campaigns, "total": len(campaigns)}
@@ -651,40 +645,82 @@ def onboarding_campaigns():
 
 @app.get("/api/onboarding/templates")
 def onboarding_templates():
-    """Return JSON template strings for Goals, Metrics, and Campaign Details."""
+    """Return JSON template strings matching the Apps Script getGoalsTemplate /
+    getMetricsTemplate / getCampaignDetailsTemplate functions exactly."""
     import json as _json_mod
 
     goals_template = {
-        "primary": {
-            "metric": "",
-            "target": "",
-            "timeframe": ""
-        },
-        "secondary": []
+        "goals": {
+            "daily": {
+                "leads": 0
+            },
+            "weekly": {},
+            "monthly": {},
+            "date_agnostic": {
+                "CPQQG": 0,
+                "CPQL": 0
+            }
+        }
     }
 
     metrics_template = {
-        "impressions": {"track": True, "target": ""},
-        "clicks": {"track": True, "target": ""},
-        "ctr": {"track": True, "target": ""},
-        "conversions": {"track": False, "target": ""},
-        "spend": {"track": True, "target": ""},
-        "cpc": {"track": False, "target": ""},
-        "cpm": {"track": False, "target": ""}
+        "metrics_library": {
+            "metric_1": {
+                "display_name": "Leads",
+                "definition": "Column Present in the sheet",
+                "calculation": ""
+            },
+            "metric_2": {
+                "display_name": "QL",
+                "definition": "Column Present in advertiser Sheet",
+                "calculation": ""
+            }
+        }
     }
 
     campaign_details_template = {
-        "campaign_name": "",
-        "start_date": "",
-        "end_date": "",
-        "budget": "",
-        "targeting": {
-            "geo": [],
-            "device": [],
-            "audience": []
-        },
-        "creatives": [],
-        "notes": ""
+        "campaign_details": {
+            "brand_name": "",
+            "offer_title": "",
+            "tc": "",
+            "how_to_redeem": "",
+            "tracking": {
+                "landing_link": "",
+                "utm_redirection_link": ""
+            },
+            "incentives": {
+                "codes": [],
+                "codes_validity": {
+                    "start_date": "",
+                    "expiry_date": ""
+                }
+            },
+            "assets": {
+                "creative_url": "",
+                "logo_url": ""
+            },
+            "targeting": {
+                "Segment_link": "",
+                "Segment Description": "",
+                "Size": "",
+                "Cohort Name": ""
+            },
+            "budget_and_metrics": {
+                "total_budget": 0,
+                "cpc": 0,
+                "cpm": 0,
+                "publisher_spends_calc": "Spends",
+                "advertiser_spends_calc": "Spends",
+                "committed_kpi": "NO",
+                "committed_kpi_config": {
+                    "metric": "",
+                    "operation": "",
+                    "goal": "",
+                    "formula": ""
+                }
+            },
+            "Rzp_cut": 0
+        }
     }
 
     return {
