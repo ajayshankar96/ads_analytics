@@ -14,18 +14,43 @@ import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
 import { getFilters, getHealth, refreshCache, recordView, getViewStats } from "./api";
 
-const TABS = [
-  { id: "dashboard",        label: "📊 Dashboard" },
-  { id: "adv-perf",         label: "🏢 Advertiser Performance" },
-  { id: "pub-perf",         label: "📡 Publisher Performance" },
-  { id: "adv-health",       label: "❤️ Advertiser Health" },
-  { id: "freshness",        label: "🕐 Data Freshness" },
-  { id: "budget",           label: "💰 Budget" },
-  { id: "monthly",          label: "📅 Monthly Spend" },
-  { id: "kpis",             label: "🎯 Global KPIs" },
-  { id: "onboarding",       label: "📋 Campaign Onboarding" },
-  { id: "adv-reporting",    label: "📈 Advertiser Reporting" },
-  { id: "pub-reporting",    label: "📉 Publisher Reporting" },
+// ── Tab groups ────────────────────────────────────────────────────────────────
+const TAB_GROUPS = [
+  {
+    label: "Analytics",
+    color: "#2563eb",
+    tabs: [
+      { id: "dashboard",   label: "Dashboard",              icon: "📊" },
+      { id: "adv-perf",    label: "Advertiser Performance", icon: "🏢" },
+      { id: "pub-perf",    label: "Publisher Performance",  icon: "📡" },
+      { id: "adv-health",  label: "Advertiser Health",      icon: "❤️" },
+    ],
+  },
+  {
+    label: "Data",
+    color: "#0891b2",
+    tabs: [
+      { id: "freshness",   label: "Data Freshness",  icon: "🕐" },
+      { id: "budget",      label: "Budget",          icon: "💰" },
+      { id: "monthly",     label: "Monthly Spend",   icon: "📅" },
+    ],
+  },
+  {
+    label: "Manage",
+    color: "#7c3aed",
+    tabs: [
+      { id: "kpis",        label: "Global KPIs",         icon: "🎯" },
+      { id: "onboarding",  label: "Campaign Onboarding", icon: "📋" },
+    ],
+  },
+  {
+    label: "Reports",
+    color: "#059669",
+    tabs: [
+      { id: "adv-reporting", label: "Advertiser Report", icon: "📈" },
+      { id: "pub-reporting", label: "Publisher Report",  icon: "📉" },
+    ],
+  },
 ];
 
 const STAT_ITEMS = [
@@ -40,8 +65,65 @@ const STAT_ITEMS = [
   { key: "total",       label: "TOTAL" },
 ];
 
-const styles = {
-  app: { minHeight: "100vh", background: "#f5f5f5" },
+// ── Tab pill component ────────────────────────────────────────────────────────
+function TabPill({ tab, active, groupColor, onClick }) {
+  const [hovered, setHovered] = useState(false);
+
+  const base = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 5,
+    padding: "6px 13px",
+    borderRadius: 20,
+    border: "none",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: active ? 600 : 500,
+    whiteSpace: "nowrap",
+    outline: "none",
+    transition: "all 0.18s ease",
+    letterSpacing: 0.1,
+  };
+
+  const activeStyle = {
+    background: groupColor,
+    color: "#fff",
+    boxShadow: `0 2px 10px ${groupColor}55`,
+    transform: "translateY(-1px)",
+  };
+
+  const hoveredStyle = {
+    background: `${groupColor}14`,
+    color: groupColor,
+    transform: "translateY(-1px)",
+  };
+
+  const defaultStyle = {
+    background: "transparent",
+    color: "#64748b",
+  };
+
+  return (
+    <button
+      style={{
+        ...base,
+        ...(active ? activeStyle : hovered ? hoveredStyle : defaultStyle),
+      }}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <span style={{ fontSize: 13, lineHeight: 1 }}>{tab.icon}</span>
+      {tab.label}
+    </button>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const S = {
+  app: { minHeight: "100vh", background: "#f1f5f9" },
+
+  // Header
   header: {
     background: "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)",
     color: "#fff",
@@ -56,17 +138,17 @@ const styles = {
   headerTitle: { fontSize: 18, fontWeight: 700, letterSpacing: 0.5 },
   headerSub: { fontSize: 11, opacity: 0.75, marginTop: 1 },
 
-  // ── Stats strip (centre of header) ────────────────────────────────
+  // Stats strip
   statsStrip: {
     display: "flex",
     alignItems: "center",
-    gap: 0,
     flex: 1,
     justifyContent: "center",
     borderLeft: "1px solid rgba(255,255,255,0.15)",
     borderRight: "1px solid rgba(255,255,255,0.15)",
     padding: "0 16px",
     overflowX: "auto",
+    gap: 0,
   },
   statsLabel: {
     fontSize: 9,
@@ -89,9 +171,6 @@ const styles = {
     flexShrink: 0,
     minWidth: 52,
   },
-  statItemLast: {
-    borderRight: "none",
-  },
   statLabel: {
     fontSize: 8,
     fontWeight: 700,
@@ -108,7 +187,7 @@ const styles = {
     lineHeight: 1,
   },
 
-  // ── Right side (cache / refresh) ──────────────────────────────────
+  // Cache
   cacheInfo: { fontSize: 11, opacity: 0.75, textAlign: "right", flexShrink: 0 },
   refreshBtn: {
     background: "rgba(255,255,255,0.15)",
@@ -121,27 +200,37 @@ const styles = {
     marginTop: 4,
   },
 
+  // Tab bar
   tabBar: {
     background: "#fff",
-    borderBottom: "1px solid #e0e0e0",
+    borderBottom: "2px solid #e8edf5",
     display: "flex",
+    alignItems: "center",
+    padding: "6px 20px",
+    gap: 2,
     overflowX: "auto",
-    padding: "0 16px",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.05)",
   },
-  tab: {
-    padding: "12px 18px",
-    border: "none",
-    background: "none",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    color: "#555",
-    borderBottom: "3px solid transparent",
-    whiteSpace: "nowrap",
-    transition: "all 0.15s",
+
+  // Group separator
+  separator: {
+    width: 1,
+    height: 22,
+    background: "#e2e8f0",
+    margin: "0 8px",
+    flexShrink: 0,
   },
-  tabActive: { color: "#2563eb", borderBottom: "3px solid #2563eb", fontWeight: 700 },
+
+  // Group label
+  groupLabel: {
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    padding: "0 4px 0 2px",
+    flexShrink: 0,
+  },
+
   content: { padding: "20px 24px" },
   errorBanner: {
     background: "#fee2e2",
@@ -154,6 +243,7 @@ const styles = {
   },
 };
 
+// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [filters, setFilters] = useState({});
@@ -164,32 +254,23 @@ export default function App() {
   const [error, setError] = useState(null);
   const [viewStats, setViewStats] = useState(null);
 
-  // Check API health on mount
   useEffect(() => {
     getHealth()
-      .then((h) => {
-        setApiStatus(h.cache);
-        setCacheAge(h.cacheAgeSecs);
-        setError(null);
-      })
+      .then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); setError(null); })
       .catch(() => setApiStatus("error"));
   }, []);
 
-  // Load filter options
   useEffect(() => {
     getFilters()
       .then(setFilterOptions)
       .catch((e) => console.error("Filter load error:", e));
   }, []);
 
-  // Record this view first, then fetch stats (avoid race condition)
   useEffect(() => {
     recordView()
       .catch(() => {})
       .finally(() => {
-        getViewStats()
-          .then(setViewStats)
-          .catch(() => {});
+        getViewStats().then(setViewStats).catch(() => {});
       });
   }, []);
 
@@ -208,9 +289,9 @@ export default function App() {
     }
   };
 
-  const handleFilterChange = useCallback((newFilters) => {
-    setFilters(newFilters);
-  }, []);
+  const handleFilterChange = useCallback((newFilters) => setFilters(newFilters), []);
+
+  const NO_FILTER_TABS = new Set(["freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting"]);
 
   const renderTab = () => {
     const props = { filters };
@@ -231,86 +312,78 @@ export default function App() {
   };
 
   return (
-    <div style={styles.app}>
+    <div style={S.app}>
       {/* ── Header ── */}
-      <header style={styles.header}>
-
-        {/* Left: title */}
-        <div style={styles.headerLeft}>
-          <div style={styles.headerTitle}>Razorpay Media Network Dashboard</div>
-          <div style={styles.headerSub}>Advertising Analytics Platform</div>
+      <header style={S.header}>
+        <div style={S.headerLeft}>
+          <div style={S.headerTitle}>Razorpay Media Network Dashboard</div>
+          <div style={S.headerSub}>Advertising Analytics Platform</div>
         </div>
 
-        {/* Centre: view stats strip */}
-        <div style={styles.statsStrip}>
-          <div style={styles.statsLabel}>
-            <span>📊</span> STATS
-          </div>
+        {/* Stats strip */}
+        <div style={S.statsStrip}>
+          <div style={S.statsLabel}><span>📊</span> STATS</div>
           {STAT_ITEMS.map((item, idx) => (
             <div
               key={item.key}
-              style={{
-                ...styles.statItem,
-                ...(idx === STAT_ITEMS.length - 1 ? styles.statItemLast : {}),
-              }}
+              style={{ ...S.statItem, ...(idx === STAT_ITEMS.length - 1 ? { borderRight: "none" } : {}) }}
             >
-              <div style={styles.statLabel}>{item.label}</div>
-              <div style={styles.statValue}>
-                {viewStats === null
-                  ? "—"
-                  : (viewStats[item.key] ?? 0).toLocaleString()}
+              <div style={S.statLabel}>{item.label}</div>
+              <div style={S.statValue}>
+                {viewStats === null ? "—" : (viewStats[item.key] ?? 0).toLocaleString()}
               </div>
             </div>
           ))}
         </div>
 
-        {/* Right: cache status */}
-        <div style={styles.cacheInfo}>
-          {apiStatus === "error" ? (
-            <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable</span>
-          ) : (
-            <>
-              Cache: {apiStatus === "warm" ? "🟢 warm" : "🟡 cold"}
-              {cacheAge !== null && ` (${cacheAge}s ago)`}
-            </>
-          )}
+        {/* Cache status */}
+        <div style={S.cacheInfo}>
+          {apiStatus === "error"
+            ? <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable</span>
+            : <>{apiStatus === "warm" ? "🟢" : "🟡"} Cache {apiStatus === "warm" ? "warm" : "cold"}
+                {cacheAge !== null && ` · ${cacheAge}s ago`}</>
+          }
           <br />
-          <button
-            style={styles.refreshBtn}
-            onClick={handleRefreshCache}
-            disabled={refreshing}
-          >
+          <button style={S.refreshBtn} onClick={handleRefreshCache} disabled={refreshing}>
             {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
           </button>
         </div>
-
       </header>
 
       {/* ── Tab bar ── */}
-      <nav style={styles.tabBar}>
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            style={{ ...styles.tab, ...(activeTab === tab.id ? styles.tabActive : {}) }}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
+      <nav style={S.tabBar}>
+        {TAB_GROUPS.map((group, gi) => (
+          <React.Fragment key={group.label}>
+            {/* Group separator (not before first group) */}
+            {gi > 0 && <div style={S.separator} />}
+
+            {/* Group label */}
+            <span style={{ ...S.groupLabel, color: group.color }}>
+              {group.label}
+            </span>
+
+            {/* Tabs */}
+            {group.tabs.map((tab) => (
+              <TabPill
+                key={tab.id}
+                tab={tab}
+                active={activeTab === tab.id}
+                groupColor={group.color}
+                onClick={() => setActiveTab(tab.id)}
+              />
+            ))}
+          </React.Fragment>
         ))}
       </nav>
 
-      {/* ── Filter bar (shown on most tabs) ── */}
-      {!["freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting"].includes(activeTab) && (
-        <FilterBar
-          options={filterOptions}
-          filters={filters}
-          onChange={handleFilterChange}
-        />
+      {/* ── Filter bar ── */}
+      {!NO_FILTER_TABS.has(activeTab) && (
+        <FilterBar options={filterOptions} filters={filters} onChange={handleFilterChange} />
       )}
 
       {/* ── Content ── */}
-      <main style={styles.content}>
-        {error && <div style={styles.errorBanner}>Error: {error}</div>}
+      <main style={S.content}>
+        {error && <div style={S.errorBanner}>Error: {error}</div>}
         {renderTab()}
       </main>
 
