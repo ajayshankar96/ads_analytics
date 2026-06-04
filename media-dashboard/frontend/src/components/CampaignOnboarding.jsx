@@ -168,7 +168,7 @@ function buildCampaignDetailsJson(cd) {
 
 // ─── Default states ───────────────────────────────────────────────────────────
 const EMPTY_BASIC = {
-  campaign_type: "Single Campaign Sheet",
+  campaign_type: "",
   advertiser: "", publisher: "", advertiser_industry: "", brand: "", offer: "",
   advertiser_data_url: "", publisher_data_url: "",
   segment_pub: "", segment_adv: "",
@@ -275,8 +275,11 @@ export function NewCampaignForm({ filterOptions }) {
         <div style={S.sectionHeader}><div style={S.sectionNum}>1</div><div style={S.sectionTitle}>Basic Information</div></div>
         <div style={S.grid2}>
           <Field label="Campaign Type" hint="Type of campaign structure">
-            <input style={S.input} value={basic.campaign_type} onChange={e => setB("campaign_type", e.target.value)}
-              placeholder="e.g. Single Campaign Sheet, Two different Sheets" />
+            <select style={S.select} value={basic.campaign_type} onChange={e => setB("campaign_type", e.target.value)}>
+              <option value="">Select Campaign Type</option>
+              <option value="Single Campaign Sheet">Single Campaign Sheet</option>
+              <option value="Two different Sheets">Two different Sheets</option>
+            </select>
           </Field>
           <Field label="Advertiser Industry">
             <Datalist id="ind" value={basic.advertiser_industry} onChange={v => setB("advertiser_industry", v)}

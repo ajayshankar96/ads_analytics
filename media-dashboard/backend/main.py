@@ -37,6 +37,7 @@ from sheets_client import (
     KPI_SPREADSHEET_ID,
     append_rows,
     read_kpi_sheet,
+    read_range,
     update_range,
     create_spreadsheet,
     write_sheet_tab,
@@ -94,6 +95,12 @@ async def startup_event():
 
     refresh_interval = int(os.environ.get("CACHE_REFRESH_INTERVAL", "300"))
     start_background_refresh(interval_seconds=refresh_interval)
+
+    # Ensure the dedicated views spreadsheet + tab exist
+    try:
+        _ensure_views_sheet()
+    except Exception as e:
+        logger.warning(f"Views sheet setup deferred: {e}")
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -1188,14 +1195,53 @@ def _delete_from_registry(sheet_name: str, headers: List[str], report_id: str):
 VIEWS_SHEET = "Dashboard_Views"
 VIEWS_HEADERS = ["Timestamp", "Identifier", "User_Agent"]
 
+# Dedicated spreadsheet for view tracking (owned by the service account,
+# so the backend always has full write access — unlike the KPI spreadsheet
+# which is shared read-only).
+_VIEWS_SPREADSHEET_ID: Optional[str] = os.environ.get("VIEWS_SPREADSHEET_ID")
+_VIEWS_SS_ID_FILE = Path(__file__).parent / "views_spreadsheet_id.txt"
+
+
+def _get_views_spreadsheet_id() -> str:
+    """Return the ID of the dedicated views spreadsheet, creating it if needed."""
+    global _VIEWS_SPREADSHEET_ID
+
+    if _VIEWS_SPREADSHEET_ID:
+        return _VIEWS_SPREADSHEET_ID
+
+    # Check if we persisted the ID from a previous run
+    if _VIEWS_SS_ID_FILE.exists():
+        _VIEWS_SPREADSHEET_ID = _VIEWS_SS_ID_FILE.read_text().strip()
+        if _VIEWS_SPREADSHEET_ID:
+            logger.info(f"Loaded views spreadsheet ID from file: {_VIEWS_SPREADSHEET_ID}")
+            return _VIEWS_SPREADSHEET_ID
+
+    # Create a brand-new spreadsheet under the service account's Drive
+    result = create_spreadsheet("Media Dashboard - View Tracking")
+    _VIEWS_SPREADSHEET_ID = result["spreadsheetId"]
+    logger.info(
+        f"Created dedicated views spreadsheet: {result['spreadsheetUrl']}\n"
+        f"  Set VIEWS_SPREADSHEET_ID={_VIEWS_SPREADSHEET_ID} as an env var to pin this."
+    )
+
+    # Persist so future pod restarts reuse the same sheet
+    try:
+        _VIEWS_SS_ID_FILE.write_text(_VIEWS_SPREADSHEET_ID)
+    except Exception as e:
+        logger.warning(f"Could not persist views spreadsheet ID to file: {e}")
+
+    return _VIEWS_SPREADSHEET_ID
+
 
 def _ensure_views_sheet():
+    """Make sure the Dashboard_Views tab exists (with headers) in the dedicated spreadsheet."""
     try:
         from sheets_client import get_sheet_names
-        names = get_sheet_names(KPI_SPREADSHEET_ID)
+        ss_id = _get_views_spreadsheet_id()
+        names = get_sheet_names(ss_id)
         if VIEWS_SHEET not in names:
-            ensure_sheet_tab(KPI_SPREADSHEET_ID, VIEWS_SHEET)
-            append_rows(KPI_SPREADSHEET_ID, VIEWS_SHEET, [VIEWS_HEADERS])
+            ensure_sheet_tab(ss_id, VIEWS_SHEET)
+            append_rows(ss_id, VIEWS_SHEET, [VIEWS_HEADERS])
     except Exception as e:
         logger.warning(f"Could not ensure views sheet: {e}")
 
@@ -1213,8 +1259,9 @@ def record_view(request: Request):
     now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
+        ss_id = _get_views_spreadsheet_id()
         _ensure_views_sheet()
-        append_rows(KPI_SPREADSHEET_ID, VIEWS_SHEET, [[now, identifier, ua[:120]]])
+        append_rows(ss_id, VIEWS_SHEET, [[now, identifier, ua[:120]]])
     except Exception as e:
         logger.warning(f"Failed to record view: {e}")
 
@@ -1227,7 +1274,8 @@ def get_view_stats():
     from datetime import datetime as _dt, timedelta
 
     try:
-        raw = read_kpi_sheet(VIEWS_SHEET)
+        ss_id = _get_views_spreadsheet_id()
+        raw = read_range(ss_id, f"{VIEWS_SHEET}!A:C")
     except Exception:
         raw = []
 
