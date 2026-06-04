@@ -14,21 +14,21 @@ import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
 import { getFilters, getHealth, refreshCache, recordView, getViewStats } from "./api";
 
-// ── Tab definitions ───────────────────────────────────────────────────────────
+// ── Tab groups (Option C layout) ──────────────────────────────────────────────
 const TAB_GROUPS = [
   {
     label: "Analytics",
     color: "#2563eb",
     tabs: [
-      { id: "dashboard",  label: "Dashboard",         icon: "📊" },
+      { id: "dashboard",   label: "Dashboard",         icon: "📊" },
       {
-        id: "performance", label: "Performance", icon: "📈",
+        id: "performance", label: "Performance",        icon: "📈",
         children: [
           { id: "adv-perf", label: "Advertiser Performance", icon: "🏢" },
           { id: "pub-perf", label: "Publisher Performance",  icon: "📡" },
         ],
       },
-      { id: "adv-health", label: "Advertiser Health", icon: "❤️" },
+      { id: "adv-health",  label: "Advertiser Health",  icon: "❤️" },
     ],
   },
   {
@@ -52,13 +52,8 @@ const TAB_GROUPS = [
     label: "Reports",
     color: "#059669",
     tabs: [
-      {
-        id: "reports", label: "Reports", icon: "📊",
-        children: [
-          { id: "adv-reporting", label: "Advertiser Report", icon: "📈" },
-          { id: "pub-reporting", label: "Publisher Report",  icon: "📉" },
-        ],
-      },
+      { id: "adv-reporting", label: "Advertiser Report", icon: "📈" },
+      { id: "pub-reporting", label: "Publisher Report",  icon: "📉" },
     ],
   },
 ];
@@ -75,7 +70,6 @@ const STAT_ITEMS = [
   { key: "total",       label: "TOTAL" },
 ];
 
-// Tabs that don't get the filter bar (by effective rendered id)
 const NO_FILTER = new Set([
   "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting",
 ]);
@@ -83,14 +77,14 @@ const NO_FILTER = new Set([
 // ── Tab pill ──────────────────────────────────────────────────────────────────
 function TabPill({ tab, active, groupColor, onClick }) {
   const [hovered, setHovered] = useState(false);
-  const hasChildren = !!(tab.children && tab.children.length);
+  const hasChildren = !!(tab.children?.length);
 
   const style = {
     display: "inline-flex",
     alignItems: "center",
     gap: 5,
-    padding: "6px 13px",
-    borderRadius: 20,
+    padding: "5px 12px",
+    borderRadius: 16,
     border: "none",
     cursor: "pointer",
     fontSize: 12,
@@ -100,9 +94,18 @@ function TabPill({ tab, active, groupColor, onClick }) {
     transition: "all 0.18s ease",
     letterSpacing: 0.1,
     ...(active
-      ? { background: groupColor, color: "#fff", boxShadow: `0 2px 10px ${groupColor}55`, transform: "translateY(-1px)" }
+      ? {
+          background: groupColor,
+          color: "#fff",
+          boxShadow: `0 2px 10px ${groupColor}55`,
+          transform: "translateY(-1px)",
+        }
       : hovered
-      ? { background: `${groupColor}14`, color: groupColor, transform: "translateY(-1px)" }
+      ? {
+          background: `${groupColor}14`,
+          color: groupColor,
+          transform: "translateY(-1px)",
+        }
       : { background: "transparent", color: "#64748b" }),
   };
 
@@ -113,7 +116,7 @@ function TabPill({ tab, active, groupColor, onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <span style={{ fontSize: 13, lineHeight: 1 }}>{tab.icon}</span>
+      <span style={{ fontSize: 12, lineHeight: 1 }}>{tab.icon}</span>
       {tab.label}
       {hasChildren && (
         <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 1 }}>
@@ -124,32 +127,34 @@ function TabPill({ tab, active, groupColor, onClick }) {
   );
 }
 
-// ── Sub-tab pill ──────────────────────────────────────────────────────────────
+// ── Sub-tab pill (for Performance children) ───────────────────────────────────
 function SubTabPill({ tab, active, groupColor, onClick }) {
   const [hovered, setHovered] = useState(false);
-
-  const style = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 5,
-    padding: "5px 14px",
-    borderRadius: 16,
-    border: active ? "none" : `1px solid ${groupColor}30`,
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: active ? 600 : 400,
-    whiteSpace: "nowrap",
-    outline: "none",
-    transition: "all 0.15s ease",
-    ...(active
-      ? { background: `${groupColor}18`, color: groupColor, borderBottom: `2px solid ${groupColor}` }
-      : hovered
-      ? { background: `${groupColor}0c`, color: groupColor }
-      : { background: "transparent", color: "#64748b" }),
-  };
-
   return (
-    <button style={style} onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+    <button
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "5px 14px",
+        borderRadius: 16,
+        border: active ? "none" : `1px solid ${groupColor}30`,
+        cursor: "pointer",
+        fontSize: 12,
+        fontWeight: active ? 600 : 400,
+        whiteSpace: "nowrap",
+        outline: "none",
+        transition: "all 0.15s ease",
+        ...(active
+          ? { background: `${groupColor}18`, color: groupColor, borderBottom: `2px solid ${groupColor}` }
+          : hovered
+          ? { background: `${groupColor}0c`, color: groupColor }
+          : { background: "transparent", color: "#64748b" }),
+      }}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <span style={{ fontSize: 12 }}>{tab.icon}</span>
       {tab.label}
     </button>
@@ -159,6 +164,8 @@ function SubTabPill({ tab, active, groupColor, onClick }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const S = {
   app: { minHeight: "100vh", background: "#f1f5f9" },
+
+  // Header — untouched height
   header: {
     background: "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)",
     color: "#fff",
@@ -172,6 +179,7 @@ const S = {
   headerLeft: { flexShrink: 0 },
   headerTitle: { fontSize: 18, fontWeight: 700, letterSpacing: 0.5 },
   headerSub: { fontSize: 11, opacity: 0.75, marginTop: 1 },
+
   statsStrip: {
     display: "flex", alignItems: "center", flex: 1, justifyContent: "center",
     borderLeft: "1px solid rgba(255,255,255,0.15)",
@@ -193,27 +201,60 @@ const S = {
     letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 2, whiteSpace: "nowrap",
   },
   statValue: { fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1 },
+
   cacheInfo: { fontSize: 11, opacity: 0.75, textAlign: "right", flexShrink: 0 },
   refreshBtn: {
     background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
     color: "#fff", padding: "4px 10px", borderRadius: 4, cursor: "pointer", fontSize: 12, marginTop: 4,
   },
 
-  // Main tab bar
+  // ── Option C tab bar ────────────────────────────────────────────────────────
   tabBar: {
     background: "#fff",
-    borderBottom: "2px solid #e8edf5",
+    display: "flex",
+    alignItems: "stretch",
+    overflowX: "auto",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.07)",
+    borderBottom: "1px solid #e2e8f0",
+  },
+  // Each group column
+  groupSection: {
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
+    borderRight: "1px solid #f1f5f9",
+    paddingBottom: 6,
+  },
+  // Colored accent bar at top of each section
+  groupAccent: {
+    height: 3,
+    borderRadius: "0 0 3px 3px",
+    flexShrink: 0,
+    margin: "0 10px 0 10px",
+  },
+  // Group label row
+  groupLabelRow: {
     display: "flex",
     alignItems: "center",
-    padding: "6px 20px",
-    gap: 2,
-    overflowX: "auto",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+    gap: 5,
+    padding: "4px 12px 2px 12px",
+    fontSize: 9,
+    fontWeight: 800,
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
-  separator: { width: 1, height: 22, background: "#e2e8f0", margin: "0 8px", flexShrink: 0 },
-  groupLabel: { fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "0 4px 0 2px", flexShrink: 0 },
+  groupDot: {
+    width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+  },
+  // Tab pills row within a section
+  groupTabs: {
+    display: "flex",
+    alignItems: "center",
+    gap: 2,
+    padding: "2px 8px 0 8px",
+  },
 
-  // Sub-tab bar (shown when a parent tab with children is active)
+  // Sub-tab bar (for Performance dropdown)
   subTabBar: {
     background: "#f8fafc",
     borderBottom: "1px solid #e2e8f0",
@@ -237,18 +278,20 @@ const S = {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [activeTab, setActiveTab]       = useState("dashboard");
-  const [activeSubTab, setActiveSubTab] = useState(null);
-  const [filters, setFilters]           = useState({});
+  const [activeTab, setActiveTab]         = useState("dashboard");
+  const [activeSubTab, setActiveSubTab]   = useState(null);
+  const [filters, setFilters]             = useState({});
   const [filterOptions, setFilterOptions] = useState({});
-  const [apiStatus, setApiStatus]       = useState("unknown");
-  const [cacheAge, setCacheAge]         = useState(null);
-  const [refreshing, setRefreshing]     = useState(false);
-  const [error, setError]               = useState(null);
-  const [viewStats, setViewStats]       = useState(null);
+  const [apiStatus, setApiStatus]         = useState("unknown");
+  const [cacheAge, setCacheAge]           = useState(null);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [error, setError]                 = useState(null);
+  const [viewStats, setViewStats]         = useState(null);
 
   useEffect(() => {
-    getHealth().then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); }).catch(() => setApiStatus("error"));
+    getHealth()
+      .then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); })
+      .catch(() => setApiStatus("error"));
   }, []);
 
   useEffect(() => {
@@ -275,7 +318,6 @@ export default function App() {
 
   const handleFilterChange = useCallback((f) => setFilters(f), []);
 
-  // Click a main tab — if it has children, activate first child
   const handleTabClick = (tab) => {
     setActiveTab(tab.id);
     if (tab.children?.length) {
@@ -285,17 +327,14 @@ export default function App() {
     }
   };
 
-  // The "effective" tab for rendering + filter logic
   const effectiveTab = activeSubTab || activeTab;
 
-  // Find the active parent tab's children + group color (for sub-bar)
+  // Find active parent's children + color for sub-bar
   let activeParent = null;
-  let activeGroupColor = "#2563eb";
   for (const group of TAB_GROUPS) {
     for (const tab of group.tabs) {
-      if (tab.id === activeTab) {
-        activeGroupColor = group.color;
-        if (tab.children) activeParent = { tab, color: group.color };
+      if (tab.id === activeTab && tab.children?.length) {
+        activeParent = { tab, color: group.color };
       }
     }
   }
@@ -314,16 +353,15 @@ export default function App() {
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
-      // Parent tabs with children default to first child (handled above) but just in case:
       case "performance":    return <AdvertiserPerformance {...props} />;
-      case "reports":        return <AdvertiserReporting filterOptions={filterOptions} />;
-      default: return null;
+      default:               return null;
     }
   };
 
   return (
     <div style={S.app}>
-      {/* ── Header ── */}
+
+      {/* ── Header (height unchanged) ── */}
       <header style={S.header}>
         <div style={S.headerLeft}>
           <div style={S.headerTitle}>Razorpay Media Network Dashboard</div>
@@ -333,9 +371,14 @@ export default function App() {
         <div style={S.statsStrip}>
           <div style={S.statsLabel}><span>📊</span> STATS</div>
           {STAT_ITEMS.map((item, idx) => (
-            <div key={item.key} style={{ ...S.statItem, ...(idx === STAT_ITEMS.length - 1 ? { borderRight: "none" } : {}) }}>
+            <div
+              key={item.key}
+              style={{ ...S.statItem, ...(idx === STAT_ITEMS.length - 1 ? { borderRight: "none" } : {}) }}
+            >
               <div style={S.statLabel}>{item.label}</div>
-              <div style={S.statValue}>{viewStats === null ? "—" : (viewStats[item.key] ?? 0).toLocaleString()}</div>
+              <div style={S.statValue}>
+                {viewStats === null ? "—" : (viewStats[item.key] ?? 0).toLocaleString()}
+              </div>
             </div>
           ))}
         </div>
@@ -344,8 +387,7 @@ export default function App() {
           {apiStatus === "error"
             ? <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable</span>
             : <>{apiStatus === "warm" ? "🟢" : "🟡"} Cache {apiStatus}
-                {cacheAge !== null && ` · ${cacheAge}s ago`}</>
-          }
+                {cacheAge !== null && ` · ${cacheAge}s ago`}</>}
           <br />
           <button style={S.refreshBtn} onClick={handleRefreshCache} disabled={refreshing}>
             {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
@@ -353,26 +395,42 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main tab bar ── */}
+      {/* ── Option C Tab bar ── */}
       <nav style={S.tabBar}>
         {TAB_GROUPS.map((group, gi) => (
-          <React.Fragment key={group.label}>
-            {gi > 0 && <div style={S.separator} />}
-            <span style={{ ...S.groupLabel, color: group.color }}>{group.label}</span>
-            {group.tabs.map((tab) => (
-              <TabPill
-                key={tab.id}
-                tab={tab}
-                active={activeTab === tab.id}
-                groupColor={group.color}
-                onClick={() => handleTabClick(tab)}
-              />
-            ))}
-          </React.Fragment>
+          <div
+            key={group.label}
+            style={{
+              ...S.groupSection,
+              ...(gi === TAB_GROUPS.length - 1 ? { borderRight: "none" } : {}),
+            }}
+          >
+            {/* Colored accent bar */}
+            <div style={{ ...S.groupAccent, background: group.color }} />
+
+            {/* Group label */}
+            <div style={{ ...S.groupLabelRow, color: group.color }}>
+              <div style={{ ...S.groupDot, background: group.color }} />
+              {group.label}
+            </div>
+
+            {/* Tab pills */}
+            <div style={S.groupTabs}>
+              {group.tabs.map((tab) => (
+                <TabPill
+                  key={tab.id}
+                  tab={tab}
+                  active={activeTab === tab.id}
+                  groupColor={group.color}
+                  onClick={() => handleTabClick(tab)}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
-      {/* ── Sub-tab bar (only for tabs with children) ── */}
+      {/* ── Sub-tab bar (Performance only) ── */}
       {activeParent && (
         <div style={S.subTabBar}>
           <span style={{ ...S.subTabLabel, color: activeParent.color }}>
