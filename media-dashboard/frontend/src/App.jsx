@@ -217,41 +217,45 @@ const S = {
     boxShadow: "0 2px 6px rgba(0,0,0,0.07)",
     borderBottom: "1px solid #e2e8f0",
   },
-  // Each group column
+  // Each group column — centred
   groupSection: {
     display: "flex",
     flexDirection: "column",
+    alignItems: "center",
     flexShrink: 0,
-    borderRight: "1px solid #f1f5f9",
-    paddingBottom: 6,
+    borderRight: "1px solid #f0f4f8",
+    paddingBottom: 7,
   },
-  // Colored accent bar at top of each section
+  // Full-width accent bar (no side margins)
   groupAccent: {
-    height: 3,
-    borderRadius: "0 0 3px 3px",
+    height: 4,
+    width: "100%",
+    borderRadius: "0 0 4px 4px",
     flexShrink: 0,
-    margin: "0 10px 0 10px",
   },
-  // Group label row
+  // Group label — larger font, centred
   groupLabelRow: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
-    padding: "4px 12px 2px 12px",
-    fontSize: 9,
+    padding: "5px 16px 3px 16px",
+    fontSize: 11,
     fontWeight: 800,
-    letterSpacing: 1,
+    letterSpacing: 0.9,
     textTransform: "uppercase",
+    width: "100%",
   },
   groupDot: {
     width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
   },
-  // Tab pills row within a section
+  // Tab pills — centred within section
   groupTabs: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "center",
     gap: 2,
-    padding: "2px 8px 0 8px",
+    padding: "2px 10px 0 10px",
   },
 
   // Sub-tab bar (for Performance dropdown)
