@@ -22,8 +22,9 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("trustscan")
 
-# ── Login audit log (persisted to S3) ─────────────────────────────────────────
-LOGIN_LOG_KEY = "ajayshankar/trustscan_login_log/login_events.jsonl"
+# ── Unified audit log (persisted to S3) ───────────────────────────────────────
+AUDIT_LOG_KEY = "ajayshankar/trustscan_login_log/audit_events.jsonl"
+import threading, datetime
 
 def _detect_device(ua: str) -> str:
     ua = ua.lower()
@@ -33,35 +34,32 @@ def _detect_device(ua: str) -> str:
         return "Tablet"
     return "Desktop"
 
-def _append_login_event(email: str, name: str, host: str, ip: str, user_agent: str):
-    """Append a login event to S3 login log (best-effort, never blocks login)."""
-    import boto3, datetime
-    try:
-        bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
-        s3 = boto3.client("s3")
-        # Fetch existing log
+def _req_meta(request: Request):
+    """Extract ip, device, access from a request."""
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
+         (request.client.host if request.client else "unknown")
+    ua = request.headers.get("user-agent", "")
+    host = request.headers.get("x-forwarded-host") or request.url.hostname or ""
+    return ip, _detect_device(ua), ("External" if "ext" in host else "Internal"), host
+
+def _audit(event: dict):
+    """Append an audit event to S3 (background thread, never blocks request)."""
+    def _write():
         try:
-            obj = s3.get_object(Bucket=bucket, Key=LOGIN_LOG_KEY)
-            existing = obj["Body"].read().decode("utf-8")
-        except s3.exceptions.NoSuchKey:
-            existing = ""
-        except Exception:
-            existing = ""
-        event = {
-            "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "email": email,
-            "name": name,
-            "device": _detect_device(user_agent),
-            "url": f"http://{host}/",
-            "access": "External" if "ext" in host else "Internal",
-            "ip": ip,
-        }
-        updated = existing + json.dumps(event) + "\n"
-        s3.put_object(Bucket=bucket, Key=LOGIN_LOG_KEY, Body=updated.encode("utf-8"),
-                      ContentType="application/x-ndjson")
-        logger.info(f"[LOGIN_LOG] saved event for {email}")
-    except Exception as e:
-        logger.warning(f"[LOGIN_LOG_ERR] {e}")
+            import boto3
+            bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+            s3 = boto3.client("s3")
+            try:
+                existing = s3.get_object(Bucket=bucket, Key=AUDIT_LOG_KEY)["Body"].read().decode()
+            except Exception:
+                existing = ""
+            event["timestamp"] = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+            s3.put_object(Bucket=bucket, Key=AUDIT_LOG_KEY,
+                          Body=(existing + json.dumps(event) + "\n").encode(),
+                          ContentType="application/x-ndjson")
+        except Exception as e:
+            logger.warning(f"[AUDIT_ERR] {e}")
+    threading.Thread(target=_write, daemon=True).start()
 
 app = FastAPI(title="TrustScan API")
 
@@ -215,8 +213,12 @@ def auth_login(request: Request):
 @app.get("/auth/callback")
 def auth_callback(request: Request,
                   code: str = None, state: str = None, error: str = None):
+    ip, device, access, host = _req_meta(request)
+
     if error:
         logger.warning(f"[OAUTH_ERROR] {error}")
+        _audit({"type": "login", "status": "oauth_error", "reason": error,
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse(f"<h1>Access denied</h1><p>{error}</p>", status_code=403)
 
     # Validate CSRF state
@@ -226,6 +228,8 @@ def auth_callback(request: Request,
     scheme = "https" if "ext" not in originating_host else "http"
     dynamic_redirect_uri = stored.get("redirect_uri", f"{scheme}://{originating_host}/auth/callback") if isinstance(stored, dict) else GOOGLE_REDIRECT_URI
     if not ts or time.time() - ts > 900:
+        _audit({"type": "login", "status": "invalid_state",
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse("<h1>Invalid or expired session state. Please try again.</h1>"
                             "<p><a href='/auth/login'>Sign in</a></p>", status_code=400)
 
@@ -248,10 +252,14 @@ def auth_callback(request: Request,
             token_resp = json.loads(r.read().decode())
     except Exception as e:
         logger.error(f"[OAUTH_TOKEN_ERROR] {e}")
+        _audit({"type": "login", "status": "token_error", "reason": str(e),
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse(f"<h1>Token exchange failed</h1><p>{e}</p>", status_code=500)
 
     access_token = token_resp.get("access_token")
     if not access_token:
+        _audit({"type": "login", "status": "token_error", "reason": "no access_token in response",
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse("<h1>No access token received from Google.</h1>", status_code=500)
 
     # Get user info
@@ -264,6 +272,8 @@ def auth_callback(request: Request,
             userinfo = json.loads(r.read().decode())
     except Exception as e:
         logger.error(f"[OAUTH_USERINFO_ERROR] {e}")
+        _audit({"type": "login", "status": "userinfo_error", "reason": str(e),
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse(f"<h1>Failed to get user info</h1><p>{e}</p>", status_code=500)
 
     email = userinfo.get("email", "").lower().strip()
@@ -271,6 +281,8 @@ def auth_callback(request: Request,
 
     if email not in ALLOWED_EMAILS:
         logger.warning(f"[ACCESS_DENIED] {email}")
+        _audit({"type": "login", "status": "access_denied", "email": email, "name": name,
+                "device": device, "access": access, "ip": ip})
         return HTMLResponse(f"""<!doctype html><html><head><title>Access Denied</title>
 <style>body{{font-family:sans-serif;display:flex;align-items:center;justify-content:center;
 min-height:100vh;background:#F4F8FE}}
@@ -285,14 +297,9 @@ a{{color:#274DB0}}</style></head>
 </div></body></html>""", status_code=403)
 
     logger.info(f"[LOGIN] {email} | {name}")
-
-    # Persist login event to S3 (async best-effort)
-    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown").split(",")[0].strip()
-    user_agent = request.headers.get("user-agent", "")
-    import threading
-    threading.Thread(target=_append_login_event,
-                     args=(email, name, originating_host, client_ip, user_agent),
-                     daemon=True).start()
+    _audit({"type": "login", "status": "success", "email": email, "name": name,
+            "device": device, "access": access, "ip": ip,
+            "url": f"http://{originating_host}/"})
 
     # Redirect back to the URL the user originally came from (internal or external)
     redirect_url = f"http://{originating_host}/"
@@ -314,19 +321,35 @@ def auth_logout():
 
 
 @app.get("/api/login-log")
-def get_login_log(request: Request):
-    """Return login history from S3. Only accessible to logged-in users."""
+def get_login_log(request: Request, type: str = None):
+    """Return audit log from S3. ?type=login or ?type=scan to filter."""
     import boto3
     bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+    all_events = []
+    # Read new unified log
     try:
         s3 = boto3.client("s3")
-        obj = s3.get_object(Bucket=bucket, Key=LOGIN_LOG_KEY)
-        raw = obj["Body"].read().decode("utf-8")
-        events = [json.loads(line) for line in raw.strip().splitlines() if line.strip()]
-        events.reverse()  # most recent first
-        return JSONResponse({"events": events, "total": len(events)})
-    except Exception as e:
-        return JSONResponse({"events": [], "total": 0, "error": str(e)})
+        raw = s3.get_object(Bucket=bucket, Key=AUDIT_LOG_KEY)["Body"].read().decode()
+        all_events += [json.loads(l) for l in raw.strip().splitlines() if l.strip()]
+    except Exception:
+        pass
+    # Also read old login log for history
+    try:
+        s3 = boto3.client("s3")
+        old_key = "ajayshankar/trustscan_login_log/login_events.jsonl"
+        raw = s3.get_object(Bucket=bucket, Key=old_key)["Body"].read().decode()
+        for l in raw.strip().splitlines():
+            if l.strip():
+                e = json.loads(l)
+                e.setdefault("type", "login")
+                e.setdefault("status", "success")
+                all_events.append(e)
+    except Exception:
+        pass
+    if type:
+        all_events = [e for e in all_events if e.get("type") == type]
+    all_events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    return JSONResponse({"events": all_events, "total": len(all_events)})
 
 
 @app.get("/signin")
@@ -620,11 +643,30 @@ def ts1(body: Ts1LiveRequest, request: Request):
     email = getattr(request.state, "user_email", "unknown")
     masked = body.contact[:3] + "XXXXXXX" if len(body.contact) >= 3 else body.contact
     logger.info(f"[SCAN_TS1] {email} | {masked}")
-    return live_ts1(body)
+    _, device, access, _ = _req_meta(request)
+    try:
+        result = live_ts1(body)
+        _audit({"type": "scan", "status": "success", "email": email,
+                "phone": masked, "device": device, "access": access})
+        return result
+    except Exception as e:
+        _audit({"type": "scan", "status": "error", "email": email,
+                "phone": masked, "device": device, "access": access, "reason": str(e)})
+        raise
 
 @app.post("/api/ts2")
 def ts2(body: Ts2LiveRequest, request: Request):
-    return live_ts2(body)
+    email = getattr(request.state, "user_email", "unknown")
+    _, device, access, _ = _req_meta(request)
+    try:
+        result = live_ts2(body)
+        _audit({"type": "scan", "status": "success", "email": email,
+                "phone": "sha256:" + body.sha256[:8] + "…", "device": device, "access": access})
+        return result
+    except Exception as e:
+        _audit({"type": "scan", "status": "error", "email": email,
+                "phone": "sha256:" + body.sha256[:8] + "…", "device": device, "access": access, "reason": str(e)})
+        raise
 
 
 @app.post("/api/live/ts1")
