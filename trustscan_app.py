@@ -22,6 +22,47 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("trustscan")
 
+# ── Login audit log (persisted to S3) ─────────────────────────────────────────
+LOGIN_LOG_KEY = "ajayshankar/trustscan_login_log/login_events.jsonl"
+
+def _detect_device(ua: str) -> str:
+    ua = ua.lower()
+    if any(x in ua for x in ["iphone", "android", "mobile", "blackberry", "windows phone"]):
+        return "Mobile"
+    if any(x in ua for x in ["ipad", "tablet"]):
+        return "Tablet"
+    return "Desktop"
+
+def _append_login_event(email: str, name: str, host: str, ip: str, user_agent: str):
+    """Append a login event to S3 login log (best-effort, never blocks login)."""
+    import boto3, datetime
+    try:
+        bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+        s3 = boto3.client("s3")
+        # Fetch existing log
+        try:
+            obj = s3.get_object(Bucket=bucket, Key=LOGIN_LOG_KEY)
+            existing = obj["Body"].read().decode("utf-8")
+        except s3.exceptions.NoSuchKey:
+            existing = ""
+        except Exception:
+            existing = ""
+        event = {
+            "timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "email": email,
+            "name": name,
+            "device": _detect_device(user_agent),
+            "url": f"http://{host}/",
+            "access": "External" if "ext" in host else "Internal",
+            "ip": ip,
+        }
+        updated = existing + json.dumps(event) + "\n"
+        s3.put_object(Bucket=bucket, Key=LOGIN_LOG_KEY, Body=updated.encode("utf-8"),
+                      ContentType="application/x-ndjson")
+        logger.info(f"[LOGIN_LOG] saved event for {email}")
+    except Exception as e:
+        logger.warning(f"[LOGIN_LOG_ERR] {e}")
+
 app = FastAPI(title="TrustScan API")
 
 app.add_middleware(
@@ -245,6 +286,14 @@ a{{color:#274DB0}}</style></head>
 
     logger.info(f"[LOGIN] {email} | {name}")
 
+    # Persist login event to S3 (async best-effort)
+    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown").split(",")[0].strip()
+    user_agent = request.headers.get("user-agent", "")
+    import threading
+    threading.Thread(target=_append_login_event,
+                     args=(email, name, originating_host, client_ip, user_agent),
+                     daemon=True).start()
+
     # Redirect back to the URL the user originally came from (internal or external)
     redirect_url = f"http://{originating_host}/"
     resp = RedirectResponse(url=redirect_url, status_code=302)
@@ -262,6 +311,22 @@ def auth_logout():
     resp = RedirectResponse(url="/signin", status_code=302)
     resp.delete_cookie("ts_session")
     return resp
+
+
+@app.get("/api/login-log")
+def get_login_log(request: Request):
+    """Return login history from S3. Only accessible to logged-in users."""
+    import boto3
+    bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+    try:
+        s3 = boto3.client("s3")
+        obj = s3.get_object(Bucket=bucket, Key=LOGIN_LOG_KEY)
+        raw = obj["Body"].read().decode("utf-8")
+        events = [json.loads(line) for line in raw.strip().splitlines() if line.strip()]
+        events.reverse()  # most recent first
+        return JSONResponse({"events": events, "total": len(events)})
+    except Exception as e:
+        return JSONResponse({"events": [], "total": 0, "error": str(e)})
 
 
 @app.get("/signin")
