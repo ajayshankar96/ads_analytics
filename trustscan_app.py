@@ -145,7 +145,10 @@ def auth_login(request: Request):
     state = secrets.token_urlsafe(32)
     # Store originating host so callback can redirect back to the right URL
     originating_host = request.headers.get("x-forwarded-host") or request.url.hostname or "trustscan-analytics.dev.razorpay.in"
-    _OAUTH_STATES[state] = {"ts": time.time(), "host": originating_host}
+    # Use http for ext URL, https for internal
+    scheme = "https" if "ext" not in originating_host else "http"
+    dynamic_redirect_uri = f"{scheme}://{originating_host}/auth/callback"
+    _OAUTH_STATES[state] = {"ts": time.time(), "host": originating_host, "redirect_uri": dynamic_redirect_uri}
     # Prune stale states (> 15 min)
     for k in list(_OAUTH_STATES):
         entry = _OAUTH_STATES[k]
@@ -155,10 +158,9 @@ def auth_login(request: Request):
 
     params = urllib.parse.urlencode({
         "client_id":     GOOGLE_CLIENT_ID,
-        "redirect_uri":  GOOGLE_REDIRECT_URI,
+        "redirect_uri":  dynamic_redirect_uri,
         "response_type": "code",
         "scope":         "openid email profile",
-        "hd":            "razorpay.com",
         "state":         state,
         "access_type":   "online",
         "prompt":        "select_account",
@@ -180,6 +182,8 @@ def auth_callback(request: Request,
     stored = _OAUTH_STATES.pop(state or "", None)
     ts = stored["ts"] if isinstance(stored, dict) else stored
     originating_host = stored.get("host", "trustscan-analytics.dev.razorpay.in") if isinstance(stored, dict) else "trustscan-analytics.dev.razorpay.in"
+    scheme = "https" if "ext" not in originating_host else "http"
+    dynamic_redirect_uri = stored.get("redirect_uri", f"{scheme}://{originating_host}/auth/callback") if isinstance(stored, dict) else GOOGLE_REDIRECT_URI
     if not ts or time.time() - ts > 900:
         return HTMLResponse("<h1>Invalid or expired session state. Please try again.</h1>"
                             "<p><a href='/auth/login'>Sign in</a></p>", status_code=400)
@@ -189,7 +193,7 @@ def auth_callback(request: Request,
         "code":          code,
         "client_id":     GOOGLE_CLIENT_ID,
         "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri":  GOOGLE_REDIRECT_URI,
+        "redirect_uri":  dynamic_redirect_uri,
         "grant_type":    "authorization_code",
     }).encode()
     try:
