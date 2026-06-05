@@ -141,12 +141,16 @@ a.btn img{width:20px;height:20px;background:#fff;border-radius:3px;padding:2px}
 
 # ── OAuth Routes ───────────────────────────────────────────────────────────────
 @app.get("/auth/login")
-def auth_login():
+def auth_login(request: Request):
     state = secrets.token_urlsafe(32)
-    _OAUTH_STATES[state] = time.time()
+    # Store originating host so callback can redirect back to the right URL
+    originating_host = request.headers.get("x-forwarded-host") or request.url.hostname or "trustscan-analytics.dev.razorpay.in"
+    _OAUTH_STATES[state] = {"ts": time.time(), "host": originating_host}
     # Prune stale states (> 15 min)
     for k in list(_OAUTH_STATES):
-        if time.time() - _OAUTH_STATES[k] > 900:
+        entry = _OAUTH_STATES[k]
+        ts = entry["ts"] if isinstance(entry, dict) else entry
+        if time.time() - ts > 900:
             del _OAUTH_STATES[k]
 
     params = urllib.parse.urlencode({
@@ -173,7 +177,9 @@ def auth_callback(request: Request,
         return HTMLResponse(f"<h1>Access denied</h1><p>{error}</p>", status_code=403)
 
     # Validate CSRF state
-    ts = _OAUTH_STATES.pop(state or "", None)
+    stored = _OAUTH_STATES.pop(state or "", None)
+    ts = stored["ts"] if isinstance(stored, dict) else stored
+    originating_host = stored.get("host", "trustscan-analytics.dev.razorpay.in") if isinstance(stored, dict) else "trustscan-analytics.dev.razorpay.in"
     if not ts or time.time() - ts > 900:
         return HTMLResponse("<h1>Invalid or expired session state. Please try again.</h1>"
                             "<p><a href='/auth/login'>Sign in</a></p>", status_code=400)
@@ -235,10 +241,13 @@ a{{color:#274DB0}}</style></head>
 
     logger.info(f"[LOGIN] {email} | {name}")
 
-    resp = RedirectResponse(url="/", status_code=302)
+    # Redirect back to the URL the user originally came from (internal or external)
+    redirect_url = f"http://{originating_host}/"
+    resp = RedirectResponse(url=redirect_url, status_code=302)
     resp.set_cookie(
         "ts_session", _make_session(email),
-        httponly=True, secure=True, samesite="lax",
+        httponly=True, samesite="lax",
+        domain=".dev.razorpay.in",
         max_age=SESSION_HOURS * 3600,
     )
     return resp
