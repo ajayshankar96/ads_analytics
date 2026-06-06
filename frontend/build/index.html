@@ -1937,7 +1937,10 @@ async function mRunScan(){
   mShowScanning();
   mAnimateSteps();
   try {
-    if(!state.hash) await updateHash();
+    // Always recompute the hash for the current number — ts2 is keyed on
+    // state.hash, and unlike desktop the mobile input does not update it live.
+    state.hash = "";
+    await updateHash();
     var settled = await Promise.allSettled([
       runTs1(), runTs2(),
       new Promise(function(r){ setTimeout(r,4500); }),
