@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>TrustScan 2.0 · Sales Demo</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2L3 7.5v7.5C3 23 8.9 29.5 16 31c7.1-1.5 13-8 13-16V7.5Z' fill='%23274DB0'/%3E%3Ctext x='16' y='21.5' font-family='Arial,sans-serif' font-size='10' font-weight='700' fill='white' text-anchor='middle' letter-spacing='-0.3'%3ET.S%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
   /* Razorpay Blade palette */
@@ -334,6 +335,155 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
   /* Footer */
   .pfoot{padding:16px 16px 28px;font-size:10.5px}
 }
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE APP OVERLAY — user-agent based, fullscreen native
+   Shown only when IS_MOBILE = true; desktop is unaffected
+══════════════════════════════════════════════════════════ */
+#m-app{display:none;position:fixed;inset:0;background:#274DB0;flex-direction:column;font-family:'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif;z-index:1000;-webkit-font-smoothing:antialiased}
+#m-app.active{display:flex}
+.m-screen{display:none;flex-direction:column;flex:1;overflow:hidden}
+.m-screen.active{display:flex}
+
+/* Nav */
+.m-nav{background:#274DB0;padding:12px 16px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.m-nav-logo{width:28px;height:32px;background:rgba(255,255,255,.15);border-radius:7px;display:grid;place-items:center;color:#fff;font-size:8px;font-weight:700;font-family:'JetBrains Mono',monospace;letter-spacing:-.5px;flex-shrink:0}
+.m-nav-brand{font-family:'Sora',sans-serif;font-weight:700;font-size:13px;color:#fff}
+.m-nav-ver{font-size:9px;font-weight:700;background:rgba(255,255,255,.2);color:#fff;padding:2px 5px;border-radius:4px;margin-left:3px}
+.m-nav-spacer{flex:1}
+.m-nav-live{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.15);padding:4px 9px;border-radius:6px;font-size:10px;font-weight:600;color:#fff}
+.m-live-dot{width:6px;height:6px;border-radius:50%;background:#5CFF8A}
+
+/* Home screen */
+.m-hero{background:#274DB0;padding:0 16px 22px;text-align:center;flex-shrink:0}
+.m-hero-h1{font-family:'Sora',sans-serif;font-size:20px;font-weight:700;color:#fff;line-height:1.25;margin-bottom:6px;letter-spacing:-.02em}
+.m-hero-sub{font-size:12px;color:rgba(255,255,255,.7);line-height:1.5}
+.m-card{background:#fff;border-radius:16px 16px 0 0;padding:20px 16px 24px;flex:1;overflow-y:auto}
+.m-card::-webkit-scrollbar{display:none}
+.m-input-wrap{border:1.5px solid #E4E7EB;border-radius:12px;overflow:hidden;margin-bottom:12px;display:flex;align-items:stretch}
+.m-cc{background:#F7F9FC;border-right:1.5px solid #E4E7EB;padding:0 12px;display:flex;align-items:center;font-weight:700;font-size:13px;color:#274DB0;flex-shrink:0;font-family:'JetBrains Mono',monospace}
+.m-input-inner{padding:0 12px;font-size:15px;color:#0A1929;flex:1;border:none;outline:none;background:transparent;height:52px;font-family:inherit}
+.m-input-inner::placeholder{color:#9AA5B1}
+.m-btn{background:#274DB0;color:#fff;border-radius:12px;padding:15px;font-family:'Sora',sans-serif;font-weight:700;font-size:13.5px;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(39,77,176,.3);border:none;width:100%}
+.m-btn:active{opacity:.85;transform:scale(.98)}
+.m-hash{margin-top:12px;background:#F4F8FE;border:1px dashed #CFE5FE;border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:8px}
+.m-hash-tag{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#274DB0;flex-shrink:0}
+.m-hash-val{font-family:'JetBrains Mono',monospace;font-size:10px;color:#52606D;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-features{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.m-feat{background:#F7F9FC;border-radius:10px;padding:12px;font-size:11px;color:#52606D;line-height:1.4}
+.m-feat strong{display:block;color:#0A1929;font-size:12px;margin-bottom:2px}
+.m-error-card{background:#FFF8F7;border:1px solid #FCB7B7;border-radius:12px;padding:14px;margin-top:14px}
+.m-error-card h4{margin:0 0 6px;font-size:13px;color:#B42318;font-family:inherit}
+.m-error-card p{margin:0;font-size:12px;color:#B42318}
+
+/* Scanning screen */
+.m-load-hero{background:#274DB0;padding:22px 16px;text-align:center;flex-shrink:0}
+.m-load-h{font-family:'Sora',sans-serif;font-size:17px;font-weight:700;color:#fff;margin-bottom:4px}
+.m-load-sub{font-size:11.5px;color:rgba(255,255,255,.6)}
+.m-load-body{background:#fff;border-radius:16px 16px 0 0;padding:22px 16px;flex:1}
+.m-progress{height:4px;background:#E4E7EB;border-radius:2px;margin-bottom:22px;overflow:hidden}
+.m-progress-bar{height:100%;background:linear-gradient(to right,#274DB0,#0D94FB);border-radius:2px;animation:mprogress 2.5s ease-in-out infinite alternate}
+@keyframes mprogress{0%{width:20%}100%{width:85%}}
+.m-step{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #F0F3F6}
+.m-step:last-child{border-bottom:none}
+.m-step-icon{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;font-size:12px;flex-shrink:0;font-weight:700}
+.m-step-icon.done{background:#E8F8EE;color:#0F7B3F}
+.m-step-icon.active{background:#E8F2FE;color:#274DB0;animation:mpulse 1.2s ease infinite}
+.m-step-icon.pending{background:#F7F9FC;color:#CBD2D9}
+@keyframes mpulse{0%,100%{opacity:1}50%{opacity:.45}}
+.m-step-text{font-size:12px;color:#52606D;flex:1}
+.m-step-text.done{color:#0F7B3F;font-weight:500}
+.m-step-text.active{color:#274DB0;font-weight:600}
+.m-step-text.pending{color:#CBD2D9}
+
+/* Results screen — Spotlight hero */
+.m-r-hero{background:linear-gradient(160deg,#1a3a8f,#274DB0 60%,#0D94FB);padding:13px 14px;flex-shrink:0}
+.m-r-back-row{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.m-r-back{font-size:14px;color:rgba(255,255,255,.5);cursor:pointer;padding:0;background:none;border:none}
+.m-r-phone-lbl{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:rgba(255,255,255,.4);letter-spacing:.04em}
+.m-r-live{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.15);padding:2px 8px;border-radius:10px;font-size:9px;font-weight:600;color:#fff;margin-left:auto}
+.m-r-live-dot{width:5px;height:5px;border-radius:50%;background:#5CFF8A}
+.m-r-hero-body{display:flex;align-items:center;gap:11px}
+.m-r-letter{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);display:grid;place-items:center;font-family:'Sora',sans-serif;font-size:30px;font-weight:700;color:#fff;flex-shrink:0}
+.m-r-hero-label{font-size:7.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.m-r-hero-name{font-family:'Sora',sans-serif;font-size:15px;font-weight:700;color:#fff;margin-bottom:2px}
+.m-r-hero-desc{font-size:9px;color:rgba(255,255,255,.55);line-height:1.4}
+
+/* Section tabs */
+.m-stabs{background:#fff;display:flex;border-bottom:2px solid #F0F3F6;flex-shrink:0}
+.m-stab{flex:1;padding:9px 4px;text-align:center;font-size:10.5px;font-weight:600;color:#9AA5B1;border-bottom:2.5px solid transparent;margin-bottom:-2px;white-space:nowrap;cursor:pointer}
+.m-stab.active{color:#274DB0;border-bottom-color:#274DB0}
+
+/* Tab body */
+.m-r-body{flex:1;overflow-y:auto;overflow-x:hidden;background:#F7F9FC;display:none;flex-direction:column}
+.m-r-body.active{display:flex}
+.m-r-body::-webkit-scrollbar{display:none}
+
+/* Band chips */
+.m-bands-ref{display:flex;gap:5px;padding:10px;overflow-x:auto;background:#fff;border-bottom:1px solid #F0F3F6;flex-shrink:0}
+.m-bands-ref::-webkit-scrollbar{display:none}
+.m-bchip{flex-shrink:0;border-radius:8px;padding:6px 7px;text-align:center;min-width:42px;border:1.5px solid transparent;cursor:pointer}
+.m-bchip.on{border-color:#274DB0}
+.m-bchip-l{font-family:'Sora',sans-serif;font-size:13px;font-weight:700}
+.m-bchip-n{font-size:7px;font-weight:600;color:#9AA5B1;white-space:nowrap;margin-top:1px}
+
+/* Band cards */
+.m-band-detail{margin:10px;background:#fff;border-radius:12px;padding:13px;box-shadow:0 1px 4px rgba(10,25,41,.07);border-left:3px solid #0F7B3F}
+.m-band-detail-name{font-family:'Sora',sans-serif;font-size:14px;font-weight:700;margin-bottom:5px}
+.m-band-detail-desc{font-size:10.5px;color:#52606D;line-height:1.5;margin-bottom:9px}
+.m-band-check{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:500;margin-bottom:3px}
+.m-band-preview{display:none;margin:10px;background:#fff;border-radius:12px;padding:13px;box-shadow:0 1px 3px rgba(10,25,41,.06);opacity:.55}
+
+/* Credit tab */
+.m-income-card{margin:10px;background:#fff;border-radius:13px;padding:13px;box-shadow:0 2px 12px rgba(39,77,176,.1),0 1px 3px rgba(10,25,41,.05);border:1px solid rgba(39,77,176,.08)}
+.m-income-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:11px}
+.m-income-lbl{font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#9AA5B1;margin-bottom:3px}
+.m-income-amt{font-family:'Sora',sans-serif;font-size:20px;font-weight:700;color:#0A1929;line-height:1;letter-spacing:-.015em}
+.m-income-tier{display:inline-flex;align-items:center;gap:4px;background:#E8F2FE;padding:3px 9px;border-radius:20px;font-size:9.5px;font-weight:600;color:#274DB0;margin-top:5px}
+.m-income-tier-dot{width:5px;height:5px;border-radius:50%;background:#274DB0;flex-shrink:0}
+.m-income-pill{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;flex-shrink:0}
+.m-slider-lbl{display:flex;justify-content:space-between;font-size:7.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#CBD2D9;margin-bottom:4px}
+.m-slider-track{height:5px;border-radius:3px;background:linear-gradient(to right,#EF4444 0%,#F59E0B 35%,#FBBF24 50%,#86EFAC 70%,#16A34A 100%);position:relative}
+.m-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;background:#fff;border:2.5px solid #274DB0;box-shadow:0 1px 5px rgba(39,77,176,.35)}
+.m-cr-hdr{padding:11px 10px 5px;display:flex;align-items:center;gap:7px}
+.m-cr-icon{width:22px;height:22px;border-radius:5px;background:#0A1929;color:#fff;display:grid;place-items:center;font-size:8px;font-weight:700}
+.m-cr-title{font-size:11px;font-weight:700;color:#0A1929}
+.m-cr-count{margin-left:auto;font-size:9px;font-weight:600;color:#9AA5B1;background:#F0F3F6;padding:2px 7px;border-radius:4px}
+.m-cr-rows{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
+.m-cr-row{background:#fff;border-radius:11px;padding:10px 11px;box-shadow:0 1px 3px rgba(10,25,41,.06),0 0 0 1px rgba(10,25,41,.04);display:flex;align-items:center;gap:9px;cursor:pointer}
+.m-cr-row.open{box-shadow:0 3px 12px rgba(39,77,176,.12),0 0 0 1.5px #274DB0;background:#FAFCFF}
+.m-cr-pill{min-width:36px;height:27px;border-radius:6px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;flex-shrink:0}
+.m-cr-mid{flex:1;min-width:0}
+.m-cr-name{font-size:11px;font-weight:500;color:#1F2937;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-cr-st{height:4px;border-radius:2px;background:linear-gradient(to right,#EF4444 0%,#F59E0B 35%,#FBBF24 50%,#86EFAC 70%,#16A34A 100%);position:relative;margin-bottom:0}
+.m-cr-sd{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #274DB0;box-shadow:0 1px 4px rgba(39,77,176,.3)}
+.m-cr-pct{font-size:11px;font-weight:700;color:#274DB0;flex-shrink:0}
+.m-cr-badge{padding:3px 9px;border-radius:6px;font-size:10.5px;font-weight:700}
+.m-row-desc{display:none;font-size:10px;color:#9AA5B1;line-height:1.5;margin-top:6px;padding-top:6px;border-top:1px solid #F0F3F6}
+.m-cr-row.open .m-row-desc,.m-sig-row.open .m-row-desc{display:block}
+
+/* Signals tab */
+.m-sig-cattabs{background:#fff;border-bottom:1px solid #E4E7EB;display:flex;overflow-x:auto;flex-shrink:0;padding:0 6px}
+.m-sig-cattabs::-webkit-scrollbar{display:none}
+.m-sig-cattab{padding:8px 9px;font-size:10px;font-weight:600;color:#9AA5B1;white-space:nowrap;border-bottom:2.5px solid transparent;margin-bottom:-1px;cursor:pointer;flex-shrink:0}
+.m-sig-cattab.active{color:#274DB0;border-bottom-color:#274DB0}
+.m-sig-scroll{flex:1;overflow-y:auto}
+.m-sig-scroll::-webkit-scrollbar{display:none}
+.m-sig-grp-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 3px}
+.m-sig-grp-title{font-size:8.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#CBD2D9}
+.m-sig-grp-count{font-size:9px;font-weight:600;color:#9AA5B1}
+.m-sig-rows{padding:0 10px 10px;display:flex;flex-direction:column;gap:6px}
+.m-sig-row{background:#fff;border-radius:11px;padding:10px 11px;box-shadow:0 1px 3px rgba(10,25,41,.06),0 0 0 1px rgba(10,25,41,.04);display:flex;align-items:center;gap:9px;cursor:pointer}
+.m-sig-row.open{box-shadow:0 3px 12px rgba(39,77,176,.12),0 0 0 1.5px #274DB0;background:#FAFCFF}
+.m-sig-pill{min-width:36px;height:27px;border-radius:6px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;flex-shrink:0}
+.m-sig-mid{flex:1;min-width:0}
+.m-sig-name{font-size:11px;font-weight:500;color:#1F2937;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-sig-st{height:4px;border-radius:2px;background:linear-gradient(to right,#EF4444 0%,#F59E0B 35%,#FBBF24 50%,#86EFAC 70%,#16A34A 100%);position:relative}
+.m-sig-sd{position:absolute;top:50%;transform:translate(-50%,-50%);width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #274DB0;box-shadow:0 1px 4px rgba(39,77,176,.3)}
+.m-sig-pct{font-size:11px;font-weight:700;color:#274DB0;flex-shrink:0;min-width:28px;text-align:right}
+.m-sig-zero-badge{background:#EEF0F4;padding:2px 7px;border-radius:5px;font-size:9.5px;font-weight:600;color:#475569}
+.m-cattab-panel{display:none}
+.m-cattab-panel.active{display:block}
 </style>
 </head>
 <body>
@@ -521,6 +671,140 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
   <span class="div"></span>
   <span>© Razorpay · Internal pre-sales use only</span>
 </div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MOBILE APP — full-screen, user-agent detected overlay
+     3 screens: Home → Scanning → Results (Spotlight layout)
+     All data wired to same API calls as desktop
+══════════════════════════════════════════════════════════ -->
+<div id="m-app">
+
+  <!-- ─── SCREEN 1: HOME ─── -->
+  <div id="m-home" class="m-screen active">
+    <div class="m-nav">
+      <div class="m-nav-logo">T.S</div>
+      <span class="m-nav-brand">TrustScan</span><span class="m-nav-ver">2.0</span>
+      <div class="m-nav-spacer"></div>
+      <div class="m-nav-live"><div class="m-live-dot"></div><span id="m-live-text">Connecting…</span></div>
+    </div>
+    <div class="m-hero">
+      <div class="m-hero-h1">Complete customer<br>profile in real time</div>
+      <div class="m-hero-sub">Risk band · Income · Default probability · Spend signals</div>
+    </div>
+    <div class="m-card">
+      <div class="m-input-wrap">
+        <div class="m-cc">+91</div>
+        <input id="m-phone" class="m-input-inner" placeholder="Enter phone number…" maxlength="10" autocomplete="off" inputmode="numeric" type="tel" />
+      </div>
+      <button class="m-btn" onclick="mRunScan()">Scan now <span style="font-size:16px">→</span></button>
+      <div class="m-hash">
+        <div class="m-hash-tag">SHA-256</div>
+        <div class="m-hash-val" id="m-hash-val">(enter 10 digits to see hash)</div>
+      </div>
+      <div class="m-features">
+        <div class="m-feat"><strong>Risk Profile</strong>7-band A–G classification</div>
+        <div class="m-feat"><strong>Default Risk</strong>DPD-30, DPD-90 models</div>
+        <div class="m-feat"><strong>Income</strong>ML-predicted bracket</div>
+        <div class="m-feat"><strong>Signals</strong>30+ enrichment vars</div>
+      </div>
+      <div id="m-home-error" style="display:none" class="m-error-card">
+        <h4 id="m-err-title">Error</h4>
+        <p id="m-err-body"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SCREEN 2: SCANNING ─── -->
+  <div id="m-scanning" class="m-screen">
+    <div class="m-nav">
+      <div class="m-nav-logo">T.S</div>
+      <span class="m-nav-brand">TrustScan</span><span class="m-nav-ver">2.0</span>
+      <div class="m-nav-spacer"></div>
+      <div class="m-nav-live"><div class="m-live-dot"></div>Live</div>
+    </div>
+    <div class="m-load-hero">
+      <div class="m-load-h" id="m-scan-title">Scanning…</div>
+      <div class="m-load-sub">Querying TrustScan 2.0 API…</div>
+    </div>
+    <div class="m-load-body">
+      <div class="m-progress"><div class="m-progress-bar"></div></div>
+      <div class="m-step">
+        <div class="m-step-icon active" id="m-s1-icon">⟳</div>
+        <div class="m-step-text active" id="m-s1-text">SHA-256 hash computing…</div>
+      </div>
+      <div class="m-step">
+        <div class="m-step-icon pending" id="m-s2-icon">○</div>
+        <div class="m-step-text pending" id="m-s2-text">Querying Risk Profile API</div>
+      </div>
+      <div class="m-step">
+        <div class="m-step-icon pending" id="m-s3-icon">○</div>
+        <div class="m-step-text pending" id="m-s3-text">Fetching enrichment data</div>
+      </div>
+      <div class="m-step">
+        <div class="m-step-icon pending" id="m-s4-icon">○</div>
+        <div class="m-step-text pending" id="m-s4-text">Mapping bands to meaning</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SCREEN 3: RESULTS (Spotlight) ─── -->
+  <div id="m-results" class="m-screen">
+    <!-- Gradient hero — always fixed at top -->
+    <div class="m-r-hero">
+      <div class="m-r-back-row">
+        <button class="m-r-back" onclick="mShowHome()">←</button>
+        <div class="m-r-phone-lbl" id="m-r-phone"></div>
+        <div class="m-r-live"><div class="m-r-live-dot"></div>Live</div>
+      </div>
+      <div class="m-r-hero-body">
+        <div class="m-r-letter" id="m-r-letter">—</div>
+        <div>
+          <div class="m-r-hero-label">Risk Profile Band</div>
+          <div class="m-r-hero-name" id="m-r-hero-name">—</div>
+          <div class="m-r-hero-desc" id="m-r-hero-desc">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section tabs: Bands / Credit / Signals -->
+    <div class="m-stabs">
+      <div class="m-stab active" onclick="mSwitchTab('bands',this)">Bands</div>
+      <div class="m-stab" onclick="mSwitchTab('credit',this)">Credit</div>
+      <div class="m-stab" onclick="mSwitchTab('signals',this)">Signals</div>
+    </div>
+
+    <!-- ── BANDS tab ── -->
+    <div id="m-tab-bands" class="m-r-body active">
+      <div class="m-bands-ref" id="m-bands-ref"></div>
+      <div style="flex:1;overflow-y:auto;padding-bottom:10px">
+        <div id="m-band-main-card" class="m-band-detail"></div>
+        <div id="m-band-preview" class="m-band-preview"></div>
+      </div>
+    </div>
+
+    <!-- ── CREDIT tab ── -->
+    <div id="m-tab-credit" class="m-r-body">
+      <div style="overflow-y:auto;flex:1">
+        <div class="m-income-card" id="m-income-card">
+          <div style="font-size:11px;color:#9AA5B1;padding:8px 0">Loading income data…</div>
+        </div>
+        <div class="m-cr-hdr">
+          <div class="m-cr-icon">CR</div>
+          <div class="m-cr-title">Credit Risk Signals</div>
+          <div class="m-cr-count" id="m-cr-count">—</div>
+        </div>
+        <div class="m-cr-rows" id="m-cr-rows"></div>
+      </div>
+    </div>
+
+    <!-- ── SIGNALS tab ── -->
+    <div id="m-tab-signals" class="m-r-body" style="flex-direction:column">
+      <div class="m-sig-cattabs" id="m-sig-cattabs"></div>
+      <div class="m-sig-scroll" id="m-sig-scroll"></div>
+    </div>
+  </div>
+
+</div><!-- #m-app -->
 
 <script>
 /* ============================================================
@@ -1446,11 +1730,8 @@ function toggleCat(id){ document.getElementById(id).classList.toggle("open"); }
 /* ── Mobile: tap-to-open signal cards ── */
 function initMobileTap(){
   if(!('ontouchstart' in window)) return;
-  // Update lede text
   const lede = document.querySelector('#section-signals .report-section-h .lede');
-  // lede is hidden on mobile but update anyway
   if(lede) lede.textContent = 'Tap cards for details';
-
   document.addEventListener('click', function(e){
     const card = e.target.closest('.vcard-signal');
     if(card){
@@ -1463,6 +1744,439 @@ function initMobileTap(){
   }, true);
 }
 initMobileTap();
+
+/* ════════════════════════════════════════════════════════════
+ * MOBILE APP — full redesign, user-agent based
+ * Desktop code above is completely untouched.
+ * ════════════════════════════════════════════════════════════ */
+
+const IS_MOBILE = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+
+/* ── Mobile signal category → variable mapping ── */
+const MOBILE_SIG_CATS = [
+  { key:'payment', label:'Payment', title:'Payment Signals', vars:[
+    'thick_thin_data','yearly_transaction_volume','yoy_growth_percentage',
+    'failed_txn_count','failed_txn_amount_sum','error_ratio_card',
+    'error_ratio_last_12_weeks_emandate','error_ratio_last_24_weeks_emandate',
+    'repayment_error_ratio_l12w','risky_fails_to_success_trxn_ratio_l12m','risky_fails_to_success_trxn_ratio_l6m',
+  ]},
+  { key:'success', label:'Success', title:'Success Rate Signals', vars:[
+    'weighted_success_rate','success_rate_last_24_weeks_card','success_rate_last_24_weeks_emandate',
+    'weighted_error_ratio','weighted_error_ratio_last_12_weeks','weighted_error_ratio_last_24_weeks',
+  ]},
+  { key:'income', label:'Income', title:'Income & Spend', vars:[
+    'avg_amount','total_spend_last_12_weeks','upi_payment_amount','luxury_category_spend',
+    'perc_non_discretionary_spends','has_failed_high_value_txn',
+    'spend_last_1_year_fashion_and_lifestyle','spend_last_1_year_tours_and_travel',
+    'spend_last_1_year_lending','spend_last_1_year_government','ott_trxns_last_1_year',
+    'l12m_aov_real_estate','l12m_spend_astrology','l3m_spend_astrology',
+    'l12m_spend_micro_drama','l3m_spend_micro_drama',
+  ]},
+  { key:'risk', label:'Risk', title:'Risk & Credit', vars:[
+    'dpd_30_prob_band','dpd_90_prob_band','cd_dpd_30_prob_band',
+    'count_issuer_cc','loan_stacking_amount_l3m','loan_stacking_amount_l6m','unique_lenders_last_1_years',
+  ]},
+  { key:'spend', label:'Spend', title:'Spend & Vintage', vars:[
+    'spend_last_12_weeks_lending','spend_last_24_weeks_lending',
+    'log_aov_gold','log_aov_last_12_weeks_ecommerce','log_aov_last_12_weeks_services',
+    'log_aov_last_12_weeks_utilities','log_aov_last_24_weeks_ecommerce','log_aov_last_24_weeks_utilities',
+    'log_aov_utilities','weighted_log_aov',
+    'max_vintage','unique_city_transacted','unique_state_transacted',
+    'vintage_education','vintage_investments','vintage_services','vintage_utilities',
+    'l12m_aov_astrology','l3m_aov_astrology',
+  ]},
+];
+
+/* ── Mobile band definitions (matches desktop RISK_BANDS + RISK_SYNTH) ── */
+const M_BAND_BG = {A:'#E8F8EE',B:'#E0F7F5',C:'#E4ECFF',D:'#FFF7E0',E:'#EEF0F4',F:'#FEECEB',G:'#F1E8FE'};
+const M_BAND_FG = {A:'#0F7B3F',B:'#0E7C73',C:'#1E40AF',D:'#9A6A00',E:'#475569',F:'#B42318',G:'#6B21A8'};
+const M_BAND_SHORT = {A:'Elite',B:'Prime',C:'Power',D:'Sub-prime',E:'Dormant',F:'Risky',G:'New'};
+const M_BANDS = {
+  A:{name:'A · Elite Customers',  color:'#0F7B3F', traits:['Good transactional behaviour','Good credit behaviour on Razorpay','High affluence']},
+  B:{name:'B · Prime Customers',  color:'#0E7C73', traits:['Strong transactional behaviour','Good credit profile','Moderate-high affluence']},
+  C:{name:'C · Power Customers',  color:'#1E40AF', traits:['Above-average transaction volume','Moderate credit signals','Average affluence']},
+  D:{name:'D · Sub-prime',        color:'#9A6A00', traits:['Below-average credit profile','Some payment failures','Lower affluence signals']},
+  E:{name:'E · Dormant',          color:'#475569', traits:['Very low recent activity','Thin data profile','Unable to score accurately']},
+  F:{name:'F · Risky',            color:'#B42318', traits:['High default risk score','Poor credit history','High transaction failure rate']},
+  G:{name:'G · New to Razorpay',  color:'#6B21A8', traits:['New to Razorpay platform','Thin transaction history','No credit signals available']},
+};
+
+let mCurrentBand = 'A';
+
+/* ── Screen navigation ── */
+function mShowScreen(id){
+  ['m-home','m-scanning','m-results'].forEach(s => {
+    var el = document.getElementById(s);
+    if(el) el.classList.toggle('active', s===id);
+  });
+}
+function mShowHome(){ mShowScreen('m-home'); }
+function mShowScanning(){ mShowScreen('m-scanning'); }
+function mShowResults(){ mShowScreen('m-results'); }
+
+/* ── Tab switching ── */
+function mSwitchTab(tab, el){
+  document.querySelectorAll('.m-stab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['bands','credit','signals'].forEach(t => {
+    document.getElementById('m-tab-'+t).classList.toggle('active', t===tab);
+  });
+}
+function mSwitchCat(cat, el){
+  document.querySelectorAll('.m-sig-cattab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.m-cattab-panel').forEach(p => {
+    p.classList.toggle('active', p.id==='m-cat-'+cat);
+  });
+}
+
+/* ── Row tap-to-expand ── */
+function mToggleRow(row){
+  var wasOpen = row.classList.contains('open');
+  var list = row.closest('.m-cr-rows, .m-sig-rows');
+  if(list) list.querySelectorAll('.m-cr-row.open, .m-sig-row.open').forEach(function(r){ r.classList.remove('open'); });
+  if(!wasOpen) row.classList.add('open');
+}
+
+/* ── Band chip selection ── */
+function mSelectBand(band, el){
+  document.querySelectorAll('.m-bchip').forEach(c => c.classList.remove('on'));
+  el.classList.add('on');
+  var mainCard = document.getElementById('m-band-main-card');
+  var preview  = document.getElementById('m-band-preview');
+  if(band === mCurrentBand){
+    mainCard.style.display = 'block';
+    preview.style.display  = 'none';
+  } else {
+    mainCard.style.display = 'none';
+    var b = M_BANDS[band] || {name:band, color:'#475569', traits:[]};
+    preview.innerHTML =
+      '<div style="font-family:\'Sora\',sans-serif;font-size:14px;font-weight:700;color:'+b.color+';margin-bottom:5px">'+b.name+'</div>'+
+      '<div style="font-size:10.5px;color:#52606D;line-height:1.5;margin-bottom:9px">'+(RISK_SYNTH[band]||'—')+'</div>'+
+      b.traits.map(t => '<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:'+b.color+';font-weight:500;margin-bottom:2px"><span>✓</span>'+t+'</div>').join('');
+    preview.style.display = 'block';
+  }
+}
+
+/* ── Slider position: 0% = left/worst (red), 100% = right/best (green) ── */
+function mBandToSliderPos(varName, band){
+  if(!band) return null;
+  var b = String(band).toUpperCase().trim();
+  if(b==='K1'||b==='Z2') return null;
+  var dir = VAR_DIRECTION[varName] || 'high_is_good';
+  var scaling = VAR_SCALING[varName] || 'Custom Decile';
+
+  if(varName==='predicted_income_bucket'){
+    var ORDER=['A1','B1','C1','D1','E1','F1','G1'];
+    var idx=ORDER.indexOf(b); if(idx===-1) return null;
+    return (idx/(ORDER.length-1))*100;
+  }
+  if(varName==='thick_thin_data') return null;
+
+  if(scaling==='Narrow Decile'){
+    var ND=['B4','B3','B2','B1','A10','A9','A8','A7','A6','A5','A4','A3','A2','A1'];
+    var ni=ND.indexOf(b); if(ni===-1) return null;
+    return (ni/(ND.length-1))*100;
+  }
+
+  var letter=b.charAt(0);
+  var li=letter.charCodeAt(0)-65;
+  if(li<0||li>9) return null;
+  if(dir==='high_is_good') return (1-li/9)*100;
+  return (li/9)*100;
+}
+
+/* ── Render a mini colored slider bar ── */
+function mMiniSlider(varName, b){
+  if(b==='K1') return '<div class="m-sig-zero-badge">Explicit zero</div>';
+  var pos=mBandToSliderPos(varName,b);
+  if(pos===null) return '';
+  return '<div class="m-cr-st" style="margin-top:4px"><div class="m-cr-sd" style="left:'+pos.toFixed(0)+'%"></div></div>';
+}
+function mSigSlider(varName, b){
+  if(b==='K1') return '<div class="m-sig-zero-badge">Explicit zero</div>';
+  var pos=mBandToSliderPos(varName,b);
+  if(pos===null) return '';
+  return '<div class="m-sig-st"><div class="m-sig-sd" style="left:'+pos.toFixed(0)+'%"></div></div>';
+}
+
+/* ── Find variable description from catalogue ── */
+function findVarDesc(varName){
+  var def=findVarDef(varName);
+  if(def) return def.desc;
+  var rm=RISK_MODEL_VARS.find(function(v){ return v.name===varName; });
+  return rm ? rm.desc : '';
+}
+
+/* ── Animate loading steps ── */
+function mAnimateSteps(){
+  var icons=['m-s1-icon','m-s2-icon','m-s3-icon','m-s4-icon'];
+  var texts=['m-s1-text','m-s2-text','m-s3-text','m-s4-text'];
+  var txts=['SHA-256 hash computing…','Risk Profile API call…','Fetching enrichment data…','Mapping bands to meaning…'];
+  icons.forEach(function(id,i){
+    var ico=document.getElementById(id), txt=document.getElementById(texts[i]);
+    ico.className='m-step-icon pending'; ico.textContent='○';
+    txt.className='m-step-text pending';
+  });
+  function setDone(i){ var ic=document.getElementById(icons[i]),tx=document.getElementById(texts[i]); ic.className='m-step-icon done'; ic.textContent='✓'; tx.className='m-step-text done'; }
+  function setActive(i){ var ic=document.getElementById(icons[i]),tx=document.getElementById(texts[i]); ic.className='m-step-icon active'; ic.textContent='⟳'; tx.className='m-step-text active'; tx.textContent=txts[i]; }
+  setActive(0);
+  setTimeout(function(){ setDone(0); setActive(1); }, 900);
+  setTimeout(function(){ setDone(1); setActive(2); }, 1900);
+  setTimeout(function(){ setDone(2); setActive(3); }, 2900);
+  setTimeout(function(){ setDone(3); }, 4300);
+}
+
+/* ── Main mobile scan function ── */
+async function mRunScan(){
+  var phone = document.getElementById('m-phone').value.replace(/\D/g,'').slice(0,10);
+  if(!/^\d{10}$/.test(phone)){ alert('Please enter a valid 10-digit phone number.'); return; }
+  state.phone = phone;
+  document.getElementById('m-home-error').style.display = 'none';
+  document.getElementById('m-scan-title').textContent = 'Scanning '+phone.slice(0,3)+'XXXXXXX';
+  mShowScanning();
+  mAnimateSteps();
+  try {
+    if(!state.hash) await updateHash();
+    var settled = await Promise.allSettled([
+      runTs1(), runTs2(),
+      new Promise(function(r){ setTimeout(r,4500); }),
+    ]);
+    var ts1 = settled[0].status==='fulfilled' ? settled[0].value : {ok:false, errInfo:{title:'Network error', body:String(settled[0].reason)}};
+    var ts2 = settled[1].status==='fulfilled' ? settled[1].value : {ok:false, errInfo:{title:'Network error', body:String(settled[1].reason)}};
+    if(!ts1.ok && !ts2.ok){
+      var failed = ts1.errInfo || ts2.errInfo;
+      mShowError(failed.title, failed.body); return;
+    }
+    state.lastResult = {ts1, ts2};
+    mPopulateResults(ts1, ts2);
+    // Reset to Bands tab
+    document.querySelectorAll('.m-stab').forEach(function(t,i){ t.classList.toggle('active',i===0); });
+    ['bands','credit','signals'].forEach(function(t,i){ document.getElementById('m-tab-'+t).classList.toggle('active',i===0); });
+    mShowResults();
+  } catch(e){
+    mShowError('Network error', e.message||String(e));
+  }
+}
+
+function mShowError(title, body){
+  mShowHome();
+  document.getElementById('m-err-title').textContent = title;
+  document.getElementById('m-err-body').textContent  = body;
+  document.getElementById('m-home-error').style.display = 'block';
+}
+
+/* ── Populate all results from API data ── */
+function mPopulateResults(ts1, ts2){
+  // ─ Hero
+  var bandLetter = 'A';
+  if(ts1.ok){ var raw=extractTs1Band(ts1.body); if(raw) bandLetter=String(raw).trim().charAt(0).toUpperCase(); }
+  mCurrentBand = bandLetter;
+  var ref = RISK_BANDS.find(function(b){ return b.code===bandLetter; }) || {code:bandLetter, name:'Band '+bandLetter, bullets:[]};
+  document.getElementById('m-r-letter').textContent   = bandLetter;
+  document.getElementById('m-r-hero-name').textContent = ref.name;
+  document.getElementById('m-r-hero-desc').textContent = RISK_SYNTH[bandLetter]||'—';
+  document.getElementById('m-r-phone').textContent     = state.phone.slice(0,3)+'XXXXXXX';
+  mPopulateBandsTab(bandLetter);
+  mPopulateCreditTab(ts2);
+  mPopulateSignalsTab(ts2);
+}
+
+function mPopulateBandsTab(bandLetter){
+  // Chip row (all 7 bands, customer's band highlighted)
+  document.getElementById('m-bands-ref').innerHTML = RISK_BANDS.map(function(b){
+    var isCur = b.code===bandLetter;
+    return '<div class="m-bchip'+(isCur?' on':'')+'" style="background:'+M_BAND_BG[b.code]+';color:'+M_BAND_FG[b.code]+'" onclick="mSelectBand(\''+b.code+'\',this)">'+
+      '<div class="m-bchip-l" style="color:'+M_BAND_FG[b.code]+'">'+b.code+'</div>'+
+      '<div class="m-bchip-n">'+(M_BAND_SHORT[b.code]||b.code)+'</div>'+
+    '</div>';
+  }).join('');
+
+  // Main highlighted card for customer's band
+  var bd = M_BANDS[bandLetter] || {name:bandLetter, color:'#475569', traits:[]};
+  var mainCard = document.getElementById('m-band-main-card');
+  mainCard.style.borderLeftColor = bd.color;
+  mainCard.innerHTML =
+    '<div class="m-band-detail-name" style="color:'+bd.color+'">'+bd.name+'</div>'+
+    '<div class="m-band-detail-desc">'+(RISK_SYNTH[bandLetter]||'—')+'</div>'+
+    bd.traits.map(function(t){ return '<div class="m-band-check" style="color:'+bd.color+'"><span>✓</span>'+t+'</div>'; }).join('');
+  mainCard.style.display = 'block';
+  document.getElementById('m-band-preview').style.display = 'none';
+}
+
+function mPopulateCreditTab(ts2){
+  var incomeCard = document.getElementById('m-income-card');
+  var incomeBand = ts2.ok ? extractTs2Attr(ts2.body,'predicted_income_bucket') : null;
+
+  if(incomeBand && INCOME_BUCKETS[String(incomeBand).toUpperCase()]){
+    var ib = String(incomeBand).toUpperCase();
+    var ibData = INCOME_BUCKETS[ib];
+    var colors = getBandColor(ib,'predicted_income_bucket') || {bg:'#E8F2FE',fg:'#274DB0'};
+    var ORDER=['A1','B1','C1','D1','E1','F1','G1'];
+    var idx = ORDER.indexOf(ib);
+    var pos = idx>=0 ? (idx/(ORDER.length-1))*100 : 50;
+    var tiers=['Low Income Segment','Low Income Segment','Mid Income Segment','Mid Income Segment','Affluent Segment','High Income Segment','Top Income Segment'];
+    var tierLabel = idx>=0 ? tiers[idx] : 'Income Segment';
+    incomeCard.innerHTML =
+      '<div class="m-income-top">'+
+        '<div>'+
+          '<div class="m-income-lbl">Estimated Annual Income</div>'+
+          '<div class="m-income-amt">'+ibData.range+'</div>'+
+          '<div class="m-income-tier"><div class="m-income-tier-dot" style="background:'+colors.fg+'"></div>'+tierLabel+'</div>'+
+        '</div>'+
+        '<div class="m-income-pill" style="background:'+colors.bg+';color:'+colors.fg+'">'+ib+'</div>'+
+      '</div>'+
+      '<div class="m-slider-lbl"><span>Low</span><span>Mid</span><span>High</span></div>'+
+      '<div class="m-slider-track"><div class="m-slider-thumb" style="left:'+pos.toFixed(0)+'%"></div></div>';
+  } else {
+    incomeCard.innerHTML = '<div style="font-size:11px;color:#9AA5B1;padding:8px 0">Income data unavailable for this customer.</div>';
+  }
+
+  // Credit risk rows: DPD-30, DPD-90, CD, Credit Card Issuers, Data Profile
+  var CREDIT_VARS = [
+    {name:'dpd_30_prob_band',   label:VAR_LABELS['dpd_30_prob_band'],   desc:RISK_MODEL_VARS[0].desc},
+    {name:'dpd_90_prob_band',   label:VAR_LABELS['dpd_90_prob_band'],   desc:RISK_MODEL_VARS[1].desc},
+    {name:'cd_dpd_30_prob_band',label:VAR_LABELS['cd_dpd_30_prob_band'],desc:RISK_MODEL_VARS[2].desc},
+    {name:'count_issuer_cc',    label:VAR_LABELS['count_issuer_cc'],    desc:(findVarDef('count_issuer_cc')||{}).desc||''},
+    {name:'thick_thin_data',    label:VAR_LABELS['thick_thin_data'],    desc:(findVarDef('thick_thin_data')||{}).desc||''},
+  ];
+  var rows = CREDIT_VARS.map(function(v){
+    if(!ts2.ok) return '';
+    var band = extractTs2Attr(ts2.body, v.name);
+    if(!band) return '';
+    var b=String(band).toUpperCase().trim();
+    if(b==='Z2') return '';
+    var colors = getBandColor(b, v.name) || {bg:'#EEF0F4',fg:'#475569'};
+    var meaning = describeBandForVar(v.name, b);
+    var pillStyle = 'background:'+colors.bg+';color:'+colors.fg+(b.length>3?';font-size:9px':'');
+    var right, slider;
+    if(v.name==='thick_thin_data'){
+      var tt=THICK_THIN[b];
+      right='<div class="m-cr-badge" style="background:'+colors.bg+';color:'+colors.fg+'">'+(tt?tt.label:b)+'</div>';
+      slider='';
+    } else if(b==='K1'){
+      right='<div class="m-sig-zero-badge">Explicit zero</div>';
+      slider='';
+    } else {
+      right='<div class="m-cr-pct" style="color:'+colors.fg+'">'+(meaning.pct||b)+'</div>';
+      slider=mMiniSlider(v.name,b);
+    }
+    return '<div class="m-cr-row" onclick="mToggleRow(this)">'+
+      '<div class="m-cr-pill" style="'+pillStyle+'">'+b+'</div>'+
+      '<div class="m-cr-mid"><div class="m-cr-name">'+v.label+'</div>'+slider+'<div class="m-row-desc">'+v.desc+'</div></div>'+
+      right+'</div>';
+  }).filter(Boolean);
+  document.getElementById('m-cr-rows').innerHTML = rows.join('') || '<div style="padding:10px;font-size:11px;color:#9AA5B1">Credit data unavailable.</div>';
+  document.getElementById('m-cr-count').textContent = rows.length+' signal'+(rows.length!==1?'s':'');
+}
+
+function mPopulateSignalsTab(ts2){
+  var cattabs = document.getElementById('m-sig-cattabs');
+  var scroll  = document.getElementById('m-sig-scroll');
+  if(!ts2.ok){
+    cattabs.innerHTML='';
+    scroll.innerHTML='<div style="padding:16px;font-size:11px;color:#9AA5B1">Signals unavailable.</div>';
+    return;
+  }
+  var rendered = MOBILE_SIG_CATS.map(function(cat){
+    var rows = cat.vars.map(function(varName){
+      var band = extractTs2Attr(ts2.body, varName);
+      if(!band) return '';
+      var b=String(band).toUpperCase().trim();
+      if(b==='Z2') return '';
+      var colors = getBandColor(b, varName) || {bg:'#EEF0F4',fg:'#475569'};
+      var meaning = describeBandForVar(varName, b);
+      var desc = findVarDesc(varName);
+      var label = VAR_LABELS[varName] || varName;
+      var pillStyle='background:'+colors.bg+';color:'+colors.fg+(b.length>3?';font-size:9px':'');
+      var right, slider;
+      if(varName==='thick_thin_data'){
+        var tt=THICK_THIN[b];
+        right='<div class="m-sig-zero-badge" style="background:'+colors.bg+';color:'+colors.fg+'">'+(tt?tt.label:b)+'</div>';
+        slider='';
+      } else if(varName==='has_failed_high_value_txn'){
+        var isRisk=(b==='1'||b==='TRUE');
+        right='<div class="m-sig-zero-badge" style="'+(isRisk?'background:#FEECEB;color:#B42318':'background:#E8F8EE;color:#0F7B3F')+'">'+(isRisk?'Yes':'No')+'</div>';
+        slider='';
+      } else if(b==='K1'){
+        right='<div class="m-sig-zero-badge">Explicit zero</div>';
+        slider='';
+      } else {
+        right='<div class="m-sig-pct" style="color:'+colors.fg+'">'+(meaning.pct||b)+'</div>';
+        slider=mSigSlider(varName,b);
+      }
+      return '<div class="m-sig-row" onclick="mToggleRow(this)">'+
+        '<div class="m-sig-pill" style="'+pillStyle+'">'+b+'</div>'+
+        '<div class="m-sig-mid"><div class="m-sig-name">'+label+'</div>'+slider+'<div class="m-row-desc">'+desc+'</div></div>'+
+        right+'</div>';
+    }).filter(Boolean);
+    return {cat:cat, rows:rows};
+  }).filter(function(x){ return x.rows.length>0; });
+
+  if(rendered.length===0){
+    cattabs.innerHTML='';
+    scroll.innerHTML='<div style="padding:16px;font-size:11px;color:#9AA5B1">No signals returned for this customer.</div>';
+    return;
+  }
+  cattabs.innerHTML = rendered.map(function(x,i){
+    return '<div class="m-sig-cattab'+(i===0?' active':'')+'" onclick="mSwitchCat(\''+x.cat.key+'\',this)">'+x.cat.label+'</div>';
+  }).join('');
+  scroll.innerHTML = rendered.map(function(x,i){
+    return '<div id="m-cat-'+x.cat.key+'" class="m-cattab-panel'+(i===0?' active':'')+'">'+
+      '<div class="m-sig-grp-hdr"><div class="m-sig-grp-title">'+x.cat.title+'</div><div class="m-sig-grp-count">'+x.rows.length+' vars</div></div>'+
+      '<div class="m-sig-rows">'+x.rows.join('')+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+/* ── Mobile initialization ── */
+if(IS_MOBILE){
+  // Show mobile fullscreen, hide all desktop sections
+  document.getElementById('m-app').classList.add('active');
+  document.querySelector('.header').style.display = 'none';
+  document.querySelector('.hero').style.display = 'none';
+  document.querySelector('.control').style.display = 'none';
+  document.querySelector('.result').style.display = 'none';
+  document.querySelector('.pfoot').style.display = 'none';
+  document.body.style.background = '#274DB0';
+  document.body.style.overflow = 'hidden';
+
+  // Phone input → live hash preview
+  document.getElementById('m-phone').addEventListener('input', function(e){
+    var val = e.target.value.replace(/\D/g,'').slice(0,10);
+    e.target.value = val;
+    if(/^\d{10}$/.test(val)){
+      sha256Hex(val).then(function(h){ document.getElementById('m-hash-val').textContent = h.slice(0,32)+'…'; });
+    } else {
+      document.getElementById('m-hash-val').textContent = '(enter 10 digits to see hash)';
+    }
+  });
+  document.getElementById('m-phone').addEventListener('keydown', function(e){
+    if(e.key==='Enter') mRunScan();
+  });
+
+  // Update mobile Live chip alongside the existing checkProxy
+  setInterval(async function(){
+    var el = document.getElementById('m-live-text');
+    if(!el) return;
+    try {
+      await fetch(PROXY+'/api/health',{method:'GET',cache:'no-store'});
+      el.textContent = 'Live';
+    } catch(e){
+      el.textContent = 'Offline';
+    }
+  }, 5000);
+  // Trigger once immediately
+  (async function(){
+    var el = document.getElementById('m-live-text');
+    try {
+      await fetch(PROXY+'/api/health',{method:'GET',cache:'no-store'});
+      if(el) el.textContent = 'Live';
+    } catch(e){
+      if(el) el.textContent = 'Offline';
+    }
+  })();
+}
 </script>
 </body>
 </html>
