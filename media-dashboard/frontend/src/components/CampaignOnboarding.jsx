@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 const API = process.env.REACT_APP_API_URL || "";
 
@@ -166,33 +166,87 @@ function buildCampaignDetailsJson(cd) {
   });
 }
 
-// ─── Email draft builder (matches the AdOps sample format) ─────────────────────
+// ─── Email draft builder (HTML, matches the AdOps sample format) ───────────────
 function buildEmailDraft(basic, cd) {
   const v = (x) => (x !== undefined && x !== null && String(x).trim()) ? String(x).trim() : "";
-  const L = [];
-  L.push("Hi,");
-  L.push("");
-  L.push("Please find below the campaign details for your reference.");
-  L.push("");
-  if (v(cd.landing_link)) L.push(`Landing Link: ${v(cd.landing_link)}`);
-  if (v(cd.offer_title))  L.push(`Offer Title: ${v(cd.offer_title)}`);
-  L.push("");
-  if (v(cd.tc))            { L.push("Terms & Conditions:"); L.push(v(cd.tc)); L.push(""); }
-  if (v(cd.how_to_redeem)) { L.push("How to Redeem:"); L.push(v(cd.how_to_redeem)); L.push(""); }
-  if (v(cd.codes))       L.push(`Promo Code(s): ${v(cd.codes)}`);
-  if (v(cd.expiry_date)) L.push(`Code Validity: ${v(cd.expiry_date)}`);
-  L.push("");
-  if (v(cd.creative_url)) L.push(`Creative: ${v(cd.creative_url)}`);
-  if (v(cd.logo_url))     L.push(`Logo: ${v(cd.logo_url)}`);
-  L.push("");
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Each non-empty line of a textarea becomes a bullet point
+  const bullets = (text) => {
+    const items = String(text || "").split("\n").map(s => s.trim()).filter(Boolean);
+    if (!items.length) return "";
+    return "<ul style='margin:4px 0 12px 0;padding-left:22px'>"
+      + items.map(i => `<li>${esc(i)}</li>`).join("") + "</ul>";
+  };
+  const P = [];
+  P.push("<p>Hi,</p>");
+  P.push("<p>Please find below the campaign details for your reference.</p>");
+  const kv = [];
+  if (v(cd.landing_link)) kv.push(`<b>Landing Link:</b> ${esc(v(cd.landing_link))}`);
+  if (v(cd.offer_title))  kv.push(`<b>Offer Title:</b> ${esc(v(cd.offer_title))}`);
+  if (kv.length) P.push("<p>" + kv.join("<br>") + "</p>");
+  if (v(cd.tc))            P.push(`<p><b>Terms &amp; Conditions:</b></p>${bullets(cd.tc)}`);
+  if (v(cd.how_to_redeem)) P.push(`<p><b>How to Redeem:</b></p>${bullets(cd.how_to_redeem)}`);
+  const codes = [];
+  if (v(cd.codes))       codes.push(`<b>Promo Code(s):</b> ${esc(v(cd.codes))}`);
+  if (v(cd.expiry_date)) codes.push(`<b>Code Validity:</b> ${esc(v(cd.expiry_date))}`);
+  if (codes.length) P.push("<p>" + codes.join("<br>") + "</p>");
+  const assets = [];
+  if (v(cd.creative_url)) assets.push(`<b>Creative:</b> <a href="${esc(v(cd.creative_url))}">Creative</a>`);
+  if (v(cd.logo_url))     assets.push(`<b>Logo:</b> <a href="${esc(v(cd.logo_url))}">Logo</a>`);
+  if (assets.length) P.push("<p>" + assets.join("<br>") + "</p>");
   const targeting = v(cd.segment_description) || v(basic.additional_context);
-  if (targeting) { L.push(`Targeting: ${targeting}`); L.push(""); }
-  if (v(cd.total_budget)) L.push(`Daily Budget: Rs ${v(cd.total_budget)} per day`);
-  if (v(cd.cpc) || v(cd.cpm)) L.push(`CPC/CPD: ${v(cd.cpc) || v(cd.cpm)}`);
-  L.push("");
-  L.push("Regards,");
-  L.push("AdOps Team | Razorpay");
-  return L.join("\n");
+  if (targeting) P.push(`<p><b>Targeting:</b> ${esc(targeting)}</p>`);
+  const budget = [];
+  if (v(cd.total_budget)) budget.push(`<b>Daily Budget:</b> Rs ${esc(v(cd.total_budget))} per day`);
+  if (v(cd.cpc) || v(cd.cpm)) budget.push(`<b>CPC/CPD:</b> ${esc(v(cd.cpc) || v(cd.cpm))}`);
+  if (budget.length) P.push("<p>" + budget.join("<br>") + "</p>");
+  P.push("<p>Regards,<br>AdOps Team | Razorpay</p>");
+  return P.join("\n");
+}
+
+// ─── Minimal rich-text editor (Bold / Italic / Underline / bullet / numbered) ──
+function RichTextEditor({ html, onChange }) {
+  const ref = useRef(null);
+  // Seed content only when the incoming html differs from the DOM (new draft);
+  // typing keeps html === innerHTML, so the cursor never jumps.
+  useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== (html || "")) {
+      ref.current.innerHTML = html || "";
+    }
+  }, [html]);
+  const exec = (cmd) => {
+    document.execCommand(cmd, false, null);
+    if (ref.current) { onChange(ref.current.innerHTML); ref.current.focus(); }
+  };
+  const tbBtn = {
+    padding: "4px 10px", border: "1px solid #cbd5e1", background: "#fff",
+    borderRadius: 4, cursor: "pointer", fontSize: 13, minWidth: 30,
+  };
+  const tools = [
+    ["bold", <b>B</b>], ["italic", <i>I</i>], ["underline", <u>U</u>],
+    ["insertUnorderedList", "• List"], ["insertOrderedList", "1. List"],
+  ];
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+        {tools.map(([cmd, label]) => (
+          <button key={cmd} type="button" style={tbBtn}
+            onMouseDown={e => { e.preventDefault(); exec(cmd); }}>{label}</button>
+        ))}
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={() => ref.current && onChange(ref.current.innerHTML)}
+        style={{
+          minHeight: 300, border: "1px solid #cbd5e1", borderRadius: 6,
+          padding: "10px 12px", fontSize: 13, lineHeight: 1.5, background: "#fff",
+          overflowY: "auto",
+        }}
+      />
+    </div>
+  );
 }
 
 function buildEmailSubject(basic, cd) {
@@ -314,7 +368,7 @@ export function NewCampaignForm({ filterOptions }) {
     try {
       const res = await fetch(`${API}/api/onboarding/send-email`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipients: recips, subject: emailSubject, body: emailBody }),
+        body: JSON.stringify({ recipients: recips, subject: emailSubject, body: emailBody, is_html: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to send email");
@@ -372,12 +426,9 @@ export function NewCampaignForm({ filterOptions }) {
           />
 
           <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Body (editable)</label>
-          <textarea
-            value={emailBody}
-            onChange={e => setEmailBody(e.target.value)}
-            rows={18}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13, marginTop: 4, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: 1.5, boxSizing: "border-box", resize: "vertical" }}
-          />
+          <div style={{ marginTop: 4 }}>
+            <RichTextEditor html={emailBody} onChange={setEmailBody} />
+          </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
             <button
@@ -571,8 +622,16 @@ export function NewCampaignForm({ filterOptions }) {
           <div style={S.grid2}>
             <Field label="Brand Name"><input style={S.input} value={cd.brand_name} onChange={e => setC("brand_name", e.target.value)} placeholder="Brand name" /></Field>
             <Field label="Offer Title"><input style={S.input} value={cd.offer_title} onChange={e => setC("offer_title", e.target.value)} placeholder="Offer title" /></Field>
-            <Field label="T&C"><input style={S.input} value={cd.tc} onChange={e => setC("tc", e.target.value)} placeholder="Terms & conditions link or text" /></Field>
-            <Field label="How to Redeem"><input style={S.input} value={cd.how_to_redeem} onChange={e => setC("how_to_redeem", e.target.value)} placeholder="Redemption instructions" /></Field>
+            <Field label="T&C" hint="One point per line — becomes bullet points in the email">
+              <textarea style={{ ...S.input, minHeight: 90, fontFamily: "inherit", resize: "vertical" }}
+                value={cd.tc} onChange={e => setC("tc", e.target.value)}
+                placeholder={"One condition per line, e.g.\nGet flat ₹250 off on your bill\nValid only for first-time customers\nCoupon valid until 31st August 2026"} />
+            </Field>
+            <Field label="How to Redeem" hint="One step per line — becomes bullet points in the email">
+              <textarea style={{ ...S.input, minHeight: 90, fontFamily: "inherit", resize: "vertical" }}
+                value={cd.how_to_redeem} onChange={e => setC("how_to_redeem", e.target.value)}
+                placeholder={"One step per line, e.g.\nDownload and open the app\nSign in and book a service\nApply the coupon code at checkout"} />
+            </Field>
             <Field label="Rzp Cut (%)" hint="Razorpay's revenue cut percentage">
               <input style={S.input} type="number" value={cd.rzp_cut} onChange={e => setC("rzp_cut", e.target.value)} placeholder="0" />
             </Field>

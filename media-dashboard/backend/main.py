@@ -639,7 +639,8 @@ def onboarding_submit(req: OnboardingSubmitRequest):
 class SendCampaignEmailRequest(BaseModel):
     recipients: List[str]
     subject: str = ""
-    body: str = ""           # final (user-edited) plain-text body to send
+    body: str = ""           # final (user-edited) body to send
+    is_html: bool = False    # True when body is rich-text HTML from the editor
     cc: Optional[List[str]] = None
 
 
@@ -656,10 +657,10 @@ def onboarding_send_email(req: SendCampaignEmailRequest):
 
     subject = req.subject.strip() or "Campaign Details"
     cc = [c.strip() for c in (req.cc or []) if c and c.strip()] or None
+    subtype = "html" if req.is_html else "plain"
 
     try:
-        # Send the edited body as plain text to preserve the author's formatting
-        send_email(recips, subject, req.body, subtype="plain", cc=cc)
+        send_email(recips, subject, req.body, subtype=subtype, cc=cc)
         return {"success": True, "sent_to": recips}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {e}")
