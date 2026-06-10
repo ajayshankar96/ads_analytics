@@ -241,7 +241,12 @@ export default function PublisherReporting({ filterOptions = {} }) {
   const loadReports = () => {
     setLoadingReports(true);
     getPublisherReports()
-      .then((d) => setReports(d.reports || []))
+      .then((d) => {
+        const sorted = [...(d.reports || [])].sort(
+          (a, b) => String(b.createdDate || "").localeCompare(String(a.createdDate || ""))
+        );
+        setReports(sorted);
+      })
       .catch(console.error)
       .finally(() => setLoadingReports(false));
   };
