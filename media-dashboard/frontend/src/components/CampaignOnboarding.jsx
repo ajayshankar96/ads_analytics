@@ -314,6 +314,86 @@ function RichTextEditor({ html, onChange }) {
   );
 }
 
+// Suggested recipient emails shown in the dropdown (free-typed emails also allowed)
+const SUGGESTED_EMAILS = [
+  "souradeep.pal@razorpay.com",
+  "adarsh.jain@razorpay.com",
+  "ajay.shankar@razorpay.com",
+  "chithra.r@razorpay.com",
+];
+
+// Chip-based multi-select with a searchable suggestions dropdown.
+function RecipientSelect({ value, onChange, suggestions }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  const addEmail = (em) => {
+    const e = String(em).trim().replace(/[,;]+$/, "");
+    if (e && isEmail(e) && !value.includes(e)) onChange([...value, e]);
+    setQuery("");
+  };
+  const removeEmail = (em) => onChange(value.filter((x) => x !== em));
+
+  const filtered = suggestions.filter(
+    (s) => !value.includes(s) && s.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const onKeyDown = (e) => {
+    if ((e.key === "Enter" || e.key === "," || e.key === " ") && query.trim()) {
+      e.preventDefault(); addEmail(query);
+    } else if (e.key === "Backspace" && !query && value.length) {
+      removeEmail(value[value.length - 1]);
+    }
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <div
+        onClick={() => setOpen(true)}
+        style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", border: "1px solid #cbd5e1", borderRadius: 6, padding: "6px 8px", background: "#fff", cursor: "text" }}
+      >
+        {value.map((em) => (
+          <span key={em} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#eff6ff", color: "#1e3a5f", borderRadius: 12, padding: "2px 4px 2px 9px", fontSize: 12 }}>
+            {em}
+            <span onClick={(e) => { e.stopPropagation(); removeEmail(em); }} style={{ cursor: "pointer", color: "#64748b", fontSize: 14, padding: "0 3px" }}>×</span>
+          </span>
+        ))}
+        <input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onKeyDown={onKeyDown}
+          onFocus={() => setOpen(true)}
+          placeholder={value.length ? "" : "Type or pick an email…"}
+          style={{ flex: 1, minWidth: 180, border: "none", outline: "none", fontSize: 13, padding: "2px" }}
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 30, left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, boxShadow: "0 6px 18px rgba(0,0,0,0.12)", maxHeight: 210, overflowY: "auto" }}>
+          {filtered.map((s) => (
+            <div
+              key={s}
+              onClick={() => { addEmail(s); setOpen(true); }}
+              style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, color: "#1e293b" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+            >
+              {s}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function buildEmailSubject(basic, cd) {
   const brand = (cd.brand_name || basic.brand || basic.advertiser || "Campaign").trim();
   const offer = (cd.offer_title || basic.offer || "").trim();
@@ -372,7 +452,7 @@ export function NewCampaignForm({ filterOptions }) {
   // Email-after-submit state (draft → edit → send)
   useGisLoaded();   // loads Google Sign-In when a Web client ID is configured
   const [showEmailDraft, setShowEmailDraft] = useState(false);
-  const [recipients, setRecipients] = useState("");
+  const [recipients, setRecipients] = useState([]);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -427,7 +507,7 @@ export function NewCampaignForm({ filterOptions }) {
   };
 
   const handleSendEmail = async () => {
-    const recips = recipients.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+    const recips = recipients.map(s => s.trim()).filter(Boolean);
     if (!recips.length) { setEmailAlert({ type: "error", msg: "Enter at least one recipient email." }); return; }
     if (!emailBody.trim()) { setEmailAlert({ type: "error", msg: "Email body is empty." }); return; }
     setSendingEmail(true); setEmailAlert(null);
@@ -483,13 +563,9 @@ export function NewCampaignForm({ filterOptions }) {
           </div>
 
           <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Recipients</label>
-          <input
-            type="text"
-            value={recipients}
-            onChange={e => setRecipients(e.target.value)}
-            placeholder="recipient1@razorpay.com, recipient2@razorpay.com"
-            style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13, marginTop: 4, marginBottom: 10, boxSizing: "border-box" }}
-          />
+          <div style={{ marginTop: 4, marginBottom: 10 }}>
+            <RecipientSelect value={recipients} onChange={setRecipients} suggestions={SUGGESTED_EMAILS} />
+          </div>
 
           <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Subject</label>
           <input
