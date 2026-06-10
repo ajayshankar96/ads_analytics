@@ -3,9 +3,9 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 const API = process.env.REACT_APP_API_URL || "";
 
 // ─── Client-side Google Sign-In for per-user email sending (Option A) ──────────
-// Paste the GCP OAuth *Web application* client ID here. While empty, the app
-// falls back to the server-side sender (from the service account).
-const GOOGLE_WEB_CLIENT_ID = "";
+// GCP OAuth *Web application* client ID. While empty, the app falls back to
+// the server-side sender (from the service account).
+const GOOGLE_WEB_CLIENT_ID = "38441679546-r2kloe55sdg1gsv334ohf36kqsf88t28.apps.googleusercontent.com";
 
 // Loads the Google Identity Services script once; returns true when ready.
 function useGisLoaded() {
