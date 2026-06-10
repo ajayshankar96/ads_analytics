@@ -444,25 +444,45 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
-    spd_idx = _get_col(headers, "Publisher_Spends")
-    if spd_idx < 0:
-        spd_idx = COL["PUBLISHER_SPENDS"]
+    # When no explicit date range is set, derive the window from the view mode
+    # (weekly = current week, monthly = current month, mtd = month-to-date).
+    if not date_from and not date_to:
+        ranges = _get_date_ranges(view_mode)
+        date_from = _parse_date(ranges["current"]["start"])
+        date_to = _parse_date(ranges["current"]["end"])
+
+    # Resolve columns by header name (robust to sheet column reordering);
+    # fall back to the positional COL map only if the header isn't found.
+    def hcol(name, fallback):
+        i = _get_col(headers, name)
+        return i if i >= 0 else fallback
+    adv_idx = hcol("Advertiser", COL["ADVERTISER"])
+    pub_idx = hcol("Publisher", COL["PUBLISHER"])
+    seg_idx = hcol("Segment", COL["SEGMENT"])
+    date_idx = hcol("Date", COL["DATE"])
+    imp_idx = hcol("Impressions", COL["IMPRESSIONS"])
+    clk_idx = hcol("Clicks", COL["CLICKS"])
+    spd_idx = hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])
+    ql_idx = hcol("QL", COL["QL"])
+    qqg_idx = hcol("QQG", COL["QQG"])
+    ord_idx = hcol("Orders", COL["ORDERS"])
+    rev_idx = hcol("Revenue", COL["REVENUE"])
 
     agg: Dict[str, Dict[str, Dict[str, dict]]] = {}  # adv → pub → seg → metrics
 
     for row in rows:
-        if len(row) <= COL["SEGMENT"]:
+        if len(row) <= seg_idx:
             continue
 
-        adv = _safe_str(row[COL["ADVERTISER"]])
-        pub = _safe_str(row[COL["PUBLISHER"]])
-        seg = _safe_str(row[COL["SEGMENT"]]) or "Unknown"
+        adv = _safe_str(row[adv_idx])
+        pub = _safe_str(row[pub_idx])
+        seg = _safe_str(row[seg_idx]) or "Unknown"
 
         if adv_filter and adv not in adv_filter:
             continue
 
         if date_from or date_to:
-            d = _parse_date(row[COL["DATE"]])
+            d = _parse_date(row[date_idx]) if len(row) > date_idx else None
             if d is None:
                 continue
             if date_from and d < date_from:
@@ -479,13 +499,13 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
                                    "ql": 0, "qqg": 0, "orders": 0, "revenue": 0}
 
         m = agg[adv][pub][seg]
-        m["impressions"] += _to_float(row[COL["IMPRESSIONS"]]) if len(row) > COL["IMPRESSIONS"] else 0
-        m["clicks"] += _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0
+        m["impressions"] += _to_float(row[imp_idx]) if len(row) > imp_idx else 0
+        m["clicks"] += _to_float(row[clk_idx]) if len(row) > clk_idx else 0
         m["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
-        m["ql"] += _to_float(row[COL["QL"]]) if len(row) > COL["QL"] else 0
-        m["qqg"] += _to_float(row[COL["QQG"]]) if len(row) > COL["QQG"] else 0
-        m["orders"] += _to_float(row[COL["ORDERS"]]) if len(row) > COL["ORDERS"] else 0
-        m["revenue"] += _to_float(row[COL["REVENUE"]]) if len(row) > COL["REVENUE"] else 0
+        m["ql"] += _to_float(row[ql_idx]) if len(row) > ql_idx else 0
+        m["qqg"] += _to_float(row[qqg_idx]) if len(row) > qqg_idx else 0
+        m["orders"] += _to_float(row[ord_idx]) if len(row) > ord_idx else 0
+        m["revenue"] += _to_float(row[rev_idx]) if len(row) > rev_idx else 0
 
     # Build nested output
     advertisers = []
@@ -538,19 +558,33 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
-    spd_idx = _get_col(headers, "Publisher_Spends")
-    if spd_idx < 0:
-        spd_idx = COL["PUBLISHER_SPENDS"]
+    if not date_from and not date_to:
+        ranges = _get_date_ranges(view_mode)
+        date_from = _parse_date(ranges["current"]["start"])
+        date_to = _parse_date(ranges["current"]["end"])
+
+    def hcol(name, fallback):
+        i = _get_col(headers, name)
+        return i if i >= 0 else fallback
+    adv_idx = hcol("Advertiser", COL["ADVERTISER"])
+    pub_idx = hcol("Publisher", COL["PUBLISHER"])
+    seg_idx = hcol("Segment", COL["SEGMENT"])
+    date_idx = hcol("Date", COL["DATE"])
+    imp_idx = hcol("Impressions", COL["IMPRESSIONS"])
+    clk_idx = hcol("Clicks", COL["CLICKS"])
+    spd_idx = hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])
+    ql_idx = hcol("QL", COL["QL"])
+    qqg_idx = hcol("QQG", COL["QQG"])
 
     agg: Dict[str, Dict[str, Dict[str, dict]]] = {}  # pub → adv → seg → metrics
 
     for row in rows:
-        if len(row) <= COL["SEGMENT"]:
+        if len(row) <= seg_idx:
             continue
 
-        pub = _safe_str(row[COL["PUBLISHER"]])
-        adv = _safe_str(row[COL["ADVERTISER"]])
-        seg = _safe_str(row[COL["SEGMENT"]]) or "Unknown"
+        pub = _safe_str(row[pub_idx])
+        adv = _safe_str(row[adv_idx])
+        seg = _safe_str(row[seg_idx]) or "Unknown"
 
         if pub_filter and pub not in pub_filter:
             continue
@@ -558,7 +592,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
             continue
 
         if date_from or date_to:
-            d = _parse_date(row[COL["DATE"]])
+            d = _parse_date(row[date_idx]) if len(row) > date_idx else None
             if d is None:
                 continue
             if date_from and d < date_from:
@@ -574,11 +608,11 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
             agg[pub][adv][seg] = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0}
 
         m = agg[pub][adv][seg]
-        m["impressions"] += _to_float(row[COL["IMPRESSIONS"]]) if len(row) > COL["IMPRESSIONS"] else 0
-        m["clicks"] += _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0
+        m["impressions"] += _to_float(row[imp_idx]) if len(row) > imp_idx else 0
+        m["clicks"] += _to_float(row[clk_idx]) if len(row) > clk_idx else 0
         m["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
-        m["ql"] += _to_float(row[COL["QL"]]) if len(row) > COL["QL"] else 0
-        m["qqg"] += _to_float(row[COL["QQG"]]) if len(row) > COL["QQG"] else 0
+        m["ql"] += _to_float(row[ql_idx]) if len(row) > ql_idx else 0
+        m["qqg"] += _to_float(row[qqg_idx]) if len(row) > qqg_idx else 0
 
     publishers = []
     for pub, advs in sorted(agg.items()):
