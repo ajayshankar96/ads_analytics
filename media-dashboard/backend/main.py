@@ -43,12 +43,6 @@ from sheets_client import (
     write_sheet_tab,
     share_spreadsheet,
     ensure_sheet_tab,
-    ensure_reports_folder,
-    move_to_folder,
-    set_app_properties,
-    get_app_properties,
-    list_folder_files,
-    trash_file,
 )
 from reporting_logic import (
     FORCED_COLS,
@@ -792,90 +786,14 @@ def _read_registry(sheet_name: str) -> List:
         return []
 
 
-# ── Drive-folder report registry helpers ───────────────────────────────────────
-# Reports live as spreadsheets in a dedicated Drive folder owned by the service
-# account. All metadata travels with each file as appProperties — no separate
-# registry sheet to keep in sync (which previously broke silently on the
-# read-only KPI spreadsheet).
-
-def _drive_file_to_adv_report(f: dict) -> dict:
-    ap = f.get("appProperties", {}) or {}
-    created = f.get("createdTime", "") or ""
-    return {
-        "id": f.get("id", ""),
-        "reportName": ap.get("mdReportName", f.get("name", "")),
-        "advertiser": ap.get("mdAdvertiser", ""),
-        "dateFrom": ap.get("mdDateFrom", "All"),
-        "views": [v for v in ap.get("mdViews", "").split(",") if v],
-        "selectedColumns": [c for c in ap.get("mdSelectedColumns", "").split(",") if c],
-        "spreadsheetUrl": f.get("webViewLink", ""),
-        "spreadsheetId": f.get("id", ""),
-        "createdBy": ap.get("mdCreatedBy", ""),
-        "createdDate": created.replace("T", " ")[:19] if created else "",
-        "lastRefreshed": ap.get("mdLastRefreshed", ""),
-    }
-
-
-def _drive_file_to_pub_report(f: dict) -> dict:
-    import json as _json
-    ap = f.get("appProperties", {}) or {}
-    created = f.get("createdTime", "") or ""
-    try:
-        advertisers = _json.loads(ap.get("mdAdvertisersJson", "")) if ap.get("mdAdvertisersJson") else []
-    except Exception:
-        advertisers = []
-    return {
-        "id": f.get("id", ""),
-        "reportName": ap.get("mdReportName", f.get("name", "")),
-        "publisher": ap.get("mdPublisher", ""),
-        "advertisers": advertisers,
-        "dateFrom": ap.get("mdDateFrom", "All"),
-        "dateTo": ap.get("mdDateTo", ""),
-        "reportingLevels": [v for v in ap.get("mdReportingLevels", "").split(",") if v],
-        "spreadsheetUrl": f.get("webViewLink", ""),
-        "spreadsheetId": f.get("id", ""),
-        "createdBy": ap.get("mdCreatedBy", ""),
-        "createdDate": created.replace("T", " ")[:19] if created else "",
-        "lastRefreshed": ap.get("mdLastRefreshed", ""),
-    }
-
-
-def _list_drive_reports(report_type: str) -> List[dict]:
-    """List reports of the given type ('advertiser'|'publisher') from the Drive folder."""
-    folder_id = ensure_reports_folder()
-    files = list_folder_files(folder_id)
-    out = []
-    for f in files:
-        ap = f.get("appProperties", {}) or {}
-        if ap.get("mdType") != report_type:
-            continue
-        out.append(
-            _drive_file_to_adv_report(f) if report_type == "advertiser"
-            else _drive_file_to_pub_report(f)
-        )
-    return out
-
-
-def _get_drive_report(report_id: str, report_type: str) -> Optional[dict]:
-    try:
-        f = get_app_properties(report_id)
-    except Exception as e:
-        logger.error(f"Could not fetch report {report_id}: {e}")
-        return None
-    ap = f.get("appProperties", {}) or {}
-    if ap.get("mdType") != report_type:
-        return None
-    return (
-        _drive_file_to_adv_report(f) if report_type == "advertiser"
-        else _drive_file_to_pub_report(f)
-    )
-
-
 # ── Advertiser Reporting ───────────────────────────────────────────────────────
 
 @app.get("/api/reporting/advertiser/list")
 def list_advertiser_reports():
-    return {"reports": _list_drive_reports("advertiser")}
+    _ensure_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS)
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
+    return {"reports": reports}
 
 
 @app.get("/api/reporting/advertiser/columns")
@@ -949,29 +867,32 @@ def create_advertiser_report(config: AdvReportConfig):
     except Exception as e:
         logger.warning(f"Could not share spreadsheet {ss_id}: {e}")
 
-    # Register: move into the reports folder + attach metadata as appProperties.
-    # report_id is the Drive file id itself — no separate registry needed.
+    # Register in registry
+    report_id = str(__import__("uuid").uuid4())
     now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     date_from_str = config.dateFrom or "All"
+    reg_row = [
+        report_id,
+        config.reportName,
+        config.advertiser,
+        date_from_str,
+        ",".join(config.viewsToCreate),
+        ",".join(config.selectedColumns),
+        ss_url,
+        ss_id,
+        "dashboard-user",
+        now,
+        now,
+    ]
     try:
-        folder_id = ensure_reports_folder()
-        move_to_folder(ss_id, folder_id)
-        set_app_properties(ss_id, {
-            "mdType": "advertiser",
-            "mdReportName": config.reportName,
-            "mdAdvertiser": config.advertiser,
-            "mdDateFrom": date_from_str,
-            "mdViews": ",".join(config.viewsToCreate),
-            "mdSelectedColumns": ",".join(config.selectedColumns),
-            "mdCreatedBy": "dashboard-user",
-            "mdLastRefreshed": now,
-        })
+        _ensure_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS)
+        append_rows(KPI_SPREADSHEET_ID, ADVERTISER_REGISTRY_SHEET, [reg_row])
     except Exception as e:
-        logger.error(f"Failed to register report in Drive folder: {e}")
+        logger.error(f"Failed to register report: {e}")
 
     return {
         "success": True,
-        "reportId": ss_id,
+        "reportId": report_id,
         "spreadsheetUrl": ss_url,
         "sheets": sheets_created,
     }
@@ -981,7 +902,9 @@ def create_advertiser_report(config: AdvReportConfig):
 def refresh_advertiser_report(report_id: str):
     from datetime import datetime as _dt
 
-    report = _get_drive_report(report_id, "advertiser")
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
+    report = next((r for r in reports if r["id"] == report_id), None)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
@@ -1009,27 +932,21 @@ def refresh_advertiser_report(report_id: str):
         except Exception as e:
             logger.error(f"Refresh: failed tab {tab_title}: {e}")
 
-    # Update last refreshed in appProperties
+    # Update last refreshed in registry
     now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        set_app_properties(report_id, {"mdLastRefreshed": now})
-    except Exception as e:
-        logger.error(f"Failed to update lastRefreshed for {report_id}: {e}")
+    _update_registry_field(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS, report_id, "Last_Refreshed", now)
     return {"success": True, "lastRefreshed": now}
 
 
 @app.delete("/api/reporting/advertiser/{report_id}")
 def delete_advertiser_report(report_id: str):
-    try:
-        trash_file(report_id)
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return _delete_from_registry(ADVERTISER_REGISTRY_SHEET, ADV_REG_HEADERS, report_id)
 
 
 @app.post("/api/reporting/advertiser/refresh-all")
 def refresh_all_advertiser_reports():
-    reports = _list_drive_reports("advertiser")
+    raw = _read_registry(ADVERTISER_REGISTRY_SHEET)
+    reports = parse_adv_registry(raw)
     results = []
     for r in reports:
         try:
@@ -1044,7 +961,10 @@ def refresh_all_advertiser_reports():
 
 @app.get("/api/reporting/publisher/list")
 def list_publisher_reports():
-    return {"reports": _list_drive_reports("publisher")}
+    _ensure_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS)
+    raw = _read_registry(PUBLISHER_REGISTRY_SHEET)
+    reports = parse_pub_registry(raw)
+    return {"reports": reports}
 
 
 @app.get("/api/reporting/publisher/metrics")
@@ -1138,29 +1058,33 @@ def create_publisher_report(config: PubReportConfig):
     except Exception as e:
         logger.warning(f"Could not share publisher spreadsheet {ss_id}: {e}")
 
-    # Register: move into the reports folder + attach metadata as appProperties.
+    # Register
+    report_id = str(__import__("uuid").uuid4())
     now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     adv_list = [{"name": a.name, "segments": a.segments, "metrics": a.metrics} for a in config.advertisers]
+    reg_row = [
+        report_id,
+        config.reportName,
+        config.publisher,
+        _json.dumps(adv_list),
+        config.dateFrom or "All",
+        config.dateTo or "",
+        ",".join(config.reportingLevels),
+        ss_url,
+        ss_id,
+        "dashboard-user",
+        now,
+        now,
+    ]
     try:
-        folder_id = ensure_reports_folder()
-        move_to_folder(ss_id, folder_id)
-        set_app_properties(ss_id, {
-            "mdType": "publisher",
-            "mdReportName": config.reportName,
-            "mdPublisher": config.publisher,
-            "mdAdvertisersJson": _json.dumps(adv_list),
-            "mdDateFrom": config.dateFrom or "All",
-            "mdDateTo": config.dateTo or "",
-            "mdReportingLevels": ",".join(config.reportingLevels),
-            "mdCreatedBy": "dashboard-user",
-            "mdLastRefreshed": now,
-        })
+        _ensure_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS)
+        append_rows(KPI_SPREADSHEET_ID, PUBLISHER_REGISTRY_SHEET, [reg_row])
     except Exception as e:
-        logger.error(f"Failed to register publisher report in Drive folder: {e}")
+        logger.error(f"Failed to register publisher report: {e}")
 
     return {
         "success": True,
-        "reportId": ss_id,
+        "reportId": report_id,
         "spreadsheetUrl": ss_url,
         "advertisers": [a.name for a in config.advertisers],
     }
@@ -1172,7 +1096,9 @@ def refresh_publisher_report(report_id: str):
     from datetime import datetime as _dt
     from reporting_logic import PUB_FIXED_METRICS
 
-    report = _get_drive_report(report_id, "publisher")
+    raw = _read_registry(PUBLISHER_REGISTRY_SHEET)
+    reports = parse_pub_registry(raw)
+    report = next((r for r in reports if r["id"] == report_id), None)
     if not report:
         raise HTTPException(status_code=404, detail="Publisher report not found")
 
@@ -1211,89 +1137,13 @@ def refresh_publisher_report(report_id: str):
             logger.error(f"Refresh publisher tab {tab_title}: {e}")
 
     now = _dt.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        set_app_properties(report_id, {"mdLastRefreshed": now})
-    except Exception as e:
-        logger.error(f"Failed to update lastRefreshed for {report_id}: {e}")
+    _update_registry_field(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS, report_id, "Last_Refreshed", now)
     return {"success": True, "lastRefreshed": now}
 
 
 @app.delete("/api/reporting/publisher/{report_id}")
 def delete_publisher_report(report_id: str):
-    try:
-        trash_file(report_id)
-        return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/reporting/migrate-to-drive")
-def migrate_reports_to_drive():
-    """One-time backfill: copy existing KPI-registry reports into the Drive folder.
-
-    Reads the old advertiser + publisher registries (read access still works on
-    the KPI spreadsheet), and for each report sets appProperties + moves the
-    spreadsheet into the reports folder. Idempotent — safe to run multiple times.
-    """
-    import json as _json
-
-    folder_id = ensure_reports_folder()
-    migrated = {"advertiser": 0, "publisher": 0, "errors": []}
-
-    # Advertiser reports
-    try:
-        adv = parse_adv_registry(_read_registry(ADVERTISER_REGISTRY_SHEET))
-    except Exception as e:
-        adv = []
-        migrated["errors"].append(f"read adv registry: {e}")
-    for r in adv:
-        ss_id = r.get("spreadsheetId", "")
-        if not ss_id:
-            continue
-        try:
-            set_app_properties(ss_id, {
-                "mdType": "advertiser",
-                "mdReportName": r.get("reportName", ""),
-                "mdAdvertiser": r.get("advertiser", ""),
-                "mdDateFrom": r.get("dateFrom", "All"),
-                "mdViews": ",".join(r.get("views", [])),
-                "mdSelectedColumns": ",".join(r.get("selectedColumns", [])),
-                "mdCreatedBy": r.get("createdBy", ""),
-                "mdLastRefreshed": r.get("lastRefreshed", ""),
-            })
-            move_to_folder(ss_id, folder_id)
-            migrated["advertiser"] += 1
-        except Exception as e:
-            migrated["errors"].append(f"adv {ss_id}: {e}")
-
-    # Publisher reports
-    try:
-        pub = parse_pub_registry(_read_registry(PUBLISHER_REGISTRY_SHEET))
-    except Exception as e:
-        pub = []
-        migrated["errors"].append(f"read pub registry: {e}")
-    for r in pub:
-        ss_id = r.get("spreadsheetId", "")
-        if not ss_id:
-            continue
-        try:
-            set_app_properties(ss_id, {
-                "mdType": "publisher",
-                "mdReportName": r.get("reportName", ""),
-                "mdPublisher": r.get("publisher", ""),
-                "mdAdvertisersJson": _json.dumps(r.get("advertisers", [])),
-                "mdDateFrom": r.get("dateFrom", "All"),
-                "mdDateTo": r.get("dateTo", ""),
-                "mdReportingLevels": ",".join(r.get("reportingLevels", [])),
-                "mdCreatedBy": r.get("createdBy", ""),
-                "mdLastRefreshed": r.get("lastRefreshed", ""),
-            })
-            move_to_folder(ss_id, folder_id)
-            migrated["publisher"] += 1
-        except Exception as e:
-            migrated["errors"].append(f"pub {ss_id}: {e}")
-
-    return migrated
+    return _delete_from_registry(PUBLISHER_REGISTRY_SHEET, PUB_REG_HEADERS, report_id)
 
 
 # ── Registry mutation helpers ─────────────────────────────────────────────────
