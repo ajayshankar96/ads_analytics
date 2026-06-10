@@ -45,6 +45,8 @@ SCOPES = [
     # spreadsheets-only token. drive.file only covers files this app created
     # via the Drive API, so it can't touch those legacy files.
     "https://www.googleapis.com/auth/drive",
+    # Gmail send: lets the app email campaign summaries from the authed account.
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 
@@ -91,8 +93,10 @@ def main():
 
     print("\n✅ Wrote new_oauth_token.json")
     print("   Granted scopes:", out["scopes"])
-    if "https://www.googleapis.com/auth/drive.file" not in out["scopes"]:
-        print("   ⚠️  Drive scope NOT granted — make sure you approved the Drive permission.")
+    for required in ("drive", "gmail.send"):
+        full = f"https://www.googleapis.com/auth/{required}"
+        if full not in out["scopes"]:
+            print(f"   ⚠️  Scope NOT granted: {full} — make sure you approved that permission.")
 
 
 if __name__ == "__main__":

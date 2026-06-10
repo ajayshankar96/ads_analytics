@@ -215,6 +215,12 @@ export function NewCampaignForm({ filterOptions }) {
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState(null);
 
+  // Email-after-submit state
+  const [lastSubmitted, setLastSubmitted] = useState(null);
+  const [recipients, setRecipients] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailAlert, setEmailAlert] = useState(null);
+
   const setB = (k, v) => setBasic(b => ({ ...b, [k]: v }));
   const setC = (k, v) => setCd(c => ({ ...c, [k]: v }));
 
@@ -252,10 +258,29 @@ export function NewCampaignForm({ filterOptions }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Submission failed");
       setAlert({ type: "success", msg: "Campaign submitted successfully!" });
+      setLastSubmitted({ ...basic });   // snapshot for the email panel
+      setEmailAlert(null);
       setBasic(EMPTY_BASIC); setGoals([EMPTY_GOAL()]); setMetrics([EMPTY_METRIC(), EMPTY_METRIC()]); setCd(EMPTY_CD);
     } catch (ex) {
       setAlert({ type: "error", msg: ex.message });
     } finally { setSubmitting(false); }
+  };
+
+  const handleSendEmail = async () => {
+    const recips = recipients.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+    if (!recips.length) { setEmailAlert({ type: "error", msg: "Enter at least one recipient email." }); return; }
+    setSendingEmail(true); setEmailAlert(null);
+    try {
+      const res = await fetch(`${API}/api/onboarding/send-email`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipients: recips, ...lastSubmitted }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to send email");
+      setEmailAlert({ type: "success", msg: `Email sent to ${recips.join(", ")}` });
+    } catch (ex) {
+      setEmailAlert({ type: "error", msg: ex.message });
+    } finally { setSendingEmail(false); }
   };
 
   const advOptions = filterOptions?.advertisers || [];
@@ -267,6 +292,53 @@ export function NewCampaignForm({ filterOptions }) {
       {alert && (
         <div style={{ ...S.alert, ...(alert.type === "success" ? S.alertSuccess : S.alertError) }}>
           {alert.type === "success" ? "✅" : "❌"} {alert.msg}
+        </div>
+      )}
+
+      {/* ── Email the just-created campaign ── */}
+      {lastSubmitted && (
+        <div style={{
+          border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10,
+          padding: 16, marginBottom: 20,
+        }}>
+          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 4 }}>
+            📧 Email this campaign
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+            Send a summary of <b>{lastSubmitted.advertiser || "this campaign"}</b>
+            {lastSubmitted.offer ? ` — ${lastSubmitted.offer}` : ""} to one or more recipients.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              type="text"
+              value={recipients}
+              onChange={e => setRecipients(e.target.value)}
+              placeholder="recipient1@razorpay.com, recipient2@razorpay.com"
+              style={{
+                flex: 1, minWidth: 280, padding: "8px 12px", borderRadius: 6,
+                border: "1px solid #cbd5e1", fontSize: 13,
+              }}
+            />
+            <button
+              onClick={handleSendEmail}
+              disabled={sendingEmail}
+              style={{
+                padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer",
+                background: sendingEmail ? "#94a3b8" : "#2563eb", color: "#fff",
+                fontWeight: 600, fontSize: 13,
+              }}
+            >
+              {sendingEmail ? "Sending…" : "Send Email"}
+            </button>
+          </div>
+          {emailAlert && (
+            <div style={{
+              marginTop: 10, fontSize: 13,
+              color: emailAlert.type === "success" ? "#059669" : "#dc2626",
+            }}>
+              {emailAlert.type === "success" ? "✅" : "❌"} {emailAlert.msg}
+            </div>
+          )}
         </div>
       )}
 

@@ -32,6 +32,7 @@ KPI_SPREADSHEET_ID = os.environ.get(
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 TOKEN_CACHE = "token.pickle"
 
@@ -405,3 +406,26 @@ def share_spreadsheet(spreadsheet_id: str, emails: List[str]) -> None:
         logger.info(f"Shared {spreadsheet_id} with {len(emails)} users")
     except Exception as e:
         logger.warning(f"Drive sharing failed (non-fatal): {e}")
+
+
+def send_email(to: List[str], subject: str, html_body: str, cc: List[str] = None) -> dict:
+    """Send an email via the Gmail API as the authenticated account.
+
+    Requires the gmail.send scope on the OAuth token.
+    """
+    import base64
+    from email.mime.text import MIMEText
+
+    creds = _get_credentials()
+    gmail = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+    msg = MIMEText(html_body, "html")
+    msg["to"] = ", ".join(to)
+    if cc:
+        msg["cc"] = ", ".join(cc)
+    msg["subject"] = subject
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    result = gmail.users().messages().send(userId="me", body={"raw": raw}).execute()
+    logger.info(f"Sent email '{subject}' to {to} (id={result.get('id')})")
+    return result

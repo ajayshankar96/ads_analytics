@@ -636,6 +636,73 @@ def onboarding_submit(req: OnboardingSubmitRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class SendCampaignEmailRequest(BaseModel):
+    recipients: List[str]
+    subject: Optional[str] = None
+    campaign_type: str = ""
+    advertiser: str = ""
+    publisher: str = ""
+    advertiser_industry: str = ""
+    brand: str = ""
+    offer: str = ""
+    advertiser_data_url: str = ""
+    publisher_data_url: str = ""
+    segment_pub: str = ""
+    segment_adv: str = ""
+    additional_context: str = ""
+
+
+@app.post("/api/onboarding/send-email")
+def onboarding_send_email(req: SendCampaignEmailRequest):
+    """Email a summary of the just-created campaign to the given recipients."""
+    from sheets_client import send_email
+    import html as _html
+
+    recips = [r.strip() for r in req.recipients if r and r.strip()]
+    if not recips:
+        raise HTTPException(status_code=400, detail="At least one recipient email is required")
+
+    subject = req.subject or f"New Campaign Onboarded: {req.advertiser or 'Campaign'}"
+
+    # Build a simple summary table (content to be refined later with a sample)
+    def esc(v):
+        return _html.escape(str(v)) if v else "—"
+
+    rows_html = "".join(
+        f"<tr><td style='padding:6px 12px;border:1px solid #e2e8f0;background:#f8fafc;"
+        f"font-weight:600;color:#334155;white-space:nowrap'>{label}</td>"
+        f"<td style='padding:6px 12px;border:1px solid #e2e8f0;color:#1e293b'>{esc(value)}</td></tr>"
+        for label, value in [
+            ("Campaign Type", req.campaign_type),
+            ("Advertiser", req.advertiser),
+            ("Publisher", req.publisher),
+            ("Advertiser Industry", req.advertiser_industry),
+            ("Brand", req.brand),
+            ("Offer", req.offer),
+            ("Segment (Advertiser)", req.segment_adv),
+            ("Segment (Publisher)", req.segment_pub),
+            ("Advertiser Data URL", req.advertiser_data_url),
+            ("Publisher Data URL", req.publisher_data_url),
+            ("Additional Context", req.additional_context),
+        ]
+    )
+    body = (
+        "<div style='font-family:-apple-system,Segoe UI,sans-serif;color:#1e293b'>"
+        "<h2 style='color:#1e3a5f'>New Campaign Onboarded</h2>"
+        "<p>A new campaign has been created with the following details:</p>"
+        f"<table style='border-collapse:collapse;font-size:14px'>{rows_html}</table>"
+        "<p style='color:#94a3b8;font-size:12px;margin-top:16px'>"
+        "Sent from the Razorpay Media Network Dashboard.</p>"
+        "</div>"
+    )
+
+    try:
+        send_email(recips, subject, body)
+        return {"success": True, "sent_to": recips}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {e}")
+
+
 @app.get("/api/onboarding/campaigns")
 def onboarding_campaigns():
     """Read all campaign onboarding rows from Sheet1."""
