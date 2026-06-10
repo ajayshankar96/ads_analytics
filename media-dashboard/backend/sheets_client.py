@@ -129,6 +129,101 @@ def _get_service():
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
+def _get_drive():
+    creds = _get_credentials()
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+# ── Drive folder–based report registry ─────────────────────────────────────────
+REPORTS_FOLDER_NAME = "Media Dashboard - Reports"
+_reports_folder_id = None
+
+
+def ensure_reports_folder() -> str:
+    """Find-or-create the Drive folder that holds all report spreadsheets.
+
+    Cached in-process. Survives pod restarts because we look it up by name each
+    cold start (the service account owns it, so drive.file scope can see it).
+    """
+    global _reports_folder_id
+    if _reports_folder_id:
+        return _reports_folder_id
+
+    drive = _get_drive()
+    q = (
+        "mimeType='application/vnd.google-apps.folder' "
+        f"and name='{REPORTS_FOLDER_NAME}' and trashed=false"
+    )
+    res = drive.files().list(q=q, fields="files(id,name)", spaces="drive").execute()
+    files = res.get("files", [])
+    if files:
+        _reports_folder_id = files[0]["id"]
+        logger.info(f"Found reports folder: {_reports_folder_id}")
+    else:
+        meta = {"name": REPORTS_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"}
+        folder = drive.files().create(body=meta, fields="id").execute()
+        _reports_folder_id = folder["id"]
+        logger.info(f"Created reports folder: {_reports_folder_id}")
+    return _reports_folder_id
+
+
+def move_to_folder(file_id: str, folder_id: str) -> None:
+    """Move a file into the given folder (removing it from any current parents)."""
+    drive = _get_drive()
+    meta = drive.files().get(fileId=file_id, fields="parents").execute()
+    prev_parents = ",".join(meta.get("parents", []))
+    drive.files().update(
+        fileId=file_id,
+        addParents=folder_id,
+        removeParents=prev_parents,
+        fields="id,parents",
+    ).execute()
+
+
+def set_app_properties(file_id: str, props: dict) -> None:
+    """Set/merge appProperties (app-private metadata) on a Drive file."""
+    drive = _get_drive()
+    # Drive requires all values to be strings
+    str_props = {k: ("" if v is None else str(v)) for k, v in props.items()}
+    drive.files().update(fileId=file_id, body={"appProperties": str_props}).execute()
+
+
+def get_app_properties(file_id: str) -> dict:
+    """Return appProperties + key native fields for a single Drive file."""
+    drive = _get_drive()
+    f = drive.files().get(
+        fileId=file_id,
+        fields="id,name,createdTime,modifiedTime,webViewLink,appProperties",
+    ).execute()
+    return f
+
+
+def list_folder_files(folder_id: str) -> List[dict]:
+    """List all non-trashed files in a folder with their metadata + appProperties."""
+    drive = _get_drive()
+    files = []
+    page_token = None
+    while True:
+        res = drive.files().list(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields="nextPageToken, files(id,name,createdTime,modifiedTime,webViewLink,appProperties)",
+            spaces="drive",
+            pageSize=1000,
+            pageToken=page_token,
+        ).execute()
+        files.extend(res.get("files", []))
+        page_token = res.get("nextPageToken")
+        if not page_token:
+            break
+    return files
+
+
+def trash_file(file_id: str) -> None:
+    """Move a Drive file to trash."""
+    drive = _get_drive()
+    drive.files().update(fileId=file_id, body={"trashed": True}).execute()
+
+
 def read_range(spreadsheet_id: str, range_name: str) -> List[List[Any]]:
     """Return all values in a named range."""
     try:
