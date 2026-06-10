@@ -448,7 +448,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
 
     # When no explicit date range is set, derive the window from the view mode
     # (weekly = current week, monthly = current month, mtd = month-to-date).
-    if not date_from and not date_to:
+    explicit_range = bool(date_from or date_to)
+    if not explicit_range:
         ranges = _get_date_ranges(view_mode)
         date_from = _parse_date(ranges["current"]["start"])
         date_to = _parse_date(ranges["current"]["end"])
@@ -549,7 +550,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         adv_entry["publishers"] = pub_list
         advertisers.append(adv_entry)
 
-    return {"advertisers": advertisers, "viewMode": view_mode}
+    return {"advertisers": advertisers, "viewMode": view_mode,
+            "period": _period_info(view_mode, date_from, date_to, explicit_range)}
 
 
 # ── Publisher Performance ──────────────────────────────────────────────────────
@@ -565,7 +567,8 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
-    if not date_from and not date_to:
+    explicit_range = bool(date_from or date_to)
+    if not explicit_range:
         ranges = _get_date_ranges(view_mode)
         date_from = _parse_date(ranges["current"]["start"])
         date_to = _parse_date(ranges["current"]["end"])
@@ -654,7 +657,19 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         pub_entry["advertisers"] = adv_list
         publishers.append(pub_entry)
 
-    return {"publishers": publishers, "viewMode": view_mode}
+    return {"publishers": publishers, "viewMode": view_mode,
+            "period": _period_info(view_mode, date_from, date_to, explicit_range)}
+
+
+def _period_info(view_mode: str, date_from, date_to, explicit_range: bool) -> dict:
+    """Human-readable description of the effective date window for the UI."""
+    labels = {"weekly": "Current week", "monthly": "Current month", "mtd": "Month to date"}
+    return {
+        "label": "Custom range" if explicit_range else labels.get(view_mode, view_mode),
+        "start": date_from.isoformat() if date_from else None,
+        "end": date_to.isoformat() if date_to else None,
+        "custom": explicit_range,
+    }
 
 
 # ── Advertiser Health ─────────────────────────────────────────────────────────

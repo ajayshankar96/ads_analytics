@@ -88,6 +88,29 @@ function fmt(n) {
   return n.toLocaleString();
 }
 
+const VIEW_TOOLTIPS = {
+  weekly: "Current week — Monday to today",
+  monthly: "Current month — 1st to today",
+  mtd: "Month-to-date — 1st to today",
+};
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function PeriodLabel({ period }) {
+  if (!period) return null;
+  const range = period.start && period.end ? ` · ${fmtDate(period.start)} – ${fmtDate(period.end)}` : "";
+  return (
+    <div style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px 2px" }}>
+      📅 Showing <b style={{ color: "#334155" }}>{period.label}</b>{range}
+    </div>
+  );
+}
+
 function AdvRow({ adv, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = depth === 0 ? {} : depth === 1 ? { paddingLeft: 24 } : { paddingLeft: 48 };
@@ -159,6 +182,7 @@ export default function AdvertiserPerformance({ filters }) {
           {["weekly", "monthly", "mtd"].map((v) => (
             <button
               key={v}
+              title={VIEW_TOOLTIPS[v]}
               style={{ ...s.viewBtn, ...(viewMode === v ? s.viewBtnActive : {}) }}
               onClick={() => setViewMode(v)}
             >
@@ -173,6 +197,8 @@ export default function AdvertiserPerformance({ filters }) {
           placeholder="All Advertisers"
         />
       </div>
+
+      {data?.period && <PeriodLabel period={data.period} />}
 
       {advertisers.length === 0 ? (
         <div style={s.loading}>No data for selected filters</div>
