@@ -45,16 +45,17 @@ function utf8ToBase64(str) {
 
 // Sends an HTML email via the Gmail API as the signed-in user ("me").
 async function sendViaGmail(token, { to, cc, subject, html }) {
-  const headers = [
+  // Build header lines, filtering only the absent Cc (NOT empty strings).
+  const headerLines = [
     `To: ${to.join(", ")}`,
     cc && cc.length ? `Cc: ${cc.join(", ")}` : null,
     "MIME-Version: 1.0",
     "Content-Type: text/html; charset=UTF-8",
     `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
-    "",
-    html,
-  ].filter(Boolean).join("\r\n");
-  const raw = utf8ToBase64(headers).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  ].filter((l) => l != null);
+  // A single blank line MUST separate headers from the body (RFC 822/MIME).
+  const message = headerLines.join("\r\n") + "\r\n\r\n" + html;
+  const raw = utf8ToBase64(message).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -509,7 +510,10 @@ export function NewCampaignForm({ filterOptions }) {
   const handleSendEmail = async () => {
     const recips = recipients.map(s => s.trim()).filter(Boolean);
     if (!recips.length) { setEmailAlert({ type: "error", msg: "Enter at least one recipient email." }); return; }
-    if (!emailBody.trim()) { setEmailAlert({ type: "error", msg: "Email body is empty." }); return; }
+    // Strip HTML tags + entities to check for real text (catches cleared editors
+    // left with structural HTML like <br> / <div></div> that .trim() misses)
+    const bodyText = emailBody.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").trim();
+    if (!bodyText) { setEmailAlert({ type: "error", msg: "Email body is empty — add content before sending." }); return; }
     setSendingEmail(true); setEmailAlert(null);
     try {
       if (GOOGLE_WEB_CLIENT_ID) {
