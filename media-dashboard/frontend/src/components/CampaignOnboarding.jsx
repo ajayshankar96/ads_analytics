@@ -2,6 +2,71 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 
 const API = process.env.REACT_APP_API_URL || "";
 
+// ─── Client-side Google Sign-In for per-user email sending (Option A) ──────────
+// Paste the GCP OAuth *Web application* client ID here. While empty, the app
+// falls back to the server-side sender (from the service account).
+const GOOGLE_WEB_CLIENT_ID = "";
+
+// Loads the Google Identity Services script once; returns true when ready.
+function useGisLoaded() {
+  const [loaded, setLoaded] = useState(
+    typeof window !== "undefined" && !!window.google?.accounts?.oauth2
+  );
+  useEffect(() => {
+    if (!GOOGLE_WEB_CLIENT_ID) return;
+    if (window.google?.accounts?.oauth2) { setLoaded(true); return; }
+    if (document.getElementById("gis-client")) return;
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.id = "gis-client"; s.async = true; s.defer = true;
+    s.onload = () => setLoaded(true);
+    document.body.appendChild(s);
+  }, []);
+  return loaded;
+}
+
+// Opens the Google consent/picker popup and resolves with a gmail.send access token.
+function getGmailAccessToken() {
+  return new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) return reject(new Error("Google Sign-In not loaded yet."));
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_WEB_CLIENT_ID,
+      scope: "https://www.googleapis.com/auth/gmail.send",
+      callback: (resp) => resp.error ? reject(new Error(resp.error)) : resolve(resp.access_token),
+    });
+    client.requestAccessToken();
+  });
+}
+
+// UTF-8 safe base64 (handles ₹ etc.)
+function utf8ToBase64(str) {
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p) => String.fromCharCode("0x" + p)));
+}
+
+// Sends an HTML email via the Gmail API as the signed-in user ("me").
+async function sendViaGmail(token, { to, cc, subject, html }) {
+  const headers = [
+    `To: ${to.join(", ")}`,
+    cc && cc.length ? `Cc: ${cc.join(", ")}` : null,
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8",
+    `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
+    "",
+    html,
+  ].filter(Boolean).join("\r\n");
+  const raw = utf8ToBase64(headers).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gmail API error ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─────────────────────────── Styles ──────────────────────────────────────────
 const S = {
   container: { maxWidth: 960, margin: "0 auto" },
@@ -305,6 +370,7 @@ export function NewCampaignForm({ filterOptions }) {
   const [alert, setAlert] = useState(null);
 
   // Email-after-submit state (draft → edit → send)
+  useGisLoaded();   // loads Google Sign-In when a Web client ID is configured
   const [showEmailDraft, setShowEmailDraft] = useState(false);
   const [recipients, setRecipients] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -366,13 +432,21 @@ export function NewCampaignForm({ filterOptions }) {
     if (!emailBody.trim()) { setEmailAlert({ type: "error", msg: "Email body is empty." }); return; }
     setSendingEmail(true); setEmailAlert(null);
     try {
-      const res = await fetch(`${API}/api/onboarding/send-email`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipients: recips, subject: emailSubject, body: emailBody, is_html: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to send email");
-      setEmailAlert({ type: "success", msg: `Email sent to ${recips.join(", ")}` });
+      if (GOOGLE_WEB_CLIENT_ID) {
+        // Option A: send from the signed-in user's own Gmail (token stays in browser)
+        const token = await getGmailAccessToken();   // consent popup (first time)
+        await sendViaGmail(token, { to: recips, subject: emailSubject, html: emailBody });
+        setEmailAlert({ type: "success", msg: `Email sent to ${recips.join(", ")} from your account` });
+      } else {
+        // Fallback: server-side sender (until the Web client ID is configured)
+        const res = await fetch(`${API}/api/onboarding/send-email`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recipients: recips, subject: emailSubject, body: emailBody, is_html: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to send email");
+        setEmailAlert({ type: "success", msg: `Email sent to ${recips.join(", ")}` });
+      }
     } catch (ex) {
       setEmailAlert({ type: "error", msg: ex.message });
     } finally { setSendingEmail(false); }
