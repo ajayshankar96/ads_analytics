@@ -304,6 +304,21 @@ export default function AdvertiserReporting({ filterOptions = {} }) {
     }));
   };
 
+  // Curated "most used" columns (configurable subset — Date/Segment/Offer are
+  // always-included forced columns). Pre-selects the commonly-used set in one click.
+  const MOST_USED_COLUMNS = [
+    "Advertiser", "Publisher", "Advertiser_Segment", "Impressions",
+    "Distribution", "Clicks", "Redirections", "Advertiser_Spends",
+    "Orders", "Revenue",
+  ];
+  const applyMostUsed = () => {
+    setForm((f) => ({
+      ...f,
+      // keep only columns actually available, in the preset's order
+      selectedColumns: MOST_USED_COLUMNS.filter((c) => availableCols.includes(c)),
+    }));
+  };
+
   const toggleView = (view) => {
     setForm((f) => ({
       ...f,
@@ -454,7 +469,26 @@ export default function AdvertiserReporting({ filterOptions = {} }) {
 
         {/* Column selection */}
         <div style={{ marginBottom: 16 }}>
-          <div style={S.label}>Columns</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <div style={S.label}>Columns</div>
+            <span
+              onClick={applyMostUsed}
+              title="Pre-select the commonly-used columns"
+              style={{
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#2563eb",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 14,
+                padding: "4px 12px",
+                userSelect: "none",
+              }}
+            >
+              ⭐ Use most-used columns
+            </span>
+          </div>
           <div style={S.hint}>
             Always included (not configurable):&nbsp;
             {forcedCols.map((c) => <span key={c} style={{ ...S.forced, marginRight: 4 }}>{c}</span>)}
