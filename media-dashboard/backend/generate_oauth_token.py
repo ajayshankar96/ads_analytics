@@ -40,7 +40,11 @@ import sys
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
+    # Full Drive scope (not drive.file): needed so the app can move + tag the
+    # 45 pre-existing report spreadsheets that were created under the old
+    # spreadsheets-only token. drive.file only covers files this app created
+    # via the Drive API, so it can't touch those legacy files.
+    "https://www.googleapis.com/auth/drive",
 ]
 
 
