@@ -98,7 +98,10 @@ export default function PublisherPerformance({ filters }) {
   useEffect(() => {
     setLoading(true);
     getPublisherPerformance({
-      publishers: selectedPub,
+      // merge in-tab publisher selection with the global filter bar
+      publishers: [...new Set([...(selectedPub || []), ...(filters.publisher || [])])],
+      advertisers: filters.advertiser || [],
+      segments: filters.segment || [],
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       viewMode,

@@ -441,6 +441,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     Mirrors getAdvertiserPerformanceDataSimple() from Code.gs.
     """
     adv_filter = set(filters.get("advertisers", []))
+    pub_filter = set(filters.get("publishers", []))
+    seg_filter = set(filters.get("segments", []))
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
@@ -479,6 +481,10 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         seg = _safe_str(row[seg_idx]) or "Unknown"
 
         if adv_filter and adv not in adv_filter:
+            continue
+        if pub_filter and pub not in pub_filter:
+            continue
+        if seg_filter and seg not in seg_filter:
             continue
 
         if date_from or date_to:
@@ -555,6 +561,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     """
     pub_filter = set(filters.get("publishers", []))
     seg_filter = set(filters.get("segments", []))
+    adv_filter = set(filters.get("advertisers", []))
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
@@ -587,6 +594,8 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         seg = _safe_str(row[seg_idx]) or "Unknown"
 
         if pub_filter and pub not in pub_filter:
+            continue
+        if adv_filter and adv not in adv_filter:
             continue
         if seg_filter and seg not in seg_filter:
             continue

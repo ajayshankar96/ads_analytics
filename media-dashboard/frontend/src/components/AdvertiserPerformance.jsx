@@ -136,7 +136,10 @@ export default function AdvertiserPerformance({ filters }) {
   useEffect(() => {
     setLoading(true);
     getAdvertiserPerformance({
-      advertisers: selectedAdv,
+      // merge in-tab advertiser selection with the global filter bar
+      advertisers: [...new Set([...(selectedAdv || []), ...(filters.advertiser || [])])],
+      publishers: filters.publisher || [],
+      segments: filters.segment || [],
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       viewMode,

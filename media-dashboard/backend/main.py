@@ -228,12 +228,20 @@ def dashboard_table(
 @app.get("/api/advertiser-performance")
 def advertiser_performance(
     advertisers: Optional[List[str]] = Query(None),
+    publishers: Optional[List[str]] = Query(None),
+    segments: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     viewMode: str = "weekly",
 ):
     data = load_master_report_cache()
-    filters = {"advertisers": advertisers or [], "dateFrom": dateFrom, "dateTo": dateTo}
+    filters = {
+        "advertisers": advertisers or [],
+        "publishers": publishers or [],
+        "segments": segments or [],
+        "dateFrom": dateFrom,
+        "dateTo": dateTo,
+    }
     result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
     result["cacheAge"] = data.get("cache_age", 0)
     return result
@@ -243,6 +251,7 @@ def advertiser_performance(
 def publisher_performance(
     publishers: Optional[List[str]] = Query(None),
     segments: Optional[List[str]] = Query(None),
+    advertisers: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     viewMode: str = "weekly",
@@ -251,6 +260,7 @@ def publisher_performance(
     filters = {
         "publishers": publishers or [],
         "segments": segments or [],
+        "advertisers": advertisers or [],
         "dateFrom": dateFrom,
         "dateTo": dateTo,
     }
