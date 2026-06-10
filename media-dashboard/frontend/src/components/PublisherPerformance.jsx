@@ -67,13 +67,26 @@ function fmtDate(iso) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function PeriodLabel({ period }) {
+function PeriodLabel({ period, compare }) {
   if (!period) return null;
   const range = period.start && period.end ? ` · ${fmtDate(period.start)} – ${fmtDate(period.end)}` : "";
+  const cmp = compare && compare.start && compare.end
+    ? <span style={{ color: "#94a3b8" }}>{"   vs   "}{fmtDate(compare.start)} – {fmtDate(compare.end)}</span>
+    : null;
   return (
     <div style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px 2px" }}>
-      📅 Showing <b style={{ color: "#334155" }}>{period.label}</b>{range}
+      📅 Showing <b style={{ color: "#334155" }}>{period.label}</b>{range}{cmp}
     </div>
+  );
+}
+
+function Delta({ pct }) {
+  if (pct === null || pct === undefined) return null;
+  const up = pct >= 0;
+  return (
+    <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: up ? "#059669" : "#dc2626", whiteSpace: "nowrap" }}>
+      {up ? "▲" : "▼"}{Math.abs(pct)}%
+    </span>
   );
 }
 
@@ -92,13 +105,13 @@ function PubRow({ item, depth = 0 }) {
           {hasChildren && <span style={s.expandBtn}>{open ? "▼" : "▶"}</span>}
           {item.name}
         </td>
-        <td style={s.td}>{fmt(item.impressions)}</td>
-        <td style={s.td}>{fmt(item.clicks)}</td>
-        <td style={s.td}>{item.ctr}%</td>
-        <td style={s.td}>₹{fmt(item.spends)}</td>
-        <td style={s.td}>{item.cpm ? `₹${item.cpm}` : "—"}</td>
-        <td style={s.td}>{fmt(item.ql)}</td>
-        <td style={s.td}>{fmt(item.qqg)}</td>
+        <td style={s.td}>{fmt(item.impressions)}<Delta pct={item.deltas?.impressions} /></td>
+        <td style={s.td}>{fmt(item.clicks)}<Delta pct={item.deltas?.clicks} /></td>
+        <td style={s.td}>{item.ctr}%<Delta pct={item.deltas?.ctr} /></td>
+        <td style={s.td}>₹{fmt(item.spends)}<Delta pct={item.deltas?.spends} /></td>
+        <td style={s.td}>{item.cpm ? `₹${item.cpm}` : "—"}<Delta pct={item.deltas?.cpm} /></td>
+        <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
+        <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
       </tr>
       {open && children.map((child, i) => (
         <PubRow key={i} item={child} depth={depth + 1} />
@@ -113,6 +126,8 @@ export default function PublisherPerformance({ filters }) {
   const [viewMode, setViewMode] = useState("weekly");
   const [selectedPub, setSelectedPub] = useState([]);
   const [pubOptions, setPubOptions] = useState([]);
+  const [compare, setCompare] = useState(false);
+  const [comparePeriods, setComparePeriods] = useState(1);
 
   useEffect(() => {
     getFilters().then(f => setPubOptions(f.publishers || [])).catch(() => {});
@@ -128,11 +143,13 @@ export default function PublisherPerformance({ filters }) {
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       viewMode,
+      compare,
+      comparePeriods,
     })
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [filters, viewMode, selectedPub]);
+  }, [filters, viewMode, selectedPub, compare, comparePeriods]);
 
   if (loading) return <div style={s.loading}>Loading publisher performance…</div>;
   const publishers = data?.publishers || [];
@@ -148,9 +165,20 @@ export default function PublisherPerformance({ filters }) {
           ))}
         </div>
         <MultiSelect options={pubOptions} value={selectedPub} onChange={setSelectedPub} placeholder="All Publishers" />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+          <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
+          Compare vs previous
+        </label>
+        {compare && (
+          <select value={comparePeriods} onChange={e => setComparePeriods(Number(e.target.value))} style={s.select}>
+            <option value={1}>vs last period</option>
+            <option value={2}>vs 2 periods ago</option>
+            <option value={3}>vs 3 periods ago</option>
+          </select>
+        )}
       </div>
 
-      {data?.period && <PeriodLabel period={data.period} />}
+      {data?.period && <PeriodLabel period={data.period} compare={data.compare} />}
 
       {publishers.length === 0 ? (
         <div style={s.loading}>No data for selected filters</div>

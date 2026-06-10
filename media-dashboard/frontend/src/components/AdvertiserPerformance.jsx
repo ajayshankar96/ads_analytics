@@ -101,13 +101,27 @@ function fmtDate(iso) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function PeriodLabel({ period }) {
+function PeriodLabel({ period, compare }) {
   if (!period) return null;
   const range = period.start && period.end ? ` · ${fmtDate(period.start)} – ${fmtDate(period.end)}` : "";
+  const cmp = compare && compare.start && compare.end
+    ? <span style={{ color: "#94a3b8" }}>{"   vs   "}{fmtDate(compare.start)} – {fmtDate(compare.end)}</span>
+    : null;
   return (
     <div style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px 2px" }}>
-      📅 Showing <b style={{ color: "#334155" }}>{period.label}</b>{range}
+      📅 Showing <b style={{ color: "#334155" }}>{period.label}</b>{range}{cmp}
     </div>
+  );
+}
+
+// Small ▲/▼ % badge vs the previous period (rendered only when a delta exists)
+function Delta({ pct }) {
+  if (pct === null || pct === undefined) return null;
+  const up = pct >= 0;
+  return (
+    <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, color: up ? "#059669" : "#dc2626", whiteSpace: "nowrap" }}>
+      {up ? "▲" : "▼"}{Math.abs(pct)}%
+    </span>
   );
 }
 
@@ -130,12 +144,12 @@ function AdvRow({ adv, depth = 0 }) {
           )}
           {adv.name}
         </td>
-        <td style={s.td}>{fmt(adv.impressions)}</td>
-        <td style={s.td}>{fmt(adv.clicks)}</td>
-        <td style={s.td}>{adv.ctr}%</td>
-        <td style={s.td}>₹{fmt(adv.spends)}</td>
-        <td style={s.td}>{adv.cpm ? `₹${adv.cpm}` : "—"}</td>
-        <td style={s.td}>{fmt(adv.ql)}</td>
+        <td style={s.td}>{fmt(adv.impressions)}<Delta pct={adv.deltas?.impressions} /></td>
+        <td style={s.td}>{fmt(adv.clicks)}<Delta pct={adv.deltas?.clicks} /></td>
+        <td style={s.td}>{adv.ctr}%<Delta pct={adv.deltas?.ctr} /></td>
+        <td style={s.td}>₹{fmt(adv.spends)}<Delta pct={adv.deltas?.spends} /></td>
+        <td style={s.td}>{adv.cpm ? `₹${adv.cpm}` : "—"}<Delta pct={adv.deltas?.cpm} /></td>
+        <td style={s.td}>{fmt(adv.ql)}<Delta pct={adv.deltas?.ql} /></td>
         <td style={s.td}>{adv.cpql ? `₹${adv.cpql}` : "—"}</td>
       </tr>
       {open && children.map((child, i) => (
@@ -151,6 +165,8 @@ export default function AdvertiserPerformance({ filters }) {
   const [viewMode, setViewMode] = useState("weekly");
   const [selectedAdv, setSelectedAdv] = useState([]);
   const [advOptions, setAdvOptions] = useState([]);
+  const [compare, setCompare] = useState(false);
+  const [comparePeriods, setComparePeriods] = useState(1);
 
   useEffect(() => {
     getFilters().then(f => setAdvOptions(f.advertisers || [])).catch(() => {});
@@ -166,11 +182,13 @@ export default function AdvertiserPerformance({ filters }) {
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       viewMode,
+      compare,
+      comparePeriods,
     })
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [filters, viewMode, selectedAdv]);
+  }, [filters, viewMode, selectedAdv, compare, comparePeriods]);
 
   if (loading) return <div style={s.loading}>Loading advertiser performance…</div>;
   const advertisers = data?.advertisers || [];
@@ -196,9 +214,20 @@ export default function AdvertiserPerformance({ filters }) {
           onChange={setSelectedAdv}
           placeholder="All Advertisers"
         />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "#334155" }}>
+          <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
+          Compare vs previous
+        </label>
+        {compare && (
+          <select value={comparePeriods} onChange={e => setComparePeriods(Number(e.target.value))} style={s.select}>
+            <option value={1}>vs last period</option>
+            <option value={2}>vs 2 periods ago</option>
+            <option value={3}>vs 3 periods ago</option>
+          </select>
+        )}
       </div>
 
-      {data?.period && <PeriodLabel period={data.period} />}
+      {data?.period && <PeriodLabel period={data.period} compare={data.compare} />}
 
       {advertisers.length === 0 ? (
         <div style={s.loading}>No data for selected filters</div>

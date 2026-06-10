@@ -435,10 +435,80 @@ def prepare_table_data(rows: List, headers: List[str], offset: int = 0, limit: i
 
 # ── Advertiser Performance ────────────────────────────────────────────────────
 
+ADV_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue"]
+PUB_METRICS = ["impressions", "clicks", "spends", "ql", "qqg"]
+
+
+def _shift_months(d, delta):
+    """Shift a date by `delta` months, clamping the day to the target month."""
+    import calendar
+    y = d.year + (d.month - 1 + delta) // 12
+    m = (d.month - 1 + delta) % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def _shift_window(view_mode, dfrom, dto, n, explicit):
+    """Return the comparison window shifted back n periods from [dfrom, dto]."""
+    if explicit and dfrom and dto:
+        dur = (dto - dfrom).days + 1
+        return dfrom - timedelta(days=dur * n), dto - timedelta(days=dur * n)
+    if view_mode == "weekly":
+        return dfrom - timedelta(days=7 * n), dto - timedelta(days=7 * n)
+    return _shift_months(dfrom, -n), _shift_months(dto, -n)
+
+
+def _derive(totals):
+    """Round totals + add derived ctr/cpm/cpql for a display entry."""
+    e = {k: round(v) for k, v in totals.items()}
+    imp = e.get("impressions", 0)
+    e["ctr"] = round(e.get("clicks", 0) / imp * 100, 2) if imp > 0 else 0
+    e["cpm"] = round(e.get("spends", 0) / (imp / 1000), 2) if imp > 0 else 0
+    if "ql" in e:
+        e["cpql"] = round(e["spends"] / e["ql"], 2) if e["ql"] > 0 else None
+    return e
+
+
+def _deltas(curr, prev, metric_keys):
+    """Percent change per metric (+ ctr/cpm) vs previous; None if no prior data."""
+    if prev is None:
+        return None
+    out = {}
+    for k in metric_keys:
+        c, p = curr.get(k, 0), prev.get(k, 0)
+        out[k] = round((c - p) / p * 100, 1) if p else None
+    def ratio(t, kind):
+        imp = t.get("impressions", 0)
+        if imp <= 0:
+            return None
+        return t.get("clicks", 0) / imp * 100 if kind == "ctr" else t.get("spends", 0) / (imp / 1000)
+    for kind in ("ctr", "cpm"):
+        c, p = ratio(curr, kind), ratio(prev, kind)
+        out[kind] = round((c - p) / p * 100, 1) if (c is not None and p) else None
+    return out
+
+
+def _flatten_totals(agg, metric_keys):
+    """From a nested l1→l2→l3→metrics dict, return totals keyed by path tuple."""
+    l1_t, l2_t, l3_t = {}, {}, {}
+    for k1, sub in agg.items():
+        a = {k: 0 for k in metric_keys}
+        for k2, segs in sub.items():
+            p = {k: 0 for k in metric_keys}
+            for k3, m in segs.items():
+                l3_t[(k1, k2, k3)] = m
+                for k in metric_keys:
+                    p[k] += m[k]
+            l2_t[(k1, k2)] = p
+            for k in metric_keys:
+                a[k] += p[k]
+        l1_t[k1] = a
+    return l1_t, l2_t, l3_t
+
+
 def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly") -> dict:
     """
     Hierarchical advertiser performance: Advertiser → Publisher → Segment.
-    Mirrors getAdvertiserPerformanceDataSimple() from Code.gs.
+    Supports period-over-period comparison (compare / comparePeriods).
     """
     adv_filter = set(filters.get("advertisers", []))
     pub_filter = set(filters.get("publishers", []))
@@ -446,16 +516,15 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     date_from = _parse_date(filters.get("dateFrom"))
     date_to = _parse_date(filters.get("dateTo"))
 
-    # When no explicit date range is set, derive the window from the view mode
-    # (weekly = current week, monthly = current month, mtd = month-to-date).
     explicit_range = bool(date_from or date_to)
     if not explicit_range:
         ranges = _get_date_ranges(view_mode)
         date_from = _parse_date(ranges["current"]["start"])
         date_to = _parse_date(ranges["current"]["end"])
 
-    # Resolve columns by header name (robust to sheet column reordering);
-    # fall back to the positional COL map only if the header isn't found.
+    compare = bool(filters.get("compare"))
+    n_back = int(filters.get("comparePeriods") or 1)
+
     def hcol(name, fallback):
         i = _get_col(headers, name)
         return i if i >= 0 else fallback
@@ -463,95 +532,89 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     pub_idx = hcol("Publisher", COL["PUBLISHER"])
     seg_idx = hcol("Segment", COL["SEGMENT"])
     date_idx = hcol("Date", COL["DATE"])
-    imp_idx = hcol("Impressions", COL["IMPRESSIONS"])
-    clk_idx = hcol("Clicks", COL["CLICKS"])
-    spd_idx = hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])
-    ql_idx = hcol("QL", COL["QL"])
-    qqg_idx = hcol("QQG", COL["QQG"])
-    ord_idx = hcol("Orders", COL["ORDERS"])
-    rev_idx = hcol("Revenue", COL["REVENUE"])
+    mcols = [
+        ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
+        ("clicks", hcol("Clicks", COL["CLICKS"])),
+        ("spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
+        ("ql", hcol("QL", COL["QL"])),
+        ("qqg", hcol("QQG", COL["QQG"])),
+        ("orders", hcol("Orders", COL["ORDERS"])),
+        ("revenue", hcol("Revenue", COL["REVENUE"])),
+    ]
 
-    agg: Dict[str, Dict[str, Dict[str, dict]]] = {}  # adv → pub → seg → metrics
-
-    for row in rows:
-        if len(row) <= seg_idx:
-            continue
-
-        adv = _safe_str(row[adv_idx])
-        pub = _safe_str(row[pub_idx])
-        seg = _safe_str(row[seg_idx]) or "Unknown"
-
-        if adv_filter and adv not in adv_filter:
-            continue
-        if pub_filter and pub not in pub_filter:
-            continue
-        if seg_filter and seg not in seg_filter:
-            continue
-
-        if date_from or date_to:
-            d = _parse_date(row[date_idx]) if len(row) > date_idx else None
-            if d is None:
+    def aggregate(dfrom, dto):
+        agg = {}
+        for row in rows:
+            if len(row) <= seg_idx:
                 continue
-            if date_from and d < date_from:
+            adv = _safe_str(row[adv_idx])
+            pub = _safe_str(row[pub_idx])
+            seg = _safe_str(row[seg_idx]) or "Unknown"
+            if adv_filter and adv not in adv_filter:
                 continue
-            if date_to and d > date_to:
+            if pub_filter and pub not in pub_filter:
                 continue
+            if seg_filter and seg not in seg_filter:
+                continue
+            if dfrom or dto:
+                d = _parse_date(row[date_idx]) if len(row) > date_idx else None
+                if d is None:
+                    continue
+                if dfrom and d < dfrom:
+                    continue
+                if dto and d > dto:
+                    continue
+            m = agg.setdefault(adv, {}).setdefault(pub, {}).setdefault(seg, {k: 0 for k in ADV_METRICS})
+            for key, col in mcols:
+                if len(row) > col:
+                    m[key] += _to_float(row[col])
+        return agg
 
-        if adv not in agg:
-            agg[adv] = {}
-        if pub not in agg[adv]:
-            agg[adv][pub] = {}
-        if seg not in agg[adv][pub]:
-            agg[adv][pub][seg] = {"impressions": 0, "clicks": 0, "spends": 0,
-                                   "ql": 0, "qqg": 0, "orders": 0, "revenue": 0}
+    curr = aggregate(date_from, date_to)
 
-        m = agg[adv][pub][seg]
-        m["impressions"] += _to_float(row[imp_idx]) if len(row) > imp_idx else 0
-        m["clicks"] += _to_float(row[clk_idx]) if len(row) > clk_idx else 0
-        m["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
-        m["ql"] += _to_float(row[ql_idx]) if len(row) > ql_idx else 0
-        m["qqg"] += _to_float(row[qqg_idx]) if len(row) > qqg_idx else 0
-        m["orders"] += _to_float(row[ord_idx]) if len(row) > ord_idx else 0
-        m["revenue"] += _to_float(row[rev_idx]) if len(row) > rev_idx else 0
+    prev_l1 = prev_l2 = prev_l3 = None
+    cmp_from = cmp_to = None
+    if compare:
+        cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
+        prev_l1, prev_l2, prev_l3 = _flatten_totals(aggregate(cmp_from, cmp_to), ADV_METRICS)
 
-    # Build nested output
     advertisers = []
-    for adv, pubs in sorted(agg.items()):
-        adv_totals = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0, "orders": 0, "revenue": 0}
+    for adv, pubs in sorted(curr.items()):
+        adv_tot = {k: 0 for k in ADV_METRICS}
         pub_list = []
         for pub, segs in sorted(pubs.items()):
-            pub_totals = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0, "orders": 0, "revenue": 0}
+            pub_tot = {k: 0 for k in ADV_METRICS}
             seg_list = []
             for seg, m in sorted(segs.items()):
-                rm = {k: round(v) for k, v in m.items()}
+                rm = _derive(m)
                 rm["name"] = seg
-                rm["ctr"] = round(rm["clicks"] / rm["impressions"] * 100, 2) if rm["impressions"] > 0 else 0
-                rm["cpm"] = round(rm["spends"] / (rm["impressions"] / 1000), 2) if rm["impressions"] > 0 else 0
-                rm["cpql"] = round(rm["spends"] / rm["ql"], 2) if rm["ql"] > 0 else None
+                if compare:
+                    rm["deltas"] = _deltas(m, (prev_l3 or {}).get((adv, pub, seg)), ADV_METRICS)
                 seg_list.append(rm)
-                for k in pub_totals:
-                    pub_totals[k] += m[k]
+                for k in pub_tot:
+                    pub_tot[k] += m[k]
+            pe = _derive(pub_tot)
+            pe["name"] = pub
+            pe["segments"] = seg_list
+            if compare:
+                pe["deltas"] = _deltas(pub_tot, (prev_l2 or {}).get((adv, pub)), ADV_METRICS)
+            pub_list.append(pe)
+            for k in adv_tot:
+                adv_tot[k] += pub_tot[k]
+        ae = _derive(adv_tot)
+        ae["name"] = adv
+        ae["publishers"] = pub_list
+        if compare:
+            ae["deltas"] = _deltas(adv_tot, (prev_l1 or {}).get(adv), ADV_METRICS)
+        advertisers.append(ae)
 
-            pub_entry = {k: round(v) for k, v in pub_totals.items()}
-            pub_entry["name"] = pub
-            pub_entry["ctr"] = round(pub_entry["clicks"] / pub_entry["impressions"] * 100, 2) if pub_entry["impressions"] > 0 else 0
-            pub_entry["cpm"] = round(pub_entry["spends"] / (pub_entry["impressions"] / 1000), 2) if pub_entry["impressions"] > 0 else 0
-            pub_entry["cpql"] = round(pub_entry["spends"] / pub_entry["ql"], 2) if pub_entry["ql"] > 0 else None
-            pub_entry["segments"] = seg_list
-            pub_list.append(pub_entry)
-            for k in adv_totals:
-                adv_totals[k] += pub_totals[k]
-
-        adv_entry = {k: round(v) for k, v in adv_totals.items()}
-        adv_entry["name"] = adv
-        adv_entry["ctr"] = round(adv_entry["clicks"] / adv_entry["impressions"] * 100, 2) if adv_entry["impressions"] > 0 else 0
-        adv_entry["cpm"] = round(adv_entry["spends"] / (adv_entry["impressions"] / 1000), 2) if adv_entry["impressions"] > 0 else 0
-        adv_entry["cpql"] = round(adv_entry["spends"] / adv_entry["ql"], 2) if adv_entry["ql"] > 0 else None
-        adv_entry["publishers"] = pub_list
-        advertisers.append(adv_entry)
-
-    return {"advertisers": advertisers, "viewMode": view_mode,
-            "period": _period_info(view_mode, date_from, date_to, explicit_range)}
+    out = {"advertisers": advertisers, "viewMode": view_mode,
+           "period": _period_info(view_mode, date_from, date_to, explicit_range)}
+    if compare:
+        out["compare"] = {"periods": n_back,
+                          "start": cmp_from.isoformat() if cmp_from else None,
+                          "end": cmp_to.isoformat() if cmp_to else None}
+    return out
 
 
 # ── Publisher Performance ──────────────────────────────────────────────────────
@@ -573,6 +636,9 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         date_from = _parse_date(ranges["current"]["start"])
         date_to = _parse_date(ranges["current"]["end"])
 
+    compare = bool(filters.get("compare"))
+    n_back = int(filters.get("comparePeriods") or 1)
+
     def hcol(name, fallback):
         i = _get_col(headers, name)
         return i if i >= 0 else fallback
@@ -580,85 +646,87 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     pub_idx = hcol("Publisher", COL["PUBLISHER"])
     seg_idx = hcol("Segment", COL["SEGMENT"])
     date_idx = hcol("Date", COL["DATE"])
-    imp_idx = hcol("Impressions", COL["IMPRESSIONS"])
-    clk_idx = hcol("Clicks", COL["CLICKS"])
-    spd_idx = hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])
-    ql_idx = hcol("QL", COL["QL"])
-    qqg_idx = hcol("QQG", COL["QQG"])
+    mcols = [
+        ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
+        ("clicks", hcol("Clicks", COL["CLICKS"])),
+        ("spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
+        ("ql", hcol("QL", COL["QL"])),
+        ("qqg", hcol("QQG", COL["QQG"])),
+    ]
 
-    agg: Dict[str, Dict[str, Dict[str, dict]]] = {}  # pub → adv → seg → metrics
-
-    for row in rows:
-        if len(row) <= seg_idx:
-            continue
-
-        pub = _safe_str(row[pub_idx])
-        adv = _safe_str(row[adv_idx])
-        seg = _safe_str(row[seg_idx]) or "Unknown"
-
-        if pub_filter and pub not in pub_filter:
-            continue
-        if adv_filter and adv not in adv_filter:
-            continue
-        if seg_filter and seg not in seg_filter:
-            continue
-
-        if date_from or date_to:
-            d = _parse_date(row[date_idx]) if len(row) > date_idx else None
-            if d is None:
+    def aggregate(dfrom, dto):
+        agg = {}
+        for row in rows:
+            if len(row) <= seg_idx:
                 continue
-            if date_from and d < date_from:
+            pub = _safe_str(row[pub_idx])
+            adv = _safe_str(row[adv_idx])
+            seg = _safe_str(row[seg_idx]) or "Unknown"
+            if pub_filter and pub not in pub_filter:
                 continue
-            if date_to and d > date_to:
+            if adv_filter and adv not in adv_filter:
                 continue
+            if seg_filter and seg not in seg_filter:
+                continue
+            if dfrom or dto:
+                d = _parse_date(row[date_idx]) if len(row) > date_idx else None
+                if d is None:
+                    continue
+                if dfrom and d < dfrom:
+                    continue
+                if dto and d > dto:
+                    continue
+            m = agg.setdefault(pub, {}).setdefault(adv, {}).setdefault(seg, {k: 0 for k in PUB_METRICS})
+            for key, col in mcols:
+                if len(row) > col:
+                    m[key] += _to_float(row[col])
+        return agg
 
-        if pub not in agg:
-            agg[pub] = {}
-        if adv not in agg[pub]:
-            agg[pub][adv] = {}
-        if seg not in agg[pub][adv]:
-            agg[pub][adv][seg] = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0}
+    curr = aggregate(date_from, date_to)
 
-        m = agg[pub][adv][seg]
-        m["impressions"] += _to_float(row[imp_idx]) if len(row) > imp_idx else 0
-        m["clicks"] += _to_float(row[clk_idx]) if len(row) > clk_idx else 0
-        m["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
-        m["ql"] += _to_float(row[ql_idx]) if len(row) > ql_idx else 0
-        m["qqg"] += _to_float(row[qqg_idx]) if len(row) > qqg_idx else 0
+    prev_l1 = prev_l2 = prev_l3 = None
+    cmp_from = cmp_to = None
+    if compare:
+        cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
+        prev_l1, prev_l2, prev_l3 = _flatten_totals(aggregate(cmp_from, cmp_to), PUB_METRICS)
 
     publishers = []
-    for pub, advs in sorted(agg.items()):
-        pub_totals = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0}
+    for pub, advs in sorted(curr.items()):
+        pub_tot = {k: 0 for k in PUB_METRICS}
         adv_list = []
         for adv, segs in sorted(advs.items()):
-            adv_totals = {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0}
+            adv_tot = {k: 0 for k in PUB_METRICS}
             seg_list = []
             for seg, m in sorted(segs.items()):
-                rm = {k: round(v) for k, v in m.items()}
+                rm = _derive(m)
                 rm["name"] = seg
-                rm["ctr"] = round(rm["clicks"] / rm["impressions"] * 100, 2) if rm["impressions"] > 0 else 0
-                rm["cpm"] = round(rm["spends"] / (rm["impressions"] / 1000), 2) if rm["impressions"] > 0 else 0
+                if compare:
+                    rm["deltas"] = _deltas(m, (prev_l3 or {}).get((pub, adv, seg)), PUB_METRICS)
                 seg_list.append(rm)
-                for k in adv_totals:
-                    adv_totals[k] += m[k]
-            adv_entry = {k: round(v) for k, v in adv_totals.items()}
-            adv_entry["name"] = adv
-            adv_entry["ctr"] = round(adv_entry["clicks"] / adv_entry["impressions"] * 100, 2) if adv_entry["impressions"] > 0 else 0
-            adv_entry["cpm"] = round(adv_entry["spends"] / (adv_entry["impressions"] / 1000), 2) if adv_entry["impressions"] > 0 else 0
-            adv_entry["segments"] = seg_list
-            adv_list.append(adv_entry)
-            for k in pub_totals:
-                pub_totals[k] += adv_totals[k]
+                for k in adv_tot:
+                    adv_tot[k] += m[k]
+            ae = _derive(adv_tot)
+            ae["name"] = adv
+            ae["segments"] = seg_list
+            if compare:
+                ae["deltas"] = _deltas(adv_tot, (prev_l2 or {}).get((pub, adv)), PUB_METRICS)
+            adv_list.append(ae)
+            for k in pub_tot:
+                pub_tot[k] += adv_tot[k]
+        pe = _derive(pub_tot)
+        pe["name"] = pub
+        pe["advertisers"] = adv_list
+        if compare:
+            pe["deltas"] = _deltas(pub_tot, (prev_l1 or {}).get(pub), PUB_METRICS)
+        publishers.append(pe)
 
-        pub_entry = {k: round(v) for k, v in pub_totals.items()}
-        pub_entry["name"] = pub
-        pub_entry["ctr"] = round(pub_entry["clicks"] / pub_entry["impressions"] * 100, 2) if pub_entry["impressions"] > 0 else 0
-        pub_entry["cpm"] = round(pub_entry["spends"] / (pub_entry["impressions"] / 1000), 2) if pub_entry["impressions"] > 0 else 0
-        pub_entry["advertisers"] = adv_list
-        publishers.append(pub_entry)
-
-    return {"publishers": publishers, "viewMode": view_mode,
-            "period": _period_info(view_mode, date_from, date_to, explicit_range)}
+    out = {"publishers": publishers, "viewMode": view_mode,
+           "period": _period_info(view_mode, date_from, date_to, explicit_range)}
+    if compare:
+        out["compare"] = {"periods": n_back,
+                          "start": cmp_from.isoformat() if cmp_from else None,
+                          "end": cmp_to.isoformat() if cmp_to else None}
+    return out
 
 
 def _period_info(view_mode: str, date_from, date_to, explicit_range: bool) -> dict:

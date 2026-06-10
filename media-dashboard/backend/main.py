@@ -233,6 +233,8 @@ def advertiser_performance(
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     viewMode: str = "weekly",
+    compare: bool = False,
+    comparePeriods: int = 1,
 ):
     data = load_master_report_cache()
     filters = {
@@ -241,6 +243,8 @@ def advertiser_performance(
         "segments": segments or [],
         "dateFrom": dateFrom,
         "dateTo": dateTo,
+        "compare": compare,
+        "comparePeriods": comparePeriods,
     }
     result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
     result["cacheAge"] = data.get("cache_age", 0)
@@ -255,6 +259,8 @@ def publisher_performance(
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     viewMode: str = "weekly",
+    compare: bool = False,
+    comparePeriods: int = 1,
 ):
     data = load_master_report_cache()
     filters = {
@@ -263,6 +269,8 @@ def publisher_performance(
         "advertisers": advertisers or [],
         "dateFrom": dateFrom,
         "dateTo": dateTo,
+        "compare": compare,
+        "comparePeriods": comparePeriods,
     }
     result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
     result["cacheAge"] = data.get("cache_age", 0)
