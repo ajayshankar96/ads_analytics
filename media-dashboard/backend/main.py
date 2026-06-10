@@ -871,11 +871,37 @@ def _get_drive_report(report_id: str, report_type: str) -> Optional[dict]:
     )
 
 
+def _merged_reports(report_type: str, registry_sheet: str, parse_fn) -> List[dict]:
+    """Hybrid list: new reports from the Drive folder + legacy reports from the
+    read-only KPI registry. Drive entries win on duplicate spreadsheet IDs.
+
+    New reports (owned by the current app account) are fully functional.
+    Legacy reports (owned by the original creator) are read/open-only — they
+    appear with a `legacy: True` flag so the UI can hint that refresh/delete
+    aren't available until access is granted.
+    """
+    drive_reports = _list_drive_reports(report_type)
+    drive_ss_ids = {r.get("spreadsheetId") for r in drive_reports if r.get("spreadsheetId")}
+
+    legacy = []
+    try:
+        legacy = parse_fn(_read_registry(registry_sheet))
+    except Exception as e:
+        logger.warning(f"Could not read legacy registry {registry_sheet}: {e}")
+
+    legacy_only = [
+        {**r, "legacy": True}
+        for r in legacy
+        if r.get("spreadsheetId") and r["spreadsheetId"] not in drive_ss_ids
+    ]
+    return drive_reports + legacy_only
+
+
 # ── Advertiser Reporting ───────────────────────────────────────────────────────
 
 @app.get("/api/reporting/advertiser/list")
 def list_advertiser_reports():
-    return {"reports": _list_drive_reports("advertiser")}
+    return {"reports": _merged_reports("advertiser", ADVERTISER_REGISTRY_SHEET, parse_adv_registry)}
 
 
 @app.get("/api/reporting/advertiser/columns")
@@ -983,6 +1009,13 @@ def refresh_advertiser_report(report_id: str):
 
     report = _get_drive_report(report_id, "advertiser")
     if not report:
+        legacy = next((r for r in parse_adv_registry(_read_registry(ADVERTISER_REGISTRY_SHEET))
+                       if r["id"] == report_id), None)
+        if legacy:
+            raise HTTPException(status_code=400, detail=(
+                "This is a legacy report owned by another account. Refresh isn't "
+                "available until edit access is granted, or recreate it as a new report."
+            ))
         raise HTTPException(status_code=404, detail="Report not found")
 
     data = load_master_report_cache()
@@ -1020,6 +1053,14 @@ def refresh_advertiser_report(report_id: str):
 
 @app.delete("/api/reporting/advertiser/{report_id}")
 def delete_advertiser_report(report_id: str):
+    if not _get_drive_report(report_id, "advertiser"):
+        legacy = next((r for r in parse_adv_registry(_read_registry(ADVERTISER_REGISTRY_SHEET))
+                       if r["id"] == report_id), None)
+        if legacy:
+            raise HTTPException(status_code=400, detail=(
+                "This is a legacy report owned by another account and can't be "
+                "deleted from here until edit access is granted."
+            ))
     try:
         trash_file(report_id)
         return {"success": True}
@@ -1044,7 +1085,7 @@ def refresh_all_advertiser_reports():
 
 @app.get("/api/reporting/publisher/list")
 def list_publisher_reports():
-    return {"reports": _list_drive_reports("publisher")}
+    return {"reports": _merged_reports("publisher", PUBLISHER_REGISTRY_SHEET, parse_pub_registry)}
 
 
 @app.get("/api/reporting/publisher/metrics")
@@ -1174,6 +1215,13 @@ def refresh_publisher_report(report_id: str):
 
     report = _get_drive_report(report_id, "publisher")
     if not report:
+        legacy = next((r for r in parse_pub_registry(_read_registry(PUBLISHER_REGISTRY_SHEET))
+                       if r["id"] == report_id), None)
+        if legacy:
+            raise HTTPException(status_code=400, detail=(
+                "This is a legacy report owned by another account. Refresh isn't "
+                "available until edit access is granted, or recreate it as a new report."
+            ))
         raise HTTPException(status_code=404, detail="Publisher report not found")
 
     data = load_master_report_cache()
@@ -1220,6 +1268,14 @@ def refresh_publisher_report(report_id: str):
 
 @app.delete("/api/reporting/publisher/{report_id}")
 def delete_publisher_report(report_id: str):
+    if not _get_drive_report(report_id, "publisher"):
+        legacy = next((r for r in parse_pub_registry(_read_registry(PUBLISHER_REGISTRY_SHEET))
+                       if r["id"] == report_id), None)
+        if legacy:
+            raise HTTPException(status_code=400, detail=(
+                "This is a legacy report owned by another account and can't be "
+                "deleted from here until edit access is granted."
+            ))
     try:
         trash_file(report_id)
         return {"success": True}
