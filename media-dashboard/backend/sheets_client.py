@@ -408,10 +408,10 @@ def share_spreadsheet(spreadsheet_id: str, emails: List[str]) -> None:
         logger.warning(f"Drive sharing failed (non-fatal): {e}")
 
 
-def send_email(to: List[str], subject: str, html_body: str, cc: List[str] = None) -> dict:
+def send_email(to: List[str], subject: str, body: str, subtype: str = "html", cc: List[str] = None) -> dict:
     """Send an email via the Gmail API as the authenticated account.
 
-    Requires the gmail.send scope on the OAuth token.
+    subtype: "plain" or "html". Requires the gmail.send scope on the OAuth token.
     """
     import base64
     from email.mime.text import MIMEText
@@ -419,7 +419,7 @@ def send_email(to: List[str], subject: str, html_body: str, cc: List[str] = None
     creds = _get_credentials()
     gmail = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-    msg = MIMEText(html_body, "html")
+    msg = MIMEText(body, subtype)
     msg["to"] = ", ".join(to)
     if cc:
         msg["cc"] = ", ".join(cc)

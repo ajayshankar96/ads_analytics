@@ -166,6 +166,41 @@ function buildCampaignDetailsJson(cd) {
   });
 }
 
+// ─── Email draft builder (matches the AdOps sample format) ─────────────────────
+function buildEmailDraft(basic, cd) {
+  const v = (x) => (x !== undefined && x !== null && String(x).trim()) ? String(x).trim() : "";
+  const L = [];
+  L.push("Hi,");
+  L.push("");
+  L.push("Please find below the campaign details for your reference.");
+  L.push("");
+  if (v(cd.landing_link)) L.push(`Landing Link: ${v(cd.landing_link)}`);
+  if (v(cd.offer_title))  L.push(`Offer Title: ${v(cd.offer_title)}`);
+  L.push("");
+  if (v(cd.tc))            { L.push("Terms & Conditions:"); L.push(v(cd.tc)); L.push(""); }
+  if (v(cd.how_to_redeem)) { L.push("How to Redeem:"); L.push(v(cd.how_to_redeem)); L.push(""); }
+  if (v(cd.codes))       L.push(`Promo Code(s): ${v(cd.codes)}`);
+  if (v(cd.expiry_date)) L.push(`Code Validity: ${v(cd.expiry_date)}`);
+  L.push("");
+  if (v(cd.creative_url)) L.push(`Creative: ${v(cd.creative_url)}`);
+  if (v(cd.logo_url))     L.push(`Logo: ${v(cd.logo_url)}`);
+  L.push("");
+  const targeting = v(cd.segment_description) || v(basic.additional_context);
+  if (targeting) { L.push(`Targeting: ${targeting}`); L.push(""); }
+  if (v(cd.total_budget)) L.push(`Daily Budget: Rs ${v(cd.total_budget)} per day`);
+  if (v(cd.cpc) || v(cd.cpm)) L.push(`CPC/CPD: ${v(cd.cpc) || v(cd.cpm)}`);
+  L.push("");
+  L.push("Regards,");
+  L.push("AdOps Team | Razorpay");
+  return L.join("\n");
+}
+
+function buildEmailSubject(basic, cd) {
+  const brand = (cd.brand_name || basic.brand || basic.advertiser || "Campaign").trim();
+  const offer = (cd.offer_title || basic.offer || "").trim();
+  return offer ? `Campaign Details: ${brand} — ${offer}` : `Campaign Details: ${brand}`;
+}
+
 // ─── Default states ───────────────────────────────────────────────────────────
 const EMPTY_BASIC = {
   campaign_type: "",
@@ -215,9 +250,11 @@ export function NewCampaignForm({ filterOptions }) {
   const [submitting, setSubmitting] = useState(false);
   const [alert, setAlert] = useState(null);
 
-  // Email-after-submit state
-  const [lastSubmitted, setLastSubmitted] = useState(null);
+  // Email-after-submit state (draft → edit → send)
+  const [showEmailDraft, setShowEmailDraft] = useState(false);
   const [recipients, setRecipients] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailAlert, setEmailAlert] = useState(null);
 
@@ -258,7 +295,10 @@ export function NewCampaignForm({ filterOptions }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Submission failed");
       setAlert({ type: "success", msg: "Campaign submitted successfully!" });
-      setLastSubmitted({ ...basic });   // snapshot for the email panel
+      // Pre-generate an editable email draft from the just-submitted data
+      setEmailSubject(buildEmailSubject(basic, cd));
+      setEmailBody(buildEmailDraft(basic, cd));
+      setShowEmailDraft(true);
       setEmailAlert(null);
       setBasic(EMPTY_BASIC); setGoals([EMPTY_GOAL()]); setMetrics([EMPTY_METRIC(), EMPTY_METRIC()]); setCd(EMPTY_CD);
     } catch (ex) {
@@ -269,11 +309,12 @@ export function NewCampaignForm({ filterOptions }) {
   const handleSendEmail = async () => {
     const recips = recipients.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
     if (!recips.length) { setEmailAlert({ type: "error", msg: "Enter at least one recipient email." }); return; }
+    if (!emailBody.trim()) { setEmailAlert({ type: "error", msg: "Email body is empty." }); return; }
     setSendingEmail(true); setEmailAlert(null);
     try {
       const res = await fetch(`${API}/api/onboarding/send-email`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipients: recips, ...lastSubmitted }),
+        body: JSON.stringify({ recipients: recips, subject: emailSubject, body: emailBody }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to send email");
@@ -295,50 +336,63 @@ export function NewCampaignForm({ filterOptions }) {
         </div>
       )}
 
-      {/* ── Email the just-created campaign ── */}
-      {lastSubmitted && (
+      {/* ── Email draft editor (appears after a campaign is created) ── */}
+      {showEmailDraft && (
         <div style={{
-          border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10,
+          border: "1px solid #bfdbfe", background: "#f8fbff", borderRadius: 10,
           padding: 16, marginBottom: 20,
         }}>
-          <div style={{ fontWeight: 700, color: "#1e3a5f", marginBottom: 4 }}>
-            📧 Email this campaign
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontWeight: 700, color: "#1e3a5f" }}>📧 Review &amp; send campaign email</div>
+            <span
+              onClick={() => { setShowEmailDraft(false); setEmailAlert(null); }}
+              style={{ cursor: "pointer", color: "#94a3b8", fontSize: 18, lineHeight: 1 }}
+              title="Dismiss"
+            >×</span>
           </div>
-          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-            Send a summary of <b>{lastSubmitted.advertiser || "this campaign"}</b>
-            {lastSubmitted.offer ? ` — ${lastSubmitted.offer}` : ""} to one or more recipients.
+          <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 12px" }}>
+            A draft was generated from the campaign details. Edit anything below, then send.
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <input
-              type="text"
-              value={recipients}
-              onChange={e => setRecipients(e.target.value)}
-              placeholder="recipient1@razorpay.com, recipient2@razorpay.com"
-              style={{
-                flex: 1, minWidth: 280, padding: "8px 12px", borderRadius: 6,
-                border: "1px solid #cbd5e1", fontSize: 13,
-              }}
-            />
+
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Recipients</label>
+          <input
+            type="text"
+            value={recipients}
+            onChange={e => setRecipients(e.target.value)}
+            placeholder="recipient1@razorpay.com, recipient2@razorpay.com"
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13, marginTop: 4, marginBottom: 10, boxSizing: "border-box" }}
+          />
+
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Subject</label>
+          <input
+            type="text"
+            value={emailSubject}
+            onChange={e => setEmailSubject(e.target.value)}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13, marginTop: 4, marginBottom: 10, boxSizing: "border-box" }}
+          />
+
+          <label style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Body (editable)</label>
+          <textarea
+            value={emailBody}
+            onChange={e => setEmailBody(e.target.value)}
+            rows={18}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: 13, marginTop: 4, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: 1.5, boxSizing: "border-box", resize: "vertical" }}
+          />
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
             <button
               onClick={handleSendEmail}
               disabled={sendingEmail}
-              style={{
-                padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer",
-                background: sendingEmail ? "#94a3b8" : "#2563eb", color: "#fff",
-                fontWeight: 600, fontSize: 13,
-              }}
+              style={{ padding: "8px 18px", borderRadius: 6, border: "none", cursor: "pointer", background: sendingEmail ? "#94a3b8" : "#2563eb", color: "#fff", fontWeight: 600, fontSize: 13 }}
             >
-              {sendingEmail ? "Sending…" : "Send Email"}
+              {sendingEmail ? "Sending…" : "✉️ Send Email"}
             </button>
+            {emailAlert && (
+              <span style={{ fontSize: 13, color: emailAlert.type === "success" ? "#059669" : "#dc2626" }}>
+                {emailAlert.type === "success" ? "✅" : "❌"} {emailAlert.msg}
+              </span>
+            )}
           </div>
-          {emailAlert && (
-            <div style={{
-              marginTop: 10, fontSize: 13,
-              color: emailAlert.type === "success" ? "#059669" : "#dc2626",
-            }}>
-              {emailAlert.type === "success" ? "✅" : "❌"} {emailAlert.msg}
-            </div>
-          )}
         </div>
       )}
 
