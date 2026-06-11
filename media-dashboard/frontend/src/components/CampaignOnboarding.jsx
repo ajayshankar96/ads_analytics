@@ -863,11 +863,14 @@ export function NewCampaignForm({ filterOptions }) {
 }
 
 // ─── Manage Campaigns ─────────────────────────────────────────────────────────
+const CAMPAIGNS_PER_PAGE = 20;
+
 function ManageCampaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState("");
+  const [page, setPage]           = useState(0);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -879,11 +882,22 @@ function ManageCampaigns() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = campaigns.filter(c => {
-    const q = search.toLowerCase();
-    return !q || [c.advertiser, c.publisher, c.campaign_type, c.brand, c.status]
-      .some(v => (v || "").toLowerCase().includes(q));
-  });
+  // Reset to first page whenever the search term changes
+  useEffect(() => { setPage(0); }, [search]);
+
+  // Newest first: rows are appended to the sheet, so reverse = latest created first
+  const filtered = campaigns
+    .filter(c => {
+      const q = search.toLowerCase();
+      return !q || [c.advertiser, c.publisher, c.campaign_type, c.brand, c.status]
+        .some(v => (v || "").toLowerCase().includes(q));
+    })
+    .slice()
+    .reverse();
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / CAMPAIGNS_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageItems = filtered.slice(safePage * CAMPAIGNS_PER_PAGE, safePage * CAMPAIGNS_PER_PAGE + CAMPAIGNS_PER_PAGE);
 
   return (
     <div>
@@ -904,9 +918,9 @@ function ManageCampaigns() {
                     .map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {filtered.map((c, i) => (
+                  {pageItems.map((c, i) => (
                     <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                      <td style={S.td}>{i + 1}</td>
+                      <td style={S.td}>{safePage * CAMPAIGNS_PER_PAGE + i + 1}</td>
                       <td style={S.td}>{c.campaign_type}</td>
                       <td style={{ ...S.td, fontWeight: 600 }}>{c.advertiser}</td>
                       <td style={S.td}>{c.publisher}</td>
@@ -922,7 +936,27 @@ function ManageCampaigns() {
                   ))}
                 </tbody>
               </table>
-              <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>Showing {filtered.length} of {campaigns.length} campaigns</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontSize: 12, color: "#888" }}>
+                  Showing {filtered.length === 0 ? 0 : safePage * CAMPAIGNS_PER_PAGE + 1}–{safePage * CAMPAIGNS_PER_PAGE + pageItems.length} of {filtered.length}
+                  {search ? ` (filtered from ${campaigns.length})` : ""}
+                </div>
+                {totalPages > 1 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={() => setPage(p => Math.max(0, p - 1))}
+                      disabled={safePage === 0}
+                      style={{ ...S.btn, ...S.btnSecondary, padding: "5px 12px", fontSize: 12, opacity: safePage === 0 ? 0.5 : 1, cursor: safePage === 0 ? "not-allowed" : "pointer" }}
+                    >← Prev</button>
+                    <span style={{ fontSize: 12, color: "#475569" }}>Page {safePage + 1} of {totalPages}</span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                      disabled={safePage >= totalPages - 1}
+                      style={{ ...S.btn, ...S.btnSecondary, padding: "5px 12px", fontSize: 12, opacity: safePage >= totalPages - 1 ? 0.5 : 1, cursor: safePage >= totalPages - 1 ? "not-allowed" : "pointer" }}
+                    >Next →</button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
       </div>
