@@ -30,10 +30,15 @@ spec:
             git clone --depth 1 https://github.com/ajayshankar96/ads_analytics.git /app &&
             cd /app/media-dashboard/backend &&
             pip install --no-cache-dir -q -r requirements.txt &&
+            alembic upgrade head &&
             uvicorn main:app --host 0.0.0.0 --port 8000
         ports:
         - containerPort: 8000
           name: http
+        # Postgres connection (DATABASE_URL + creds) from the provisioned secret.
+        envFrom:
+        - secretRef:
+            name: media-dashboard-postgres-credentials
         env:
         - name: MASTER_SPREADSHEET_ID
           valueFrom:

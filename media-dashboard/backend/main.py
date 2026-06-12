@@ -11,11 +11,12 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache import cache, load_master_report_cache, start_background_refresh, MASTER_CACHE_KEY
 from data_logic import (
@@ -73,6 +74,9 @@ from reporting_logic import (
     parse_adv_registry,
     parse_pub_registry,
 )
+import workflow_logic as wf
+import workflow_repo as repo
+from db.database import get_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -815,6 +819,168 @@ def onboarding_templates():
         "goals": _json_mod.dumps(goals_template, indent=2),
         "metrics": _json_mod.dumps(metrics_template, indent=2),
         "campaign_details": _json_mod.dumps(campaign_details_template, indent=2),
+    }
+
+
+# ── Sales pipeline (Dashboard 1) — Postgres-backed ───────────────────────────
+# Lead -> negotiation -> signed agreement. Closing a lead opens a campaign in
+# Ops (see workflow_repo.close_lead). Persisted in the rmn_* Postgres tables.
+
+class CreateLeadRequest(BaseModel):
+    advertiser: str
+    owner_email: str
+    source: str = ""
+    est_value: Optional[int] = None
+    currency: str = "INR"
+
+
+class UpdateLeadRequest(BaseModel):
+    negotiation_status: Optional[str] = None
+    est_value: Optional[int] = None
+    owner_email: Optional[str] = None
+
+
+class CloseLeadRequest(BaseModel):
+    buy_type: str
+    contract_value: int
+    currency: str = "INR"
+    signed_doc_url: str = ""
+
+
+@app.get("/api/sales/leads")
+async def list_leads(status: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
+    leads = await repo.list_leads(db, status)
+    out = [repo.lead_dict(l) for l in leads]
+    return {"leads": out, "total": len(out)}
+
+
+@app.post("/api/sales/leads")
+async def create_lead(req: CreateLeadRequest, db: AsyncSession = Depends(get_db)):
+    if not req.advertiser or not req.owner_email:
+        raise HTTPException(status_code=400, detail="advertiser and owner_email are required")
+    lead = await repo.create_lead(
+        db, advertiser=req.advertiser, owner_email=req.owner_email,
+        source=req.source, est_value=req.est_value, currency=req.currency,
+    )
+    return {"success": True, "lead": repo.lead_dict(lead)}
+
+
+@app.patch("/api/sales/leads/{lead_id}")
+async def update_lead(lead_id: str, req: UpdateLeadRequest, db: AsyncSession = Depends(get_db)):
+    lead = await repo.get_lead(db, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"lead {lead_id} not found")
+    if req.negotiation_status is not None and req.negotiation_status.upper() not in wf.NEGOTIATION_STATUSES:
+        raise HTTPException(status_code=400, detail=f"invalid negotiation_status {req.negotiation_status!r}")
+    lead = await repo.update_lead(
+        db, lead, negotiation_status=req.negotiation_status,
+        est_value=req.est_value, owner_email=req.owner_email,
+    )
+    return {"success": True, "lead": repo.lead_dict(lead)}
+
+
+@app.post("/api/sales/leads/{lead_id}/close")
+async def close_lead(lead_id: str, req: CloseLeadRequest, db: AsyncSession = Depends(get_db)):
+    """Mark a lead WON, create a SIGNED agreement, and open a campaign in Ops."""
+    if req.buy_type.upper() not in wf.BUY_TYPES:
+        raise HTTPException(status_code=400, detail=f"invalid buy_type {req.buy_type!r}")
+    if req.contract_value <= 0:
+        raise HTTPException(status_code=400, detail="contract_value must be positive")
+    lead = await repo.get_lead(db, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"lead {lead_id} not found")
+    if lead.negotiation_status == "WON":
+        raise HTTPException(status_code=400, detail=f"lead {lead_id} already closed")
+    result = await repo.close_lead(
+        db, lead, buy_type=req.buy_type, contract_value=req.contract_value,
+        currency=req.currency, signed_doc_url=req.signed_doc_url,
+    )
+    return {"success": True, **result}
+
+
+# ── Campaign Ops stage machine (Dashboard 2) — Postgres-backed ───────────────
+# Campaigns opened from a closed lead progress through validated stages with
+# hand-off emails. ops-tasks gate the go-live transition.
+
+class UpdateOpsTaskRequest(BaseModel):
+    status: Optional[str] = None
+    owner_email: Optional[str] = None
+
+
+class TransitionRequest(BaseModel):
+    to_stage: str
+    actor_email: str = ""
+    notify_recipients: Optional[List[str]] = None
+
+
+@app.get("/api/workflow/stages")
+def workflow_stages():
+    return {
+        "stages": wf.OPS_STAGES,
+        "labels": wf.STAGE_LABELS,
+        "transitions": {s: wf.allowed_transitions(s) for s in wf.OPS_STAGES},
+        "handoff_on": wf.HANDOFF_ON,
+    }
+
+
+@app.get("/api/workflow/campaigns")
+async def workflow_campaigns(db: AsyncSession = Depends(get_db)):
+    camps = await repo.list_campaigns(db)
+    return {"campaigns": [repo.campaign_dict(c) for c in camps], "total": len(camps)}
+
+
+@app.get("/api/workflow/campaigns/{campaign_id}/ops-tasks")
+async def workflow_ops_tasks(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    tasks = await repo.list_ops_tasks(db, campaign_id)
+    return {"ops_tasks": [repo.ops_task_dict(t) for t in tasks]}
+
+
+@app.patch("/api/workflow/ops-tasks/{task_id}")
+async def workflow_update_ops_task(task_id: str, req: UpdateOpsTaskRequest, db: AsyncSession = Depends(get_db)):
+    task = await repo.get_ops_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"ops task {task_id} not found")
+    if req.status is not None and req.status.upper() not in wf.TASK_STATUSES:
+        raise HTTPException(status_code=400, detail=f"invalid status {req.status!r}")
+    task = await repo.update_ops_task(db, task, status=req.status, owner_email=req.owner_email)
+    return {"success": True, "ops_task": repo.ops_task_dict(task)}
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/transition")
+async def workflow_transition(campaign_id: str, req: TransitionRequest, db: AsyncSession = Depends(get_db)):
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    from_stage = campaign.current_stage
+    try:
+        campaign = await repo.transition_campaign(
+            db, campaign, to_stage=req.to_stage, actor_email=req.actor_email,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Fire-and-forget hand-off email: a send failure must not undo the committed
+    # stage change.
+    notified: List[str] = []
+    team = wf.HANDOFF_ON.get(campaign.current_stage)
+    if team and req.notify_recipients:
+        recips = [r.strip() for r in req.notify_recipients if r and r.strip()]
+        if recips:
+            try:
+                from sheets_client import send_email
+                label = wf.STAGE_LABELS.get(campaign.current_stage, campaign.current_stage)
+                subject = f"[RMN] Campaign '{campaign.name}' → {label}"
+                body = f"Campaign '{campaign.name}' has moved to {label} ({team} hand-off)."
+                send_email(recips, subject, body, subtype="plain")
+                notified = recips
+            except Exception as e:
+                logger.warning(f"hand-off email failed: {e}")
+
+    return {
+        "success": True,
+        "campaign": repo.campaign_dict(campaign),
+        "from_stage": from_stage,
+        "notified": notified,
     }
 
 

@@ -137,3 +137,33 @@ export const refreshPublisherReport = (id) =>
 
 export const deletePublisherReport = (id) =>
   apiFetch(`/api/reporting/publisher/${id}`, { method: "DELETE" });
+
+// ── Sales pipeline (Dashboard 1) ──────────────────────────────────────────────
+export const getLeads = (status) =>
+  apiFetch(`/api/sales/leads${buildQuery({ status })}`);
+
+export const createLead = (payload) =>
+  apiFetch("/api/sales/leads", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateLead = (id, payload) =>
+  apiFetch(`/api/sales/leads/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const closeLead = (id, payload) =>
+  apiFetch(`/api/sales/leads/${id}/close`, { method: "POST", body: JSON.stringify(payload) });
+
+// ── Campaign Ops (Dashboard 2) — Postgres-backed workflow ─────────────────────
+export const getWorkflowStages = () => apiFetch("/api/workflow/stages");
+
+export const getWorkflowCampaigns = () => apiFetch("/api/workflow/campaigns");
+
+export const getOpsTasks = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/ops-tasks`);
+
+export const updateOpsTask = (taskId, payload) =>
+  apiFetch(`/api/workflow/ops-tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const transitionCampaign = (campaignId, payload) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/transition`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });

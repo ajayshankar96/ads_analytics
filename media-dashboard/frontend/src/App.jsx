@@ -12,6 +12,8 @@ import ChatBot from "./components/ChatBot";
 import CampaignOnboarding from "./components/CampaignOnboarding";
 import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
+import SalesPipeline from "./components/SalesPipeline";
+import CampaignOps from "./components/CampaignOps";
 import { getFilters, getHealth, refreshCache, recordView, getViewStats } from "./api";
 
 // ── Tab groups (Option C layout) ──────────────────────────────────────────────
@@ -49,6 +51,14 @@ const TAB_GROUPS = [
     ],
   },
   {
+    label: "Workflow",
+    color: "#db2777",
+    tabs: [
+      { id: "sales", label: "Sales Pipeline", icon: "🤝" },
+      { id: "ops",   label: "Campaign Ops",   icon: "🚦" },
+    ],
+  },
+  {
     label: "Reports",
     color: "#059669",
     tabs: [
@@ -71,7 +81,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting",
+  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -355,6 +365,8 @@ export default function App() {
       case "monthly":        return <MonthlySpend />;
       case "kpis":           return <GlobalKPIs />;
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
+      case "sales":          return <SalesPipeline />;
+      case "ops":            return <CampaignOps />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
       case "performance":    return <AdvertiserPerformance {...props} />;
