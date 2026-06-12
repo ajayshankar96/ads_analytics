@@ -7,3 +7,8 @@ data:
   MASTER_SPREADSHEET_ID: "1yvcrWEvWauUOOGJrN5votRlOP-kCaSrOKeh-YvjKjfI"
   KPI_SPREADSHEET_ID: "1VDr2ewZw2Xl43PuYBoKt8PgepItHZs-icD49YnILBss"
   CACHE_REFRESH_INTERVAL: "300"
+  # ── Auth gate (non-secret). Blank GOOGLE_CLIENT_ID keeps the gate OFF;
+  # set it (+ the secret keys below) to turn the OAuth gate ON.
+  GOOGLE_CLIENT_ID: "38441679546-r2kloe55sdg1gsv334ohf36kqsf88t28.apps.googleusercontent.com"
+  GOOGLE_REDIRECT_URI: "https://3p-media-dashboard-analytics.dev.razorpay.in/auth/callback"
+  ALLOWED_EMAILS: "ajay.shankar@razorpay.com"

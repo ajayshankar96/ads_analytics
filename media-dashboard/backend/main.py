@@ -77,6 +77,7 @@ from reporting_logic import (
 import workflow_logic as wf
 import workflow_repo as repo
 from db.database import get_db
+from auth import AuthMiddleware, auth_enabled, router as auth_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,6 +92,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Auth gate (Google OAuth + email allowlist) ────────────────────────────────
+# Registered before the SPA catch-all so /auth/* and /signin resolve. The
+# middleware is a no-op until GOOGLE_CLIENT_ID is set (see auth.py), so this is
+# safe to deploy before the OAuth client exists.
+app.include_router(auth_router)
+app.add_middleware(AuthMiddleware)
+logger.info("Auth gate %s", "ENABLED" if auth_enabled() else "disabled (no GOOGLE_CLIENT_ID)")
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
