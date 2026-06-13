@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 
 /**
- * New Advertiser onboarding wizard (6 steps). Steps 1 (Basics) and 2 (Commercial)
- * are built; steps 3-6 are stubbed and added feature-by-feature.
+ * New Advertiser onboarding wizard — all 6 steps:
+ * 1 Basics · 2 Commercial · 3 Performance Goal · 4 POC · 5 Agreement & PO · 6 Review.
  * UI-only for now — persistence is wired once the schema is finalized.
  */
 
@@ -24,6 +24,7 @@ const CATEGORIES = [
 const c = {
   blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0",
   muted: "#768EA7", bg: "#F7F8FA", selBg: "#F0F4FF",
+  green: "#0F8C6A", amber: "#B7791F", red: "#C8321E",
 };
 
 const s = {
@@ -35,20 +36,16 @@ const s = {
   header: { padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
   eyebrow: { fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: c.blue, textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 },
   title: { fontSize: 26, fontWeight: 800, color: c.ink, letterSpacing: "-.01em" },
-  close: { width: 38, height: 38, borderRadius: 9, border: `1px solid ${c.line}`, background: "#fff",
-    cursor: "pointer", fontSize: 18, color: c.muted, lineHeight: 1 },
+  close: { width: 38, height: 38, borderRadius: 9, border: `1px solid ${c.line}`, background: "#fff", cursor: "pointer", fontSize: 18, color: c.muted, lineHeight: 1 },
 
   stepper: { display: "flex", alignItems: "center", padding: "16px 32px", background: c.bg, borderTop: `1px solid ${c.line}`, borderBottom: `1px solid ${c.line}` },
   stepWrap: { display: "flex", alignItems: "center", flex: 1, minWidth: 0 },
-  circle: (state) => ({
-    width: 30, height: 30, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+  circle: (state) => ({ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
     fontSize: 13, fontWeight: 700, cursor: "pointer",
-    background: state === "active" ? c.blue : state === "done" ? "#0F8C6A" : "#fff",
-    color: state === "future" ? c.muted : "#fff",
-    border: state === "future" ? `2px solid ${c.line}` : "2px solid transparent",
-  }),
+    background: state === "active" ? c.blue : state === "done" ? c.green : "#fff",
+    color: state === "future" ? c.muted : "#fff", border: state === "future" ? `2px solid ${c.line}` : "2px solid transparent" }),
   stepLabel: (state) => ({ marginLeft: 8, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
-    color: state === "active" ? c.blue : state === "done" ? "#0F8C6A" : c.muted }),
+    color: state === "active" ? c.blue : state === "done" ? c.green : c.muted }),
   connector: { flex: 1, height: 2, background: c.line, margin: "0 10px", minWidth: 14 },
 
   body: { padding: "28px 32px 8px" },
@@ -59,28 +56,25 @@ const s = {
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22, marginBottom: 22 },
   field: { display: "flex", flexDirection: "column" },
   label: { fontSize: 13.5, fontWeight: 600, color: c.ink, marginBottom: 8 },
-  req: { color: "#C8321E", marginLeft: 3 },
-  input: { border: `1px solid ${c.line}`, borderRadius: 9, padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%" },
+  req: { color: c.red, marginLeft: 3 },
+  input: { border: `1px solid ${c.line}`, borderRadius: 9, padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%", fontFamily: "inherit" },
   help: { fontSize: 12, color: c.muted, marginTop: 6 },
-  errText: { fontSize: 12.5, color: "#C8321E", marginTop: 14, fontWeight: 600 },
+  errText: { fontSize: 12.5, color: c.red, marginTop: 14, fontWeight: 600 },
 
-  // buy-type radio cards
   radioGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 26 },
   radioCard: (sel) => ({ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 20px", borderRadius: 12,
     cursor: "pointer", background: sel ? c.selBg : "#fff", border: sel ? `2px solid ${c.blue}` : `1.5px solid ${c.line}` }),
-  radioDot: (sel) => ({ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-    border: sel ? `5px solid ${c.blue}` : `2px solid ${c.line}`, background: "#fff" }),
-  cardIcon: (sel) => ({ width: 38, height: 38, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center",
-    justifyContent: "center", fontSize: 18, background: sel ? c.blue : "#EEF2F9" }),
+  radioDot: (sel) => ({ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2, border: sel ? `5px solid ${c.blue}` : `2px solid ${c.line}`, background: "#fff" }),
+  cardIcon: (sel) => ({ width: 38, height: 38, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, background: sel ? c.blue : "#EEF2F9" }),
   cardTitle: { fontSize: 15, fontWeight: 700, color: c.ink },
   cardDesc: { fontSize: 12.5, color: c.sub, marginTop: 3, lineHeight: 1.45 },
 
   suffixWrap: { display: "flex", alignItems: "stretch", border: `1px solid ${c.line}`, borderRadius: 9, overflow: "hidden" },
-  suffixInput: { border: "none", padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%" },
+  affixInput: { border: "none", padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%", fontFamily: "inherit" },
   suffixBox: { display: "flex", alignItems: "center", padding: "0 14px", borderLeft: `1px solid ${c.line}`, color: c.muted, fontSize: 14, background: c.bg },
+  prefixBox: { display: "flex", alignItems: "center", padding: "0 14px", borderRight: `1px solid ${c.line}`, color: c.muted, fontSize: 14, background: c.bg },
 
-  dropzone: { border: `1.5px dashed ${c.line}`, borderRadius: 12, padding: "20px 22px", display: "flex",
-    alignItems: "center", gap: 16, cursor: "pointer", background: "#FCFDFE" },
+  dropzone: { border: `1.5px dashed ${c.line}`, borderRadius: 12, padding: "20px 22px", display: "flex", alignItems: "center", gap: 16, cursor: "pointer", background: "#FCFDFE", marginBottom: 4 },
   dzIcon: { width: 44, height: 44, borderRadius: 10, background: "#EEF2F9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 },
   dzTitle: { fontSize: 14, fontWeight: 700, color: c.ink },
   dzSub: { fontSize: 12, color: c.muted, marginTop: 2 },
@@ -88,10 +82,33 @@ const s = {
 
   textarea: { border: `1px solid ${c.line}`, borderRadius: 9, padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%", minHeight: 92, resize: "vertical", fontFamily: "inherit" },
 
+  // RAG panel
+  ragPanel: { background: c.bg, borderRadius: 14, padding: "18px 20px", marginTop: 6 },
+  ragGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 },
+  ragCard: (col) => ({ background: "#fff", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${col}` }),
+  ragHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 },
+  ragDot: (col) => ({ width: 9, height: 9, borderRadius: "50%", background: col }),
+  ragName: { fontSize: 12.5, fontWeight: 800, letterSpacing: ".04em", color: c.ink },
+  ragMain: { fontSize: 13.5, color: c.ink, fontWeight: 600, lineHeight: 1.4 },
+  ragSub: { fontSize: 12, color: c.muted, marginTop: 6 },
+
+  checkRow: { display: "flex", alignItems: "center", gap: 12, background: c.bg, borderRadius: 10, padding: "14px 16px", marginTop: 6, cursor: "pointer" },
+  checkLabel: { fontSize: 14, fontWeight: 700, color: c.ink },
+
+  infoBanner: { display: "flex", gap: 12, background: "#EAF0FF", borderRadius: 12, padding: "16px 18px", marginTop: 22, color: "#274DB0", fontSize: 13.5, lineHeight: 1.5 },
+
+  // review
+  revGroup: { border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 14 },
+  revHead: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  revTitle: { fontSize: 14, fontWeight: 800, color: c.ink },
+  editLink: { background: "none", border: "none", color: c.blue, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0 },
+  revRow: { display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", fontSize: 13.5 },
+  revKey: { color: c.muted },
+  revVal: { color: c.ink, fontWeight: 600, textAlign: "right", maxWidth: "60%", wordBreak: "break-word" },
+
   footer: { padding: "18px 32px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1px solid ${c.line}`, marginTop: 20 },
   footNote: { fontSize: 12.5, color: c.muted },
-  primary: { background: c.blue, color: "#fff", border: "none", borderRadius: 10, padding: "12px 22px",
-    fontSize: 14, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 },
+  primary: { background: c.blue, color: "#fff", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 },
   ghost: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" },
 
   stub: { padding: "60px 20px", textAlign: "center", color: c.muted },
@@ -108,28 +125,35 @@ const BUY_TYPES = [
   { id: "CPC", icon: "🖱️", title: "CPC", desc: "Cost per click — fixed rate per click delivered" },
   { id: "ROAS", icon: "📈", title: "ROAS", desc: "Revenue share — performance against committed return" },
 ];
+const GOAL_TYPES = [
+  { id: "ROAS", icon: "🎯", title: "ROAS", desc: "Return on ad spend — revenue per ₹1 spent" },
+  { id: "CAC", icon: "🧑‍💼", title: "CAC", desc: "Cost per acquisition — spend per new customer" },
+];
 
 export default function AdvertiserWizard({ onClose }) {
   const [step, setStep] = useState(1);
   const [data, setData] = useState({
+    // Basics
     name: "", category: "", description: "",
-    buy_type: "ROAS", roas_multiplier: "", cpc_rate: "", budget_hint: "",
-    gst: "", pan: "",
+    // Commercial
+    buy_type: "ROAS", roas_multiplier: "", cpc_rate: "", budget_hint: "", gst: "", pan: "",
+    // Performance goal
+    goal_type: "ROAS", target_roas: "", target_cac: "",
+    // POC
+    poc_name: "", poc_designation: "", poc_email: "", poc_phone: "", cc_finance: false,
+    // Agreement & PO
+    po_ref: "", contract_start: "",
   });
   const [logo, setLogo] = useState(null);
+  const [agreementFile, setAgreementFile] = useState(null);
+  const [poFile, setPoFile] = useState(null);
   const [error, setError] = useState("");
 
   const set = (patch) => setData((d) => ({ ...d, ...patch }));
-
-  const onLogo = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (f) setLogo({ name: f.name, url: URL.createObjectURL(f) });
-  };
+  const pickFile = (setter) => (e) => { const f = e.target.files && e.target.files[0]; if (f) setter({ name: f.name, url: URL.createObjectURL(f) }); };
 
   const validate = () => {
-    if (step === 1) {
-      if (!data.name.trim() || !data.category) return "Advertiser name and Industry / Category are required.";
-    }
+    if (step === 1 && (!data.name.trim() || !data.category)) return "Advertiser name and Industry / Category are required.";
     if (step === 2) {
       if (data.buy_type === "ROAS" && !String(data.roas_multiplier).trim()) return "Committed ROAS multiplier is required.";
       if (data.buy_type === "CPC" && !String(data.cpc_rate).trim()) return "CPC rate is required.";
@@ -137,6 +161,15 @@ export default function AdvertiserWizard({ onClose }) {
       if (data.gst.trim().length !== 15) return "GST number must be a 15-character GSTIN.";
       if (data.pan.trim().length !== 10) return "PAN number must be 10 characters.";
     }
+    if (step === 3) {
+      if (data.goal_type === "ROAS" && !String(data.target_roas).trim()) return "Target ROAS is required.";
+      if (data.goal_type === "CAC" && !String(data.target_cac).trim()) return "Target CAC is required.";
+    }
+    if (step === 4) {
+      if (!data.poc_name.trim() || !data.poc_email.trim() || !data.poc_phone.trim()) return "POC name, email and phone are required.";
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.poc_email.trim())) return "Enter a valid POC email.";
+    }
+    if (step === 5 && !agreementFile) return "A signed legal agreement is required.";
     return "";
   };
 
@@ -145,17 +178,23 @@ export default function AdvertiserWizard({ onClose }) {
     if (err) { setError(err); return; }
     setError("");
     if (step < STEPS.length) setStep(step + 1);
-    else onClose();
+    else handleSubmit();
   };
+
+  const handleSubmit = () => {
+    // UI-only for now — persistence is wired once the schema is finalized.
+    alert("Advertiser onboarding captured (UI demo). Persistence will be wired with the finalised schema.");
+    onClose();
+  };
+
+  const goal = data.goal_type === "ROAS" ? "ROAS" : "CAC";
 
   const renderStep = () => {
     if (step === 1) {
       return (
         <>
           <div style={s.secTitle}>Advertiser basics</div>
-          <div style={s.secSub}>
-            This information persists across all downstream dashboards. The Advertiser ID is auto-generated on save.
-          </div>
+          <div style={s.secSub}>This information persists across all downstream dashboards. The Advertiser ID is auto-generated on save.</div>
           <div style={s.grid2}>
             <div style={s.field}>
               <label style={s.label}>Advertiser name<span style={s.req}>*</span></label>
@@ -173,7 +212,7 @@ export default function AdvertiserWizard({ onClose }) {
           <div style={{ ...s.field, marginBottom: 22 }}>
             <label style={s.label}>Brand logo</label>
             <label style={s.dropzone}>
-              <input type="file" accept="image/svg+xml,image/png" style={{ display: "none" }} onChange={onLogo} />
+              <input type="file" accept="image/svg+xml,image/png" style={{ display: "none" }} onChange={pickFile(setLogo)} />
               {logo ? <img src={logo.url} alt="logo" style={s.logoPreview} /> : <div style={s.dzIcon}>🖼️</div>}
               <div>
                 <div style={s.dzTitle}>{logo ? logo.name : "Drop logo here or click to upload"}</div>
@@ -183,8 +222,7 @@ export default function AdvertiserWizard({ onClose }) {
           </div>
           <div style={s.field}>
             <label style={s.label}>Description (optional)</label>
-            <textarea style={s.textarea} placeholder="A short blurb shown internally to Ops & Campaign Managers"
-              value={data.description} onChange={(e) => set({ description: e.target.value })} />
+            <textarea style={s.textarea} placeholder="A short blurb shown internally to Ops & Campaign Managers" value={data.description} onChange={(e) => set({ description: e.target.value })} />
           </div>
         </>
       );
@@ -195,10 +233,7 @@ export default function AdvertiserWizard({ onClose }) {
       return (
         <>
           <div style={s.secTitle}>Commercial terms</div>
-          <div style={s.secSub}>
-            Buy type and rate carry through to every campaign created for this advertiser. GST and PAN are required for invoicing.
-          </div>
-
+          <div style={s.secSub}>Buy type and rate carry through to every campaign created for this advertiser. GST and PAN are required for invoicing.</div>
           <div style={s.secLabel}>Buy type <span style={s.req}>*</span></div>
           <div style={s.radioGrid}>
             {BUY_TYPES.map((bt) => {
@@ -207,22 +242,17 @@ export default function AdvertiserWizard({ onClose }) {
                 <div key={bt.id} style={s.radioCard(sel)} onClick={() => set({ buy_type: bt.id })}>
                   <div style={s.radioDot(sel)} />
                   <div style={s.cardIcon(sel)}>{bt.icon}</div>
-                  <div>
-                    <div style={s.cardTitle}>{bt.title}</div>
-                    <div style={s.cardDesc}>{bt.desc}</div>
-                  </div>
+                  <div><div style={s.cardTitle}>{bt.title}</div><div style={s.cardDesc}>{bt.desc}</div></div>
                 </div>
               );
             })}
           </div>
-
           <div style={s.grid2}>
             {isRoas ? (
               <div style={s.field}>
                 <label style={s.label}>Committed ROAS multiplier<span style={s.req}>*</span></label>
                 <div style={s.suffixWrap}>
-                  <input style={s.suffixInput} type="number" placeholder="4.5"
-                    value={data.roas_multiplier} onChange={(e) => set({ roas_multiplier: e.target.value })} />
+                  <input style={s.affixInput} type="number" placeholder="4.5" value={data.roas_multiplier} onChange={(e) => set({ roas_multiplier: e.target.value })} />
                   <div style={s.suffixBox}>x</div>
                 </div>
                 <div style={s.help}>Revenue / spend target across the brand</div>
@@ -230,31 +260,26 @@ export default function AdvertiserWizard({ onClose }) {
             ) : (
               <div style={s.field}>
                 <label style={s.label}>CPC rate (₹)<span style={s.req}>*</span></label>
-                <input style={s.input} type="number" placeholder="e.g. 12"
-                  value={data.cpc_rate} onChange={(e) => set({ cpc_rate: e.target.value })} />
+                <input style={s.input} type="number" placeholder="e.g. 12" value={data.cpc_rate} onChange={(e) => set({ cpc_rate: e.target.value })} />
                 <div style={s.help}>Fixed rate charged per click delivered</div>
               </div>
             )}
             <div style={s.field}>
               <label style={s.label}>Default campaign budget hint (₹)</label>
-              <input style={s.input} placeholder="e.g. 5,00,000"
-                value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
+              <input style={s.input} placeholder="e.g. 5,00,000" value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
               <div style={s.help}>Pre-fills the budget field when creating new campaigns. Optional.</div>
             </div>
           </div>
-
           <div style={s.secLabel}>Tax & registration</div>
           <div style={s.grid2}>
             <div style={s.field}>
               <label style={s.label}>GST number<span style={s.req}>*</span></label>
-              <input style={s.input} placeholder="29AABCU9603R1ZL" maxLength={15}
-                value={data.gst} onChange={(e) => set({ gst: e.target.value.toUpperCase() })} />
+              <input style={s.input} placeholder="29AABCU9603R1ZL" maxLength={15} value={data.gst} onChange={(e) => set({ gst: e.target.value.toUpperCase() })} />
               <div style={s.help}>15-character GSTIN · validated on save</div>
             </div>
             <div style={s.field}>
               <label style={s.label}>PAN number<span style={s.req}>*</span></label>
-              <input style={s.input} placeholder="AABCU9603R" maxLength={10}
-                value={data.pan} onChange={(e) => set({ pan: e.target.value.toUpperCase() })} />
+              <input style={s.input} placeholder="AABCU9603R" maxLength={10} value={data.pan} onChange={(e) => set({ pan: e.target.value.toUpperCase() })} />
               <div style={s.help}>10-character PAN</div>
             </div>
           </div>
@@ -262,12 +287,179 @@ export default function AdvertiserWizard({ onClose }) {
       );
     }
 
+    if (step === 3) {
+      const isRoas = data.goal_type === "ROAS";
+      return (
+        <>
+          <div style={s.secTitle}>Brand-level performance goal</div>
+          <div style={s.secSub}>Set at the brand level here and inherited at the campaign level. Can be duplicated and adjusted whenever a new campaign is created — avoiding re-entry from scratch.</div>
+          <div style={s.secLabel}>Goal type <span style={s.req}>*</span></div>
+          <div style={s.radioGrid}>
+            {GOAL_TYPES.map((gt) => {
+              const sel = data.goal_type === gt.id;
+              return (
+                <div key={gt.id} style={s.radioCard(sel)} onClick={() => set({ goal_type: gt.id })}>
+                  <div style={s.radioDot(sel)} />
+                  <div style={s.cardIcon(sel)}>{gt.icon}</div>
+                  <div><div style={s.cardTitle}>{gt.title}</div><div style={s.cardDesc}>{gt.desc}</div></div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ ...s.field, marginBottom: 6 }}>
+            {isRoas ? (
+              <>
+                <label style={s.label}>Target ROAS<span style={s.req}>*</span></label>
+                <div style={{ ...s.suffixWrap, maxWidth: 430 }}>
+                  <input style={s.affixInput} type="number" placeholder="4.5" value={data.target_roas} onChange={(e) => set({ target_roas: e.target.value })} />
+                  <div style={s.suffixBox}>x</div>
+                </div>
+                <div style={s.help}>Live ROAS measured weekly · RAG fires when actual is &gt;25% off goal</div>
+              </>
+            ) : (
+              <>
+                <label style={s.label}>Target CAC (₹)<span style={s.req}>*</span></label>
+                <input style={{ ...s.input, maxWidth: 430 }} type="number" placeholder="e.g. 350" value={data.target_cac} onChange={(e) => set({ target_cac: e.target.value })} />
+                <div style={s.help}>Live CAC measured weekly · RAG fires when actual is &gt;25% off goal</div>
+              </>
+            )}
+          </div>
+          <div style={s.ragPanel}>
+            <div style={{ ...s.secLabel, margin: "0 0 12px" }}>How alerts will fire</div>
+            <div style={s.ragGrid}>
+              <div style={s.ragCard(c.green)}>
+                <div style={s.ragHead}><span style={s.ragDot(c.green)} /><span style={s.ragName}>GREEN</span></div>
+                <div style={s.ragMain}>Actual {goal} at or better than goal</div>
+                <div style={s.ragSub}>No action required</div>
+              </div>
+              <div style={s.ragCard(c.amber)}>
+                <div style={s.ragHead}><span style={s.ragDot(c.amber)} /><span style={s.ragName}>AMBER</span></div>
+                <div style={s.ragMain}>Actual {goal} within 25% of goal</div>
+                <div style={s.ragSub}>Campaign Manager to investigate</div>
+              </div>
+              <div style={s.ragCard(c.red)}>
+                <div style={s.ragHead}><span style={s.ragDot(c.red)} /><span style={s.ragName}>RED</span></div>
+                <div style={s.ragMain}>Actual {goal} more than 25% off goal</div>
+                <div style={s.ragSub}>Escalate to Sales & Finance</div>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (step === 4) {
+      return (
+        <>
+          <div style={s.secTitle}>Point of contact</div>
+          <div style={s.secSub}>This is who the auto-emailer addresses for campaign assets, and who Ops loops in for clarifications.</div>
+          <div style={s.grid2}>
+            <div style={s.field}>
+              <label style={s.label}>POC name<span style={s.req}>*</span></label>
+              <input style={s.input} placeholder="e.g. Aanya Krishnan" value={data.poc_name} onChange={(e) => set({ poc_name: e.target.value })} />
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>POC designation</label>
+              <input style={s.input} placeholder="e.g. Performance Marketing Lead" value={data.poc_designation} onChange={(e) => set({ poc_designation: e.target.value })} />
+            </div>
+          </div>
+          <div style={s.grid2}>
+            <div style={s.field}>
+              <label style={s.label}>POC email<span style={s.req}>*</span></label>
+              <div style={s.suffixWrap}>
+                <div style={s.prefixBox}>✉️</div>
+                <input style={s.affixInput} type="email" placeholder="aanya@brand.com" value={data.poc_email} onChange={(e) => set({ poc_email: e.target.value })} />
+              </div>
+              <div style={s.help}>Auto-emailer triggers to this address on save</div>
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>POC phone<span style={s.req}>*</span></label>
+              <div style={s.suffixWrap}>
+                <div style={s.prefixBox}>+91</div>
+                <input style={s.affixInput} placeholder="98765 43210" value={data.poc_phone} onChange={(e) => set({ poc_phone: e.target.value })} />
+              </div>
+            </div>
+          </div>
+          <div style={s.checkRow} onClick={() => set({ cc_finance: !data.cc_finance })}>
+            <input type="checkbox" checked={data.cc_finance} onChange={() => set({ cc_finance: !data.cc_finance })} style={{ width: 17, height: 17 }} />
+            <span style={s.checkLabel}>CC advertiser's finance team on invoice-related communications</span>
+          </div>
+        </>
+      );
+    }
+
+    if (step === 5) {
+      return (
+        <>
+          <div style={s.secTitle}>Agreement &amp; PO</div>
+          <div style={s.secSub}>Legal agreement is required on save. PO is required for invoicing — can be added now or after agreement closure.</div>
+          <div style={{ ...s.field, marginBottom: 22 }}>
+            <label style={s.label}>Legal agreement<span style={s.req}>*</span></label>
+            <label style={s.dropzone}>
+              <input type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={pickFile(setAgreementFile)} />
+              <div style={s.dzIcon}>📝</div>
+              <div>
+                <div style={s.dzTitle}>{agreementFile ? agreementFile.name : "Drop signed agreement (PDF / DOCX)"}</div>
+                <div style={s.dzSub}>Both parties' signatures required · stored encrypted</div>
+              </div>
+            </label>
+          </div>
+          <div style={{ ...s.field, marginBottom: 22 }}>
+            <label style={s.label}>Purchase Order (PO)</label>
+            <label style={s.dropzone}>
+              <input type="file" accept=".pdf" style={{ display: "none" }} onChange={pickFile(setPoFile)} />
+              <div style={s.dzIcon}>🧾</div>
+              <div>
+                <div style={s.dzTitle}>{poFile ? poFile.name : "Drop PO (PDF)"}</div>
+                <div style={s.dzSub}>Required before first invoice can be raised</div>
+              </div>
+            </label>
+          </div>
+          <div style={s.grid2}>
+            <div style={s.field}>
+              <label style={s.label}>PO reference number</label>
+              <input style={s.input} placeholder="PO-BRAND-Q2-2026" value={data.po_ref} onChange={(e) => set({ po_ref: e.target.value })} />
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>Contract start date</label>
+              <input style={s.input} type="date" value={data.contract_start} onChange={(e) => set({ contract_start: e.target.value })} />
+            </div>
+          </div>
+          <div style={s.infoBanner}>
+            <span>ℹ️</span>
+            <span>On save, an <strong>auto-emailer</strong> will fire to the POC requesting brand logo, campaign creatives, campaign details, data reporting preference, and coupon codes — kicking off the Ops phase.</span>
+          </div>
+        </>
+      );
+    }
+
+    // Step 6 — Review
+    const v = (x) => (x === "" || x === undefined || x === null ? "—" : x);
+    const rate = data.buy_type === "ROAS" ? (data.roas_multiplier ? `${data.roas_multiplier}x ROAS` : "—") : (data.cpc_rate ? `₹${data.cpc_rate} / click` : "—");
+    const target = data.goal_type === "ROAS" ? (data.target_roas ? `${data.target_roas}x` : "—") : (data.target_cac ? `₹${data.target_cac}` : "—");
+    const groups = [
+      { step: 1, title: "Basics", rows: [["Advertiser name", v(data.name)], ["Industry / Category", v(data.category)], ["Brand logo", logo ? logo.name : "—"], ["Description", v(data.description)]] },
+      { step: 2, title: "Commercial", rows: [["Buy type", data.buy_type], ["Rate", rate], ["Budget hint", data.budget_hint ? `₹${data.budget_hint}` : "—"], ["GST", v(data.gst)], ["PAN", v(data.pan)]] },
+      { step: 3, title: "Performance Goal", rows: [["Goal type", data.goal_type], ["Target", target]] },
+      { step: 4, title: "Point of contact", rows: [["Name", v(data.poc_name)], ["Designation", v(data.poc_designation)], ["Email", v(data.poc_email)], ["Phone", data.poc_phone ? `+91 ${data.poc_phone}` : "—"], ["CC finance", data.cc_finance ? "Yes" : "No"]] },
+      { step: 5, title: "Agreement & PO", rows: [["Legal agreement", agreementFile ? agreementFile.name : "—"], ["PO", poFile ? poFile.name : "—"], ["PO reference", v(data.po_ref)], ["Contract start", v(data.contract_start)]] },
+    ];
     return (
-      <div style={s.stub}>
-        <div style={s.stubBadge}>STEP {step} OF 6</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 6 }}>{STEPS[step - 1].label}</div>
-        <div>Coming next — we're building the wizard one step at a time.</div>
-      </div>
+      <>
+        <div style={s.secTitle}>Review &amp; submit</div>
+        <div style={s.secSub}>Confirm the details below. On submit, the advertiser is created (ID auto-generated) and the onboarding auto-emailer fires to the POC.</div>
+        {groups.map((g) => (
+          <div style={s.revGroup} key={g.step}>
+            <div style={s.revHead}>
+              <div style={s.revTitle}>{g.title}</div>
+              <button style={s.editLink} onClick={() => { setError(""); setStep(g.step); }}>Edit</button>
+            </div>
+            {g.rows.map(([k, val]) => (
+              <div style={s.revRow} key={k}><span style={s.revKey}>{k}</span><span style={s.revVal}>{val}</span></div>
+            ))}
+          </div>
+        ))}
+      </>
     );
   };
 
@@ -307,7 +499,7 @@ export default function AdvertiserWizard({ onClose }) {
           <div style={{ display: "flex", gap: 10 }}>
             {step > 1 && <button style={s.ghost} onClick={() => { setError(""); setStep(step - 1); }}>← Back</button>}
             <button style={s.primary} onClick={next}>
-              {step === STEPS.length ? "Done" : "Continue"} <span>→</span>
+              {step === STEPS.length ? "Create advertiser" : "Continue"} <span>→</span>
             </button>
           </div>
         </div>
