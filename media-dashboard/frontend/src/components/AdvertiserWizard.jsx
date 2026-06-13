@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 
 /**
- * New Advertiser onboarding wizard (6 steps). Step 1 (Basics) is built;
- * steps 2-6 are stubbed and will be implemented feature-by-feature.
+ * New Advertiser onboarding wizard (6 steps). Steps 1 (Basics) and 2 (Commercial)
+ * are built; steps 3-6 are stubbed and added feature-by-feature.
  * UI-only for now — persistence is wired once the schema is finalized.
  */
 
@@ -23,7 +23,7 @@ const CATEGORIES = [
 
 const c = {
   blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0",
-  muted: "#768EA7", bg: "#F7F8FA",
+  muted: "#768EA7", bg: "#F7F8FA", selBg: "#F0F4FF",
 };
 
 const s = {
@@ -43,17 +43,18 @@ const s = {
   circle: (state) => ({
     width: 30, height: 30, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
     fontSize: 13, fontWeight: 700, cursor: "pointer",
-    background: state === "active" ? c.blue : "#fff",
-    color: state === "active" ? "#fff" : state === "done" ? c.blue : c.muted,
-    border: state === "future" ? `2px solid ${c.line}` : `2px solid ${c.blue}`,
+    background: state === "active" ? c.blue : state === "done" ? "#0F8C6A" : "#fff",
+    color: state === "future" ? c.muted : "#fff",
+    border: state === "future" ? `2px solid ${c.line}` : "2px solid transparent",
   }),
   stepLabel: (state) => ({ marginLeft: 8, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
-    color: state === "active" ? c.blue : state === "done" ? c.ink : c.muted }),
+    color: state === "active" ? c.blue : state === "done" ? "#0F8C6A" : c.muted }),
   connector: { flex: 1, height: 2, background: c.line, margin: "0 10px", minWidth: 14 },
 
   body: { padding: "28px 32px 8px" },
   secTitle: { fontSize: 18, fontWeight: 800, color: c.ink, marginBottom: 4 },
   secSub: { fontSize: 13.5, color: c.sub, lineHeight: 1.5, marginBottom: 24 },
+  secLabel: { fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: c.muted, textTransform: "uppercase", margin: "18px 0 12px" },
 
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22, marginBottom: 22 },
   field: { display: "flex", flexDirection: "column" },
@@ -61,7 +62,22 @@ const s = {
   req: { color: "#C8321E", marginLeft: 3 },
   input: { border: `1px solid ${c.line}`, borderRadius: 9, padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%" },
   help: { fontSize: 12, color: c.muted, marginTop: 6 },
-  errText: { fontSize: 12, color: "#C8321E", marginTop: 6 },
+  errText: { fontSize: 12.5, color: "#C8321E", marginTop: 14, fontWeight: 600 },
+
+  // buy-type radio cards
+  radioGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 26 },
+  radioCard: (sel) => ({ display: "flex", alignItems: "flex-start", gap: 14, padding: "18px 20px", borderRadius: 12,
+    cursor: "pointer", background: sel ? c.selBg : "#fff", border: sel ? `2px solid ${c.blue}` : `1.5px solid ${c.line}` }),
+  radioDot: (sel) => ({ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+    border: sel ? `5px solid ${c.blue}` : `2px solid ${c.line}`, background: "#fff" }),
+  cardIcon: (sel) => ({ width: 38, height: 38, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center",
+    justifyContent: "center", fontSize: 18, background: sel ? c.blue : "#EEF2F9" }),
+  cardTitle: { fontSize: 15, fontWeight: 700, color: c.ink },
+  cardDesc: { fontSize: 12.5, color: c.sub, marginTop: 3, lineHeight: 1.45 },
+
+  suffixWrap: { display: "flex", alignItems: "stretch", border: `1px solid ${c.line}`, borderRadius: 9, overflow: "hidden" },
+  suffixInput: { border: "none", padding: "12px 14px", fontSize: 14, color: c.ink, outline: "none", width: "100%" },
+  suffixBox: { display: "flex", alignItems: "center", padding: "0 14px", borderLeft: `1px solid ${c.line}`, color: c.muted, fontSize: 14, background: c.bg },
 
   dropzone: { border: `1.5px dashed ${c.line}`, borderRadius: 12, padding: "20px 22px", display: "flex",
     alignItems: "center", gap: 16, cursor: "pointer", background: "#FCFDFE" },
@@ -88,54 +104,190 @@ function stepState(stepId, current) {
   return "future";
 }
 
+const BUY_TYPES = [
+  { id: "CPC", icon: "🖱️", title: "CPC", desc: "Cost per click — fixed rate per click delivered" },
+  { id: "ROAS", icon: "📈", title: "ROAS", desc: "Revenue share — performance against committed return" },
+];
+
 export default function AdvertiserWizard({ onClose }) {
   const [step, setStep] = useState(1);
-  const [data, setData] = useState({ name: "", category: "", description: "" });
-  const [logo, setLogo] = useState(null); // { name, url }
+  const [data, setData] = useState({
+    name: "", category: "", description: "",
+    buy_type: "ROAS", roas_multiplier: "", cpc_rate: "", budget_hint: "",
+    gst: "", pan: "",
+  });
+  const [logo, setLogo] = useState(null);
   const [error, setError] = useState("");
+
+  const set = (patch) => setData((d) => ({ ...d, ...patch }));
 
   const onLogo = (e) => {
     const f = e.target.files && e.target.files[0];
     if (f) setLogo({ name: f.name, url: URL.createObjectURL(f) });
   };
 
-  const next = () => {
+  const validate = () => {
     if (step === 1) {
-      if (!data.name.trim() || !data.category) {
-        setError("Advertiser name and Industry / Category are required.");
-        return;
-      }
+      if (!data.name.trim() || !data.category) return "Advertiser name and Industry / Category are required.";
     }
+    if (step === 2) {
+      if (data.buy_type === "ROAS" && !String(data.roas_multiplier).trim()) return "Committed ROAS multiplier is required.";
+      if (data.buy_type === "CPC" && !String(data.cpc_rate).trim()) return "CPC rate is required.";
+      if (!data.gst.trim() || !data.pan.trim()) return "GST number and PAN number are required.";
+      if (data.gst.trim().length !== 15) return "GST number must be a 15-character GSTIN.";
+      if (data.pan.trim().length !== 10) return "PAN number must be 10 characters.";
+    }
+    return "";
+  };
+
+  const next = () => {
+    const err = validate();
+    if (err) { setError(err); return; }
     setError("");
     if (step < STEPS.length) setStep(step + 1);
     else onClose();
   };
 
+  const renderStep = () => {
+    if (step === 1) {
+      return (
+        <>
+          <div style={s.secTitle}>Advertiser basics</div>
+          <div style={s.secSub}>
+            This information persists across all downstream dashboards. The Advertiser ID is auto-generated on save.
+          </div>
+          <div style={s.grid2}>
+            <div style={s.field}>
+              <label style={s.label}>Advertiser name<span style={s.req}>*</span></label>
+              <input style={s.input} placeholder="e.g. Plum Goodness" value={data.name} onChange={(e) => set({ name: e.target.value })} />
+              <div style={s.help}>Legal entity name as on registration</div>
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>Industry / Category<span style={s.req}>*</span></label>
+              <select style={s.input} value={data.category} onChange={(e) => set({ category: e.target.value })}>
+                <option value="">Select a category…</option>
+                {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ ...s.field, marginBottom: 22 }}>
+            <label style={s.label}>Brand logo</label>
+            <label style={s.dropzone}>
+              <input type="file" accept="image/svg+xml,image/png" style={{ display: "none" }} onChange={onLogo} />
+              {logo ? <img src={logo.url} alt="logo" style={s.logoPreview} /> : <div style={s.dzIcon}>🖼️</div>}
+              <div>
+                <div style={s.dzTitle}>{logo ? logo.name : "Drop logo here or click to upload"}</div>
+                <div style={s.dzSub}>SVG preferred · 512×512 PNG accepted · ≤ 500 KB</div>
+              </div>
+            </label>
+          </div>
+          <div style={s.field}>
+            <label style={s.label}>Description (optional)</label>
+            <textarea style={s.textarea} placeholder="A short blurb shown internally to Ops & Campaign Managers"
+              value={data.description} onChange={(e) => set({ description: e.target.value })} />
+          </div>
+        </>
+      );
+    }
+
+    if (step === 2) {
+      const isRoas = data.buy_type === "ROAS";
+      return (
+        <>
+          <div style={s.secTitle}>Commercial terms</div>
+          <div style={s.secSub}>
+            Buy type and rate carry through to every campaign created for this advertiser. GST and PAN are required for invoicing.
+          </div>
+
+          <div style={s.secLabel}>Buy type <span style={s.req}>*</span></div>
+          <div style={s.radioGrid}>
+            {BUY_TYPES.map((bt) => {
+              const sel = data.buy_type === bt.id;
+              return (
+                <div key={bt.id} style={s.radioCard(sel)} onClick={() => set({ buy_type: bt.id })}>
+                  <div style={s.radioDot(sel)} />
+                  <div style={s.cardIcon(sel)}>{bt.icon}</div>
+                  <div>
+                    <div style={s.cardTitle}>{bt.title}</div>
+                    <div style={s.cardDesc}>{bt.desc}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={s.grid2}>
+            {isRoas ? (
+              <div style={s.field}>
+                <label style={s.label}>Committed ROAS multiplier<span style={s.req}>*</span></label>
+                <div style={s.suffixWrap}>
+                  <input style={s.suffixInput} type="number" placeholder="4.5"
+                    value={data.roas_multiplier} onChange={(e) => set({ roas_multiplier: e.target.value })} />
+                  <div style={s.suffixBox}>x</div>
+                </div>
+                <div style={s.help}>Revenue / spend target across the brand</div>
+              </div>
+            ) : (
+              <div style={s.field}>
+                <label style={s.label}>CPC rate (₹)<span style={s.req}>*</span></label>
+                <input style={s.input} type="number" placeholder="e.g. 12"
+                  value={data.cpc_rate} onChange={(e) => set({ cpc_rate: e.target.value })} />
+                <div style={s.help}>Fixed rate charged per click delivered</div>
+              </div>
+            )}
+            <div style={s.field}>
+              <label style={s.label}>Default campaign budget hint (₹)</label>
+              <input style={s.input} placeholder="e.g. 5,00,000"
+                value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
+              <div style={s.help}>Pre-fills the budget field when creating new campaigns. Optional.</div>
+            </div>
+          </div>
+
+          <div style={s.secLabel}>Tax & registration</div>
+          <div style={s.grid2}>
+            <div style={s.field}>
+              <label style={s.label}>GST number<span style={s.req}>*</span></label>
+              <input style={s.input} placeholder="29AABCU9603R1ZL" maxLength={15}
+                value={data.gst} onChange={(e) => set({ gst: e.target.value.toUpperCase() })} />
+              <div style={s.help}>15-character GSTIN · validated on save</div>
+            </div>
+            <div style={s.field}>
+              <label style={s.label}>PAN number<span style={s.req}>*</span></label>
+              <input style={s.input} placeholder="AABCU9603R" maxLength={10}
+                value={data.pan} onChange={(e) => set({ pan: e.target.value.toUpperCase() })} />
+              <div style={s.help}>10-character PAN</div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <div style={s.stub}>
+        <div style={s.stubBadge}>STEP {step} OF 6</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 6 }}>{STEPS[step - 1].label}</div>
+        <div>Coming next — we're building the wizard one step at a time.</div>
+      </div>
+    );
+  };
+
   return (
     <div style={s.overlay} onClick={onClose}>
       <div style={s.modal} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div style={s.header}>
           <div>
-            <div style={s.eyebrow}>
-              <span>👤➕</span> SALES DASHBOARD · STAGE 1
-            </div>
+            <div style={s.eyebrow}><span>👤➕</span> SALES DASHBOARD · STAGE 1</div>
             <div style={s.title}>Onboard new advertiser</div>
           </div>
           <button style={s.close} onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {/* Stepper */}
         <div style={s.stepper}>
           {STEPS.map((st, i) => {
             const state = stepState(st.id, step);
             return (
               <div style={s.stepWrap} key={st.id}>
-                <div
-                  style={s.circle(state)}
-                  onClick={() => st.id < step && setStep(st.id)}
-                  title={st.label}
-                >
+                <div style={s.circle(state)} onClick={() => st.id < step && setStep(st.id)} title={st.label}>
                   {state === "done" ? "✓" : st.id}
                 </div>
                 <span style={s.stepLabel(state)}>{st.label}</span>
@@ -145,83 +297,15 @@ export default function AdvertiserWizard({ onClose }) {
           })}
         </div>
 
-        {/* Body */}
-        {step === 1 ? (
-          <div style={s.body}>
-            <div style={s.secTitle}>Advertiser basics</div>
-            <div style={s.secSub}>
-              This information persists across all downstream dashboards. The Advertiser ID is auto-generated on save.
-            </div>
+        <div style={s.body}>
+          {renderStep()}
+          {error && <div style={s.errText}>{error}</div>}
+        </div>
 
-            <div style={s.grid2}>
-              <div style={s.field}>
-                <label style={s.label}>Advertiser name<span style={s.req}>*</span></label>
-                <input
-                  style={s.input}
-                  placeholder="e.g. Plum Goodness"
-                  value={data.name}
-                  onChange={(e) => setData({ ...data, name: e.target.value })}
-                />
-                <div style={s.help}>Legal entity name as on registration</div>
-              </div>
-              <div style={s.field}>
-                <label style={s.label}>Industry / Category<span style={s.req}>*</span></label>
-                <select
-                  style={s.input}
-                  value={data.category}
-                  onChange={(e) => setData({ ...data, category: e.target.value })}
-                >
-                  <option value="">Select a category…</option>
-                  {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ ...s.field, marginBottom: 22 }}>
-              <label style={s.label}>Brand logo</label>
-              <label style={s.dropzone}>
-                <input type="file" accept="image/svg+xml,image/png" style={{ display: "none" }} onChange={onLogo} />
-                {logo ? (
-                  <img src={logo.url} alt="logo" style={s.logoPreview} />
-                ) : (
-                  <div style={s.dzIcon}>🖼️</div>
-                )}
-                <div>
-                  <div style={s.dzTitle}>{logo ? logo.name : "Drop logo here or click to upload"}</div>
-                  <div style={s.dzSub}>SVG preferred · 512×512 PNG accepted · ≤ 500 KB</div>
-                </div>
-              </label>
-            </div>
-
-            <div style={s.field}>
-              <label style={s.label}>Description (optional)</label>
-              <textarea
-                style={s.textarea}
-                placeholder="A short blurb shown internally to Ops & Campaign Managers"
-                value={data.description}
-                onChange={(e) => setData({ ...data, description: e.target.value })}
-              />
-            </div>
-
-            {error && <div style={s.errText}>{error}</div>}
-          </div>
-        ) : (
-          <div style={s.body}>
-            <div style={s.stub}>
-              <div style={s.stubBadge}>STEP {step} OF 6</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: c.ink, marginBottom: 6 }}>
-                {STEPS[step - 1].label}
-              </div>
-              <div>Coming next — we're building the wizard one step at a time.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
         <div style={s.footer}>
           <div style={s.footNote}>Step {step} of 6 · Saved automatically as you go</div>
           <div style={{ display: "flex", gap: 10 }}>
-            {step > 1 && <button style={s.ghost} onClick={() => setStep(step - 1)}>← Back</button>}
+            {step > 1 && <button style={s.ghost} onClick={() => { setError(""); setStep(step - 1); }}>← Back</button>}
             <button style={s.primary} onClick={next}>
               {step === STEPS.length ? "Done" : "Continue"} <span>→</span>
             </button>
