@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { getLeads, createLead, updateLead, closeLead } from "../api";
+import { getLeads, updateLead, closeLead } from "../api";
+import AdvertiserWizard from "./AdvertiserWizard";
 
 const s = {
   addBtn: { background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, marginBottom: 16 },
@@ -29,15 +30,12 @@ const STATUS_COLORS = {
 };
 
 const BUY_TYPES = ["CPM", "CPC", "CPA", "ROAS_COMMIT"];
-const defaultForm = { advertiser: "", owner_email: "", source: "", est_value: "", currency: "INR" };
 const defaultClose = { buy_type: "CPM", contract_value: "", currency: "INR", signed_doc_url: "" };
 
 export default function SalesPipeline() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(defaultForm);
-  const [saving, setSaving] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [closingId, setClosingId] = useState(null);
   const [closeForm, setCloseForm] = useState(defaultClose);
 
@@ -49,24 +47,6 @@ export default function SalesPipeline() {
       .finally(() => setLoading(false));
   };
   useEffect(load, []);
-
-  const handleCreate = async () => {
-    if (!form.advertiser || !form.owner_email) {
-      alert("Advertiser and owner email are required");
-      return;
-    }
-    setSaving(true);
-    try {
-      await createLead({ ...form, est_value: form.est_value ? parseFloat(form.est_value) : null });
-      setShowForm(false);
-      setForm(defaultForm);
-      load();
-    } catch (e) {
-      alert("Error creating lead: " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleStatus = async (lead, status) => {
     try {
@@ -96,39 +76,16 @@ export default function SalesPipeline() {
 
   return (
     <div>
-      <button style={s.addBtn} onClick={() => setShowForm(!showForm)}>
-        {showForm ? "Cancel" : "+ New Lead"}
+      <button style={s.addBtn} onClick={() => setShowWizard(true)}>
+        + New Advertiser
       </button>
 
-      {showForm && (
-        <div style={s.form}>
-          <div style={s.formGrid}>
-            <div style={s.formGroup}>
-              <label style={s.label}>Advertiser *</label>
-              <input style={s.input} value={form.advertiser} onChange={(e) => setForm({ ...form, advertiser: e.target.value })} placeholder="e.g. GIVA" />
-            </div>
-            <div style={s.formGroup}>
-              <label style={s.label}>Owner Email *</label>
-              <input style={s.input} value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} placeholder="you@razorpay.com" />
-            </div>
-            <div style={s.formGroup}>
-              <label style={s.label}>Source</label>
-              <input style={s.input} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} placeholder="inbound / referral / ..." />
-            </div>
-            <div style={s.formGroup}>
-              <label style={s.label}>Est. Value</label>
-              <input style={s.input} type="number" value={form.est_value} onChange={(e) => setForm({ ...form, est_value: e.target.value })} placeholder="0" />
-            </div>
-          </div>
-          <div style={s.formBtns}>
-            <button style={s.saveBtn} onClick={handleCreate} disabled={saving}>{saving ? "Saving…" : "Create Lead"}</button>
-            <button style={s.cancelBtn} onClick={() => setShowForm(false)}>Cancel</button>
-          </div>
-        </div>
+      {showWizard && (
+        <AdvertiserWizard onClose={() => { setShowWizard(false); load(); }} />
       )}
 
       {leads.length === 0 ? (
-        <div style={s.empty}>No leads yet. Create one to start the pipeline.</div>
+        <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
       ) : (
         <table style={s.table}>
           <thead>
