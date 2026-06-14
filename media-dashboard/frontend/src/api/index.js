@@ -138,6 +138,12 @@ export const refreshPublisherReport = (id) =>
 export const deletePublisherReport = (id) =>
   apiFetch(`/api/reporting/publisher/${id}`, { method: "DELETE" });
 
+// ── Admin query console ───────────────────────────────────────────────────────
+export const getConsoleAccess = () => apiFetch("/api/admin/console-access");
+export const listDbTables = () => apiFetch("/api/admin/tables");
+export const runQuery = (sql) =>
+  apiFetch("/api/admin/query", { method: "POST", body: JSON.stringify({ sql }) });
+
 // ── Advertisers (onboarding wizard) ───────────────────────────────────────────
 export const getAdvertisers = () => apiFetch("/api/advertisers");
 

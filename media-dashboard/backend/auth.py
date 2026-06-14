@@ -46,6 +46,17 @@ ALLOWED_EMAILS = set(
     if e.strip()
 )
 
+# Admins additionally see the in-app query console.
+ADMIN_EMAILS = set(
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "ajay.shankar@razorpay.com").split(",")
+    if e.strip()
+)
+
+
+def is_admin(email: str) -> bool:
+    return bool(email) and email.strip().lower() in ADMIN_EMAILS
+
 _AUTH_SKIP = {
     "/auth/login", "/auth/callback", "/auth/logout", "/signin",
     "/health", "/favicon.ico", "/favicon.svg",

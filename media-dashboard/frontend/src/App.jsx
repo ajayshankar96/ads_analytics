@@ -14,7 +14,8 @@ import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
 import SalesPipeline from "./components/SalesPipeline";
 import CampaignOps from "./components/CampaignOps";
-import { getFilters, getHealth, refreshCache, recordView, getViewStats } from "./api";
+import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess } from "./api";
+import QueryConsole from "./components/QueryConsole";
 
 // ── Tab groups (Option C layout) ──────────────────────────────────────────────
 const TAB_GROUPS = [
@@ -301,11 +302,14 @@ export default function App() {
   const [refreshing, setRefreshing]       = useState(false);
   const [error, setError]                 = useState(null);
   const [viewStats, setViewStats]         = useState(null);
+  const [isAdmin, setIsAdmin]             = useState(false);
+  const [showConsole, setShowConsole]     = useState(false);
 
   useEffect(() => {
     getHealth()
       .then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); })
       .catch(() => setApiStatus("error"));
+    getConsoleAccess().then((d) => setIsAdmin(!!d.is_admin)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -476,6 +480,18 @@ export default function App() {
       </main>
 
       <ChatBot />
+
+      {/* ── Admin query console (admins only) ── */}
+      {isAdmin && (
+        <button
+          title="Query console"
+          onClick={() => setShowConsole(true)}
+          style={{ position: "fixed", bottom: 20, left: 20, width: 46, height: 46, borderRadius: 12,
+            border: "none", background: "#0F1724", color: "#fff", fontSize: 20, cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(15,23,36,0.3)", zIndex: 9000 }}
+        >🛢️</button>
+      )}
+      {showConsole && <QueryConsole onClose={() => setShowConsole(false)} />}
     </div>
   );
 }

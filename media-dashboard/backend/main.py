@@ -76,8 +76,9 @@ from reporting_logic import (
 )
 import workflow_logic as wf
 import workflow_repo as repo
-from db.database import get_db
-from auth import AuthMiddleware, auth_enabled, router as auth_router
+from db.database import get_db, engine
+from auth import AuthMiddleware, auth_enabled, is_admin, router as auth_router
+from sqlalchemy import text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -905,6 +906,78 @@ async def close_lead(lead_id: str, req: CloseLeadRequest, db: AsyncSession = Dep
         currency=req.currency, signed_doc_url=req.signed_doc_url,
     )
     return {"success": True, **result}
+
+
+# ── Admin: read-only query console ────────────────────────────────────────────
+# A SELECT-only SQL console for admins (ADMIN_EMAILS). Enforced read-only at the
+# DB level (READ ONLY transaction) + single-statement SELECT/WITH guard, capped
+# rows and a statement timeout.
+
+def _require_admin(request: Request):
+    email = getattr(request.state, "user_email", None)
+    if auth_enabled() and not is_admin(email):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _cell(v):
+    import datetime
+    import decimal
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    if isinstance(v, (datetime.date, datetime.datetime)):
+        return v.isoformat()
+    if isinstance(v, decimal.Decimal):
+        return float(v)
+    return str(v)
+
+
+class QueryRequest(BaseModel):
+    sql: str
+
+
+@app.get("/api/admin/console-access")
+async def console_access(request: Request):
+    email = getattr(request.state, "user_email", None)
+    return {"is_admin": (not auth_enabled()) or is_admin(email)}
+
+
+@app.get("/api/admin/tables")
+async def admin_tables(request: Request):
+    _require_admin(request)
+    async with engine.connect() as conn:
+        res = await conn.execute(text(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='public' ORDER BY table_name"
+        ))
+        return {"tables": [r[0] for r in res.fetchall()]}
+
+
+@app.post("/api/admin/query")
+async def admin_query(req: QueryRequest, request: Request):
+    _require_admin(request)
+    sql = (req.sql or "").strip().rstrip(";").strip()
+    if not sql:
+        raise HTTPException(status_code=400, detail="Empty query")
+    if ";" in sql:
+        raise HTTPException(status_code=400, detail="Only a single statement is allowed")
+    low = sql.lower()
+    if not (low.startswith("select") or low.startswith("with")):
+        raise HTTPException(status_code=400, detail="Only SELECT / WITH queries are allowed")
+    try:
+        async with engine.connect() as conn:
+            trans = await conn.begin()
+            await conn.execute(text("SET TRANSACTION READ ONLY"))
+            await conn.execute(text("SET LOCAL statement_timeout = '10000'"))
+            result = await conn.execute(text(sql))
+            cols = list(result.keys())
+            rows = result.fetchmany(1000)
+            await trans.rollback()
+        data = [[_cell(v) for v in row] for row in rows]
+        return {"columns": cols, "rows": data, "row_count": len(data), "truncated": len(data) >= 1000}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Query error: {e}")
 
 
 # ── Advertisers (6-step onboarding wizard) — Postgres-backed ─────────────────
