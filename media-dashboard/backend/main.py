@@ -955,9 +955,19 @@ async def admin_tables(request: Request):
 @app.post("/api/admin/query")
 async def admin_query(req: QueryRequest, request: Request):
     _require_admin(request)
+    import re
     sql = (req.sql or "").strip().rstrip(";").strip()
     if not sql:
         raise HTTPException(status_code=400, detail="Empty query")
+    # DESCRIBE <table> / DESC <table> / \d <table>  ->  information_schema lookup
+    m = re.match(r"^(?:describe|desc|\\d)\s+(\w+)$", sql, re.IGNORECASE)
+    if m:
+        tbl = m.group(1)
+        sql = (
+            "SELECT column_name, data_type, character_maximum_length AS max_length, "
+            "is_nullable, column_default FROM information_schema.columns "
+            f"WHERE table_schema='public' AND table_name='{tbl}' ORDER BY ordinal_position"
+        )
     if ";" in sql:
         raise HTTPException(status_code=400, detail="Only a single statement is allowed")
     low = sql.lower()

@@ -13,7 +13,9 @@ const s = {
   body: { display: "flex", flex: 1, minHeight: 0 },
   side: { width: 200, borderRight: `1px solid ${c.line}`, overflowY: "auto", padding: "12px 0", background: c.bg, flexShrink: 0 },
   sideHd: { fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".05em", padding: "4px 16px 8px" },
-  tbl: { padding: "7px 16px", fontSize: 13, color: c.ink, cursor: "pointer", fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  tblRow: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 0 16px" },
+  tbl: { flex: 1, padding: "7px 0", fontSize: 13, color: c.ink, cursor: "pointer", fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  descBtn: { background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 13, padding: "2px 4px", flexShrink: 0 },
   main: { flex: 1, display: "flex", flexDirection: "column", minWidth: 0 },
   editor: { padding: 14, borderBottom: `1px solid ${c.line}` },
   textarea: { width: "100%", minHeight: 96, border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "ui-monospace, monospace", color: c.ink, outline: "none", resize: "vertical" },
@@ -52,6 +54,7 @@ export default function QueryConsole({ onClose }) {
   };
 
   const pickTable = (t) => { const q = `SELECT * FROM ${t} LIMIT 100;`; setSql(q); run(q); };
+  const describe = (t) => { const q = `DESCRIBE ${t}`; setSql(q); run(q); };
   const onKey = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run(); };
 
   return (
@@ -64,27 +67,34 @@ export default function QueryConsole({ onClose }) {
         <div style={s.body}>
           <div style={s.side}>
             <div style={s.sideHd}>Tables</div>
-            {tables.map((t) => <div key={t} style={s.tbl} title={t} onClick={() => pickTable(t)}>{t}</div>)}
+            {tables.map((t) => (
+              <div key={t} style={s.tblRow}>
+                <span style={s.tbl} title={`SELECT * FROM ${t}`} onClick={() => pickTable(t)}>{t}</span>
+                <button style={s.descBtn} title={`Describe ${t}`} onClick={() => describe(t)}>ⓘ</button>
+              </div>
+            ))}
           </div>
           <div style={s.main}>
             <div style={s.editor}>
               <textarea style={s.textarea} value={sql} onChange={(e) => setSql(e.target.value)} onKeyDown={onKey}
                 placeholder="SELECT … (SELECT/WITH only)" spellCheck={false} />
               <div style={s.bar}>
-                <span style={s.hint}>SELECT / WITH only · max 1,000 rows · ⌘/Ctrl+Enter to run</span>
+                <span style={s.hint}>SELECT / WITH / DESCRIBE &lt;table&gt; · max 1,000 rows · ⌘/Ctrl+Enter to run</span>
                 <button style={s.run} onClick={() => run()} disabled={running}>{running ? "Running…" : "Run ▶"}</button>
               </div>
             </div>
             <div style={s.results}>
               {err && <div style={s.err}>{err}</div>}
               {res && !err && (
-                res.rows.length === 0 ? (
-                  <div style={s.empty}>No rows.</div>
+                res.columns.length === 0 ? (
+                  <div style={s.empty}>Query ran — no columns returned.</div>
                 ) : (
                   <table style={s.table}>
                     <thead><tr>{res.columns.map((col) => <th key={col} style={s.th}>{col}</th>)}</tr></thead>
                     <tbody>
-                      {res.rows.map((row, i) => (
+                      {res.rows.length === 0 ? (
+                        <tr><td colSpan={res.columns.length} style={{ ...s.td, color: c.muted, textAlign: "center", padding: 22 }}>No rows — table is empty (columns shown above).</td></tr>
+                      ) : res.rows.map((row, i) => (
                         <tr key={i}>{row.map((cell, j) => <td key={j} style={s.td} title={cell === null ? "NULL" : String(cell)}>{cell === null ? <span style={{ color: "#B0B8C4" }}>NULL</span> : String(cell)}</td>)}</tr>
                       ))}
                     </tbody>
