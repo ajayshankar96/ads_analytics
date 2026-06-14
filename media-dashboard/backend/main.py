@@ -907,6 +907,51 @@ async def close_lead(lead_id: str, req: CloseLeadRequest, db: AsyncSession = Dep
     return {"success": True, **result}
 
 
+# ── Advertisers (6-step onboarding wizard) — Postgres-backed ─────────────────
+# Drafts autosave as the user moves through the wizard; id is ADV-<3 letters>-NNNN.
+
+@app.get("/api/advertisers")
+async def list_advertisers(db: AsyncSession = Depends(get_db)):
+    advs = await repo.list_advertisers(db)
+    return {"advertisers": [repo.advertiser_dict(a) for a in advs], "total": len(advs)}
+
+
+@app.get("/api/advertisers/{adv_id}")
+async def get_advertiser(adv_id: str, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    return {"advertiser": repo.advertiser_dict(adv)}
+
+
+@app.post("/api/advertisers")
+async def create_advertiser(payload: dict, db: AsyncSession = Depends(get_db)):
+    if not (payload.get("name") or "").strip():
+        raise HTTPException(status_code=400, detail="advertiser name is required to mint an ID")
+    adv = await repo.create_advertiser(db, payload)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+
+
+@app.patch("/api/advertisers/{adv_id}")
+async def update_advertiser(adv_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    adv = await repo.update_advertiser(db, adv, payload)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+
+
+@app.post("/api/advertisers/{adv_id}/submit")
+async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    merged = dict(payload or {})
+    merged["status"] = "ONBOARDED"
+    adv = await repo.update_advertiser(db, adv, merged)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+
+
 # ── Campaign Ops stage machine (Dashboard 2) — Postgres-backed ───────────────
 # Campaigns opened from a closed lead progress through validated stages with
 # hand-off emails. ops-tasks gate the go-live transition.

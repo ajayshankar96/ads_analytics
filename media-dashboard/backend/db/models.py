@@ -14,7 +14,7 @@ explicit queries in the repository layer).
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Date, DateTime, Index, String
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base, utcnow
@@ -34,6 +34,48 @@ class Lead(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     is_deleted: Mapped[bool] = mapped_column(default=False, index=True)
+
+
+class Advertiser(Base):
+    """An advertiser onboarded via the 6-step Sales wizard. Holds draft + final
+    state; id is ADV-<3 letters of name>-NNNN (per-prefix increment)."""
+
+    __tablename__ = "rmn_advertisers"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)  # ADV-KIM-0001
+    name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), index=True, default="DRAFT")  # DRAFT/ONBOARDED
+    current_step: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Step 1 — Basics
+    category: Mapped[Optional[str]] = mapped_column(String(120), default=None)
+    description: Mapped[Optional[str]] = mapped_column(String(2000), default=None)
+    logo_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    # Step 2 — Commercial
+    buy_type: Mapped[Optional[str]] = mapped_column(String(16), default=None)
+    roas_multiplier: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    cpc_rate: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    budget_hint: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    gst: Mapped[Optional[str]] = mapped_column(String(20), default=None)
+    pan: Mapped[Optional[str]] = mapped_column(String(20), default=None)
+    # Step 3 — Performance goal
+    goal_type: Mapped[Optional[str]] = mapped_column(String(16), default=None)
+    target_roas: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    target_cac: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    # Step 4 — POC
+    poc_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    poc_designation: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    poc_email: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    poc_phone: Mapped[Optional[str]] = mapped_column(String(32), default=None)
+    cc_finance: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Step 5 — Agreement & PO
+    agreement_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    po_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    po_ref: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    contract_start: Mapped[Optional[date]] = mapped_column(Date, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class Agreement(Base):

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createAdvertiser, updateAdvertiser, submitAdvertiser } from "../api";
 
 /**
  * New Advertiser onboarding wizard — all 6 steps:
@@ -130,27 +131,57 @@ const GOAL_TYPES = [
   { id: "CAC", icon: "🧑‍💼", title: "CAC", desc: "Cost per acquisition — spend per new customer" },
 ];
 
-export default function AdvertiserWizard({ onClose }) {
-  const [step, setStep] = useState(1);
+export default function AdvertiserWizard({ onClose, advertiser }) {
+  const a = advertiser || {};
+  const [step, setStep] = useState(a.current_step || 1);
+  const [advId, setAdvId] = useState(a.id || null);
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState({
     // Basics
-    name: "", category: "", description: "",
+    name: a.name || "", category: a.category || "", description: a.description || "",
     // Commercial
-    buy_type: "ROAS", roas_multiplier: "", cpc_rate: "", budget_hint: "", gst: "", pan: "",
+    buy_type: a.buy_type || "ROAS", roas_multiplier: a.roas_multiplier ?? "", cpc_rate: a.cpc_rate ?? "",
+    budget_hint: a.budget_hint || "", gst: a.gst || "", pan: a.pan || "",
     // Performance goal
-    goal_type: "ROAS", target_roas: "", target_cac: "",
+    goal_type: a.goal_type || "ROAS", target_roas: a.target_roas ?? "", target_cac: a.target_cac ?? "",
     // POC
-    poc_name: "", poc_designation: "", poc_email: "", poc_phone: "", cc_finance: false,
+    poc_name: a.poc_name || "", poc_designation: a.poc_designation || "", poc_email: a.poc_email || "",
+    poc_phone: a.poc_phone || "", cc_finance: !!a.cc_finance,
     // Agreement & PO
-    po_ref: "", contract_start: "",
+    po_ref: a.po_ref || "", contract_start: a.contract_start || "",
   });
-  const [logo, setLogo] = useState(null);
-  const [agreementFile, setAgreementFile] = useState(null);
-  const [poFile, setPoFile] = useState(null);
+  const [logo, setLogo] = useState(a.logo_name ? { name: a.logo_name } : null);
+  const [agreementFile, setAgreementFile] = useState(a.agreement_name ? { name: a.agreement_name } : null);
+  const [poFile, setPoFile] = useState(a.po_name ? { name: a.po_name } : null);
   const [error, setError] = useState("");
 
   const set = (patch) => setData((d) => ({ ...d, ...patch }));
   const pickFile = (setter) => (e) => { const f = e.target.files && e.target.files[0]; if (f) setter({ name: f.name, url: URL.createObjectURL(f) }); };
+
+  const buildPayload = (extra = {}) => ({
+    ...data,
+    logo_name: logo ? logo.name : null,
+    agreement_name: agreementFile ? agreementFile.name : null,
+    po_name: poFile ? poFile.name : null,
+    ...extra,
+  });
+
+  const persist = async (extra = {}) => {
+    const payload = buildPayload(extra);
+    setSaving(true);
+    try {
+      if (advId) { await updateAdvertiser(advId, payload); return advId; }
+      const r = await createAdvertiser(payload);
+      setAdvId(r.advertiser.id);
+      return r.advertiser.id;
+    } finally { setSaving(false); }
+  };
+
+  const saveDraft = async () => {
+    if (!data.name.trim()) { setError("Enter the advertiser name before saving a draft."); setStep(1); return; }
+    try { await persist({ current_step: step, status: "DRAFT" }); onClose(); }
+    catch (e) { setError("Save failed: " + e.message); }
+  };
 
   const validate = () => {
     if (step === 1 && (!data.name.trim() || !data.category)) return "Advertiser name and Industry / Category are required.";
@@ -173,18 +204,24 @@ export default function AdvertiserWizard({ onClose }) {
     return "";
   };
 
-  const next = () => {
+  const next = async () => {
     const err = validate();
     if (err) { setError(err); return; }
     setError("");
-    if (step < STEPS.length) setStep(step + 1);
-    else handleSubmit();
-  };
-
-  const handleSubmit = () => {
-    // UI-only for now — persistence is wired once the schema is finalized.
-    alert("Advertiser onboarding captured (UI demo). Persistence will be wired with the finalised schema.");
-    onClose();
+    try {
+      if (step < STEPS.length) {
+        const ns = step + 1;
+        await persist({ current_step: ns });   // autosave draft as you go
+        setStep(ns);
+      } else {
+        const id = await persist({ current_step: 6 });
+        await submitAdvertiser(id, {});
+        alert("Advertiser onboarded ✓");
+        onClose();
+      }
+    } catch (e) {
+      setError("Save failed: " + e.message);
+    }
   };
 
   const goal = data.goal_type === "ROAS" ? "ROAS" : "CAC";
@@ -213,7 +250,7 @@ export default function AdvertiserWizard({ onClose }) {
             <label style={s.label}>Brand logo</label>
             <label style={s.dropzone}>
               <input type="file" accept="image/svg+xml,image/png" style={{ display: "none" }} onChange={pickFile(setLogo)} />
-              {logo ? <img src={logo.url} alt="logo" style={s.logoPreview} /> : <div style={s.dzIcon}>🖼️</div>}
+              {logo && logo.url ? <img src={logo.url} alt="logo" style={s.logoPreview} /> : <div style={s.dzIcon}>🖼️</div>}
               <div>
                 <div style={s.dzTitle}>{logo ? logo.name : "Drop logo here or click to upload"}</div>
                 <div style={s.dzSub}>SVG preferred · 512×512 PNG accepted · ≤ 500 KB</div>
@@ -495,10 +532,14 @@ export default function AdvertiserWizard({ onClose }) {
         </div>
 
         <div style={s.footer}>
-          <div style={s.footNote}>Step {step} of 6 · Saved automatically as you go</div>
+          <div style={s.footNote}>
+            Step {step} of 6 · {saving ? "Saving…" : "Saved automatically as you go"}
+            {advId ? ` · ${advId}` : ""}
+          </div>
           <div style={{ display: "flex", gap: 10 }}>
+            <button style={s.ghost} onClick={saveDraft} disabled={saving}>Save draft</button>
             {step > 1 && <button style={s.ghost} onClick={() => { setError(""); setStep(step - 1); }}>← Back</button>}
-            <button style={s.primary} onClick={next}>
+            <button style={s.primary} onClick={next} disabled={saving}>
               {step === STEPS.length ? "Create advertiser" : "Continue"} <span>→</span>
             </button>
           </div>

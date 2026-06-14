@@ -4,6 +4,7 @@ FastAPI endpoints stay thin and JSON-serialisable. No ORM relationships — join
 are explicit, per python-foundation convention.
 """
 
+import re
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -53,6 +54,114 @@ def ops_task_dict(t: models.OpsTask) -> Dict[str, Any]:
         "target_date": t.target_date.isoformat() if t.target_date else None,
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,
     }
+
+
+# ── Advertisers (6-step onboarding wizard) ─────────────────────────────────────
+
+_ADV_FIELDS = [
+    "name", "category", "description", "logo_name",
+    "buy_type", "roas_multiplier", "cpc_rate", "budget_hint", "gst", "pan",
+    "goal_type", "target_roas", "target_cac",
+    "poc_name", "poc_designation", "poc_email", "poc_phone", "cc_finance",
+    "agreement_name", "po_name", "po_ref",
+]
+_ADV_FLOAT = {"roas_multiplier", "cpc_rate", "target_roas", "target_cac"}
+
+
+def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
+    return {
+        "id": a.id, "name": a.name, "status": a.status, "current_step": a.current_step,
+        "category": a.category, "description": a.description, "logo_name": a.logo_name,
+        "buy_type": a.buy_type, "roas_multiplier": a.roas_multiplier, "cpc_rate": a.cpc_rate,
+        "budget_hint": a.budget_hint, "gst": a.gst, "pan": a.pan,
+        "goal_type": a.goal_type, "target_roas": a.target_roas, "target_cac": a.target_cac,
+        "poc_name": a.poc_name, "poc_designation": a.poc_designation,
+        "poc_email": a.poc_email, "poc_phone": a.poc_phone, "cc_finance": a.cc_finance,
+        "agreement_name": a.agreement_name, "po_name": a.po_name, "po_ref": a.po_ref,
+        "contract_start": a.contract_start.isoformat() if a.contract_start else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+def _coerce_adv(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Pick known advertiser fields from a payload, coercing numeric/date types
+    and ignoring blanks so partial drafts save cleanly."""
+    out: Dict[str, Any] = {}
+    for f in _ADV_FIELDS:
+        if f not in payload:
+            continue
+        val = payload[f]
+        if val == "" or val is None:
+            out[f] = None
+            continue
+        if f in _ADV_FLOAT:
+            try:
+                out[f] = float(val)
+            except (TypeError, ValueError):
+                out[f] = None
+        elif f == "cc_finance":
+            out[f] = bool(val)
+        else:
+            out[f] = val
+    if "contract_start" in payload and payload["contract_start"]:
+        try:
+            out["contract_start"] = date.fromisoformat(str(payload["contract_start"]))
+        except ValueError:
+            pass
+    return out
+
+
+async def next_advertiser_id(db: AsyncSession, name: str) -> str:
+    """ADV-<first 3 letters of name>-NNNN, incrementing per prefix."""
+    letters = re.sub(r"[^A-Za-z]", "", name or "")[:3].upper() or "ADV"
+    prefix = f"ADV-{letters}-"
+    rows = (await db.execute(
+        select(models.Advertiser.id).where(models.Advertiser.id.like(prefix + "%"))
+    )).scalars().all()
+    maxn = 0
+    for rid in rows:
+        try:
+            maxn = max(maxn, int(rid.rsplit("-", 1)[1]))
+        except (ValueError, IndexError):
+            pass
+    return f"{prefix}{maxn + 1:04d}"
+
+
+async def list_advertisers(db: AsyncSession) -> List[models.Advertiser]:
+    stmt = select(models.Advertiser).order_by(models.Advertiser.created_at.desc())
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def get_advertiser(db: AsyncSession, adv_id: str) -> Optional[models.Advertiser]:
+    return (await db.execute(select(models.Advertiser).where(models.Advertiser.id == adv_id))).scalar_one_or_none()
+
+
+async def create_advertiser(db: AsyncSession, payload: Dict[str, Any]) -> models.Advertiser:
+    fields = _coerce_adv(payload)
+    name = fields.get("name") or payload.get("name") or ""
+    adv = models.Advertiser(
+        id=await next_advertiser_id(db, name),
+        status=payload.get("status", "DRAFT"),
+        current_step=int(payload.get("current_step", 1) or 1),
+        **fields,
+    )
+    db.add(adv)
+    await db.commit()
+    await db.refresh(adv)
+    return adv
+
+
+async def update_advertiser(db: AsyncSession, adv: models.Advertiser, payload: Dict[str, Any]) -> models.Advertiser:
+    for k, v in _coerce_adv(payload).items():
+        setattr(adv, k, v)
+    if "status" in payload and payload["status"]:
+        adv.status = payload["status"]
+    if "current_step" in payload and payload["current_step"]:
+        adv.current_step = int(payload["current_step"])
+    adv.updated_at = wf.utcnow()
+    await db.commit()
+    await db.refresh(adv)
+    return adv
 
 
 # ── Sales: leads + agreements ──────────────────────────────────────────────────

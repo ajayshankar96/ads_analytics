@@ -138,6 +138,20 @@ export const refreshPublisherReport = (id) =>
 export const deletePublisherReport = (id) =>
   apiFetch(`/api/reporting/publisher/${id}`, { method: "DELETE" });
 
+// ── Advertisers (onboarding wizard) ───────────────────────────────────────────
+export const getAdvertisers = () => apiFetch("/api/advertisers");
+
+export const getAdvertiser = (id) => apiFetch(`/api/advertisers/${id}`);
+
+export const createAdvertiser = (payload) =>
+  apiFetch("/api/advertisers", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateAdvertiser = (id, payload) =>
+  apiFetch(`/api/advertisers/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const submitAdvertiser = (id, payload = {}) =>
+  apiFetch(`/api/advertisers/${id}/submit`, { method: "POST", body: JSON.stringify(payload) });
+
 // ── Sales pipeline (Dashboard 1) ──────────────────────────────────────────────
 export const getLeads = (status) =>
   apiFetch(`/api/sales/leads${buildQuery({ status })}`);
