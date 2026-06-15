@@ -259,6 +259,58 @@ async def get_campaign(db: AsyncSession, campaign_id: str) -> Optional[models.Ca
     return (await db.execute(select(models.Campaign).where(models.Campaign.id == campaign_id))).scalar_one_or_none()
 
 
+async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser) -> models.Campaign:
+    """Idempotently open an Ops campaign for an onboarded advertiser so it shows
+    up in Campaign Ops linked to the new advertiser id (ADV-XXX-NNNN).
+    Returns the existing campaign if one already exists for this advertiser."""
+    existing = (await db.execute(
+        select(models.Campaign).where(
+            models.Campaign.advertiser_ref_id == advertiser.id,
+            models.Campaign.is_deleted.is_(False),
+        )
+    )).scalar_one_or_none()
+    if existing:
+        return existing
+
+    campaign = models.Campaign(
+        id=wf.new_id("camp"),
+        agreement_id="",                       # advertiser-led flow has no separate agreement
+        name=f"{advertiser.name} campaign",
+        current_stage=wf.STAGE_OPS_SETUP,
+        advertiser_ref_id=advertiser.id,       # links Ops back to the Sales advertiser
+    )
+    db.add(campaign)
+    for step in wf.OPS_STEPS:
+        db.add(models.OpsTask(id=wf.new_id("ops"), campaign_id=campaign.id, step=step, status="PENDING"))
+    db.add(models.StageTransition(
+        entity_type="CAMPAIGN", entity_id=campaign.id,
+        from_stage="ONBOARDED", to_stage=wf.STAGE_OPS_SETUP,
+        note=f"opened from advertiser {advertiser.id}",
+    ))
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
+async def backfill_campaigns_for_onboarded(db: AsyncSession) -> List[models.Campaign]:
+    """One-time: open campaigns for every ONBOARDED advertiser that doesn't have
+    one yet (covers advertisers onboarded before this linkage existed)."""
+    advs = (await db.execute(
+        select(models.Advertiser).where(models.Advertiser.status == "ONBOARDED")
+    )).scalars().all()
+    opened = []
+    for adv in advs:
+        before = (await db.execute(
+            select(models.Campaign).where(
+                models.Campaign.advertiser_ref_id == adv.id,
+                models.Campaign.is_deleted.is_(False),
+            )
+        )).scalar_one_or_none()
+        if not before:
+            opened.append(await open_campaign_for_advertiser(db, adv))
+    return opened
+
+
 async def list_ops_tasks(db: AsyncSession, campaign_id: str) -> List[models.OpsTask]:
     stmt = (select(models.OpsTask)
             .where(models.OpsTask.campaign_id == campaign_id)

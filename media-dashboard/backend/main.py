@@ -1032,7 +1032,11 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
     merged = dict(payload or {})
     merged["status"] = "ONBOARDED"
     adv = await repo.update_advertiser(db, adv, merged)
-    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+    # Sales → Ops hand-off: open (or reuse) the campaign for this advertiser so it
+    # appears in Campaign Ops linked to the new advertiser id.
+    campaign = await repo.open_campaign_for_advertiser(db, adv)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv),
+            "campaign": repo.campaign_dict(campaign)}
 
 
 # ── Campaign Ops stage machine (Dashboard 2) — Postgres-backed ───────────────
@@ -1064,6 +1068,14 @@ def workflow_stages():
 async def workflow_campaigns(db: AsyncSession = Depends(get_db)):
     camps = await repo.list_campaigns(db)
     return {"campaigns": [repo.campaign_dict(c) for c in camps], "total": len(camps)}
+
+
+@app.post("/api/workflow/backfill-campaigns")
+async def workflow_backfill_campaigns(db: AsyncSession = Depends(get_db)):
+    """One-time: open Ops campaigns for advertisers that were ONBOARDED before
+    the Sales→Ops linkage existed."""
+    opened = await repo.backfill_campaigns_for_onboarded(db)
+    return {"opened": [repo.campaign_dict(c) for c in opened], "count": len(opened)}
 
 
 @app.get("/api/workflow/campaigns/{campaign_id}/ops-tasks")
