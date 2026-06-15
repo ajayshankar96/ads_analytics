@@ -25,6 +25,8 @@ Razorpay's Kubernetes cluster.
 | Internal URL | https://trustscan-analytics.dev.razorpay.in |
 | External URL | https://trustscan-analytics.ext.dev.razorpay.in |
 | Auth | Google OAuth + email allowlist (`ALLOWED_EMAILS`) |
+| Service account | `trustscan-poc-service-account` (IRSA role `dev-serve-trustscan-poc`) — grants S3 access |
+| Search limit | Global `DAILY_SEARCH_LIMIT` (default 1000) searches/day, persisted in S3 |
 
 ---
 
@@ -97,6 +99,8 @@ deployment spec.
 | `TRINO_PORT` / `TRINO_HTTP_SCHEME` / `TRINO_CATALOG` / `TRINO_SCHEMA` | ConfigMap / inline | Trino connection |
 | `TRINO_USER` / `TRINO_PASSWORD` | **Secret** `trustscan-secrets` | Trino credentials |
 | `S3_BUCKET` / `S3_PREFIX` | inline | Login/scan audit-log location |
+| `DAILY_SEARCH_LIMIT` | inline | Global daily search cap (default `1000`); see §5 |
+| `RATE_LIMIT_PREFIX` | inline | S3 prefix for the daily counter (default `TS_POC/search_counter/`) |
 | `ALLOWED_EMAILS` | inline | Comma-separated OAuth allowlist (see §4) |
 | `GOOGLE_CLIENT_ID` | inline | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | inline | 🔒 OAuth client secret — **do not expose / commit** |
@@ -108,6 +112,31 @@ deployment spec.
 > inline env on the deployment. They should ideally be moved into the
 > `trustscan-secrets` Secret. Regardless, **never paste their values into this
 > repo, logs, or screenshots.**
+
+### S3 access (service account / IRSA)
+
+The app needs S3 to read/write the daily search counter (§5) and the audit log.
+Access is **not** via the EKS node role — that role has no S3 permissions. The
+deployment must run under the **`trustscan-poc-service-account`** service
+account, whose IRSA annotation maps it to IAM role `dev-serve-trustscan-poc`
+(which is granted `s3:GetObject` / `s3:PutObject` on `TS_POC/*`).
+
+```bash
+# One-time: point the deployment at the IRSA service account (triggers a rollout)
+kubectl patch deployment trustscan-analytics -n analytics-tools \
+  -p '{"spec":{"template":{"spec":{"serviceAccountName":"trustscan-poc-service-account"}}}}'
+
+# Verify the running pod assumes the role:
+POD=$(kubectl get pods -n analytics-tools | grep trustscan-analytics | awk '{print $1}' | head -1)
+kubectl exec -n analytics-tools $POD -- python3 -c \
+  "import boto3; print(boto3.client('sts').get_caller_identity()['Arn'])"
+# → .../assumed-role/dev-serve-trustscan-poc/...
+```
+
+> If the pod prints `dev-serve-worker-node` instead, it's on the node role and
+> S3 calls will be `AccessDenied` — re-apply the `serviceAccountName` patch.
+> The role currently lacks `s3:DeleteObject`, so counter/probe files can't be
+> deleted by the app (harmless — daily counter files are tiny).
 
 ### Trino credentials (Secret)
 
@@ -147,7 +176,44 @@ A user who authenticates but isn't on the list gets a 403 (not on allowlist).
 
 ---
 
-## 5️⃣ Mobile vs desktop UI
+## 5️⃣ Daily search rate limit
+
+The app enforces a **global** cap on searches per day (a "search" = one scan =
+one `/api/ts1` call). It's defined in `trustscan_app.py`:
+
+- `/api/ts1` checks the counter and **increments** it (once per scan); `/api/ts2`
+  **checks only** (so a capped scan blocks fully and stops calling the upstream
+  API, without double-counting ts2's chunked calls).
+- The counter is persisted at
+  `s3://$S3_BUCKET/TS_POC/search_counter/<YYYY-MM-DD>.json` (one file per day),
+  so it **survives pod restarts** and **auto-resets at midnight IST**.
+- Updates are lock-serialized and **fail open** on any S3 error — a transient S3
+  issue never blocks scanning (but also won't enforce the cap while S3 is down).
+- When the cap is hit, the API returns `429` and the UI shows
+  *"Daily search limit reached … resets at midnight IST."*
+
+> **Requires S3 access** — the deployment must run under
+> `trustscan-poc-service-account` (see §3). Without it, every counter write is
+> `AccessDenied`, the limiter fails open, and the cap is **not** enforced.
+
+Change the limit (triggers a rollout):
+
+```bash
+kubectl set env deployment/trustscan-analytics -n analytics-tools DAILY_SEARCH_LIMIT=2000
+```
+
+Check today's usage:
+
+```bash
+POD=$(kubectl get pods -n analytics-tools | grep trustscan-analytics | awk '{print $1}' | head -1)
+kubectl exec -n analytics-tools $POD -- python3 -c \
+  "import boto3,os,datetime,json; d=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5,minutes=30))).strftime('%Y-%m-%d'); \
+   print(boto3.client('s3','ap-south-1').get_object(Bucket=os.getenv('S3_BUCKET'),Key=f'TS_POC/search_counter/{d}.json')['Body'].read().decode())"
+```
+
+---
+
+## 6️⃣ Mobile vs desktop UI
 
 The frontend serves **one** `index.html`. It detects mobile via
 `navigator.userAgent`:
@@ -161,7 +227,7 @@ helpers. There is no separate mobile URL or build.
 
 ---
 
-## 6️⃣ Verify a deployment
+## 7️⃣ Verify a deployment
 
 ```bash
 # Pod should be Running with 0 restarts
