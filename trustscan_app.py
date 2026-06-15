@@ -61,6 +61,67 @@ def _audit(event: dict):
             logger.warning(f"[AUDIT_ERR] {e}")
     threading.Thread(target=_write, daemon=True).start()
 
+
+# ── Global daily search rate limit (persisted in S3) ───────────────────────────
+# One shared counter for the whole app. A "search" = one scan = one /api/ts1 call.
+# Stored as s3://$S3_BUCKET/TS_POC/search_counter/<YYYY-MM-DD>.json so it survives
+# pod restarts and resets automatically at midnight IST.
+DAILY_SEARCH_LIMIT = int(os.getenv("DAILY_SEARCH_LIMIT", "1000"))
+RATE_LIMIT_PREFIX  = os.getenv("RATE_LIMIT_PREFIX", "TS_POC/search_counter/")
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+_RATE_LOCK = threading.Lock()
+
+def _rate_key():
+    day = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
+    return day, f"{RATE_LIMIT_PREFIX}{day}.json"
+
+def _search_quota(do_increment: bool):
+    """Global daily search counter in S3. Returns (allowed, count, limit).
+
+    do_increment=True consumes one search (used by /api/ts1, once per scan);
+    /api/ts2 calls with False to gate without double-counting the chunked calls.
+    Serialized by a lock and FAILS OPEN on any S3 error so a transient S3 issue
+    never blocks scanning.
+    """
+    with _RATE_LOCK:
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+            bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+            s3 = boto3.client("s3", region_name="ap-south-1")
+            day, key = _rate_key()
+            try:
+                obj = s3.get_object(Bucket=bucket, Key=key)
+                count = int(json.loads(obj["Body"].read().decode()).get("count", 0))
+            except ClientError as e:
+                if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                    count = 0
+                else:
+                    raise
+            if count >= DAILY_SEARCH_LIMIT:
+                return False, count, DAILY_SEARCH_LIMIT
+            if do_increment:
+                count += 1
+                s3.put_object(
+                    Bucket=bucket, Key=key,
+                    Body=json.dumps({
+                        "date": day, "count": count, "limit": DAILY_SEARCH_LIMIT,
+                        "updated": datetime.datetime.now(_IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+                    }).encode(),
+                    ContentType="application/json",
+                )
+            return True, count, DAILY_SEARCH_LIMIT
+        except Exception as e:
+            logger.warning(f"[RATE_LIMIT_ERR] {e} — failing open")
+            return True, -1, DAILY_SEARCH_LIMIT
+
+def _rate_limit_response(limit: int):
+    return JSONResponse(status_code=429, content={"error": {
+        "code": "DAILY_LIMIT_REACHED",
+        "reason": "daily_limit_reached",
+        "description": f"The daily limit of {limit} searches has been reached. It resets at midnight IST.",
+    }})
+
 app = FastAPI(title="TrustScan API")
 
 app.add_middleware(
@@ -644,10 +705,18 @@ def ts1(body: Ts1LiveRequest, request: Request):
     masked = body.contact[:3] + "XXXXXXX" if len(body.contact) >= 3 else body.contact
     logger.info(f"[SCAN_TS1] {email} | {masked}")
     _, device, access, _ = _req_meta(request)
+    allowed, count, limit = _search_quota(do_increment=True)
+    if not allowed:
+        logger.info(f"[RATE_LIMITED] {email} | global daily limit {limit} reached (count={count})")
+        _audit({"type": "scan", "status": "rate_limited", "email": email,
+                "phone": masked, "device": device, "access": access,
+                "count": count, "limit": limit})
+        return _rate_limit_response(limit)
     try:
         result = live_ts1(body)
         _audit({"type": "scan", "status": "success", "email": email,
-                "phone": masked, "device": device, "access": access})
+                "phone": masked, "device": device, "access": access,
+                "count": count, "limit": limit})
         return result
     except Exception as e:
         _audit({"type": "scan", "status": "error", "email": email,
@@ -658,6 +727,9 @@ def ts1(body: Ts1LiveRequest, request: Request):
 def ts2(body: Ts2LiveRequest, request: Request):
     email = getattr(request.state, "user_email", "unknown")
     _, device, access, _ = _req_meta(request)
+    allowed, _count, limit = _search_quota(do_increment=False)
+    if not allowed:
+        return _rate_limit_response(limit)
     try:
         result = live_ts2(body)
         _audit({"type": "scan", "status": "success", "email": email,

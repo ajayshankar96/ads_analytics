@@ -1185,6 +1185,7 @@ function friendlyError(status, body){
   if (code === "SETUP_REQUIRED") return { title: "Setup needed", body: "API credentials aren't configured. Open setup to enter your Key ID and Secret." };
   if (/authentication/i.test(desc) || status === 401) return { title: "Authentication issue", body: "Your API credentials may be invalid or expired. Please contact your admin to refresh them." };
   if (status === 403) return { title: "Access denied", body: "Your account doesn't have access to TrustScan. Please contact your admin." };
+  if (reason === "daily_limit_reached" || code === "DAILY_LIMIT_REACHED") return { title: "Daily search limit reached", body: desc || "The daily search limit has been reached. It resets at midnight IST." };
   if (status === 429) return { title: "Too many requests", body: "Daily or minute quota reached. Please wait a moment and try again." };
   if (status === 404) return { title: "Number not in our records", body: "We don't have data for this customer yet. Try a different number." };
   if (status >= 500) return { title: "Service temporarily unavailable", body: "The Razorpay API is having trouble. Please try again in a minute." };
