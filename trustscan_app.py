@@ -23,8 +23,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("trustscan")
 
 # ── Unified audit log (persisted to S3) ───────────────────────────────────────
-AUDIT_LOG_KEY = "ajayshankar/trustscan_login_log/audit_events.jsonl"
+# Must live under TS_POC/ — the only prefix the pod's IRSA role can write to.
+AUDIT_LOG_KEY = os.getenv("AUDIT_LOG_KEY", "TS_POC/activity_log/audit_events.jsonl")
 import threading, datetime
+_AUDIT_LOCK = threading.Lock()
 
 def _detect_device(ua: str) -> str:
     ua = ua.lower()
@@ -43,20 +45,25 @@ def _req_meta(request: Request):
     return ip, _detect_device(ua), ("External" if "ext" in host else "Internal"), host
 
 def _audit(event: dict):
-    """Append an audit event to S3 (background thread, never blocks request)."""
+    """Append an audit event to the S3 NDJSON log (background thread, never
+    blocks the request). Stamps an IST timestamp and serializes the
+    read-modify-write with a lock so concurrent events don't clobber each other."""
+    event["timestamp"] = datetime.datetime.now(
+        datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    ).strftime("%Y-%m-%d %H:%M:%S IST")
     def _write():
         try:
             import boto3
             bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
-            s3 = boto3.client("s3")
-            try:
-                existing = s3.get_object(Bucket=bucket, Key=AUDIT_LOG_KEY)["Body"].read().decode()
-            except Exception:
-                existing = ""
-            event["timestamp"] = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-            s3.put_object(Bucket=bucket, Key=AUDIT_LOG_KEY,
-                          Body=(existing + json.dumps(event) + "\n").encode(),
-                          ContentType="application/x-ndjson")
+            s3 = boto3.client("s3", region_name="ap-south-1")
+            with _AUDIT_LOCK:
+                try:
+                    existing = s3.get_object(Bucket=bucket, Key=AUDIT_LOG_KEY)["Body"].read().decode()
+                except Exception:
+                    existing = ""
+                s3.put_object(Bucket=bucket, Key=AUDIT_LOG_KEY,
+                              Body=(existing + json.dumps(event) + "\n").encode(),
+                              ContentType="application/x-ndjson")
         except Exception as e:
             logger.warning(f"[AUDIT_ERR] {e}")
     threading.Thread(target=_write, daemon=True).start()
@@ -411,6 +418,72 @@ def get_login_log(request: Request, type: str = None):
         all_events = [e for e in all_events if e.get("type") == type]
     all_events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
     return JSONResponse({"events": all_events, "total": len(all_events)})
+
+
+@app.get("/api/activity-summary")
+def activity_summary(request: Request):
+    """Per-user rollup of logins and searches from the audit log:
+    logins (success / denied / errors), searches (success / errors / rate-limited),
+    and first/last-seen timestamps. Failed logins with no identified email are
+    grouped under "unknown"."""
+    import boto3
+    bucket = os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics")
+    events = []
+    try:
+        s3 = boto3.client("s3", region_name="ap-south-1")
+        raw = s3.get_object(Bucket=bucket, Key=AUDIT_LOG_KEY)["Body"].read().decode()
+        events = [json.loads(l) for l in raw.strip().splitlines() if l.strip()]
+    except Exception:
+        pass
+
+    users: dict = {}
+    def rec(email):
+        key = (email or "unknown").lower()
+        return users.setdefault(key, {
+            "email": key, "name": "",
+            "logins_success": 0, "logins_denied": 0, "login_errors": 0,
+            "searches": 0, "search_errors": 0, "rate_limited": 0,
+            "first_seen": "", "last_seen": "", "last_login": "", "last_search": "",
+        })
+
+    for e in events:
+        ts = e.get("timestamp", "")
+        etype, status, email = e.get("type"), e.get("status"), e.get("email")
+        r = rec(email)
+        if e.get("name") and not r["name"]:
+            r["name"] = e["name"]
+        if etype == "login":
+            if status == "success":
+                r["logins_success"] += 1
+                if ts > r["last_login"]: r["last_login"] = ts
+            elif status == "access_denied":
+                r["logins_denied"] += 1
+            else:
+                r["login_errors"] += 1
+        elif etype == "scan":
+            if status == "success":
+                r["searches"] += 1
+                if ts > r["last_search"]: r["last_search"] = ts
+            elif status == "rate_limited":
+                r["rate_limited"] += 1
+            else:
+                r["search_errors"] += 1
+        else:
+            continue
+        if ts:
+            r["first_seen"] = min(r["first_seen"] or ts, ts)
+            if ts > r["last_seen"]: r["last_seen"] = ts
+
+    out = sorted(users.values(), key=lambda u: u["last_seen"], reverse=True)
+    totals = {
+        "users": len(out),
+        "logins_success": sum(u["logins_success"] for u in out),
+        "logins_denied":  sum(u["logins_denied"]  for u in out),
+        "searches":       sum(u["searches"]        for u in out),
+        "rate_limited":   sum(u["rate_limited"]    for u in out),
+        "events":         len(events),
+    }
+    return JSONResponse({"totals": totals, "users": out})
 
 
 @app.get("/signin")
