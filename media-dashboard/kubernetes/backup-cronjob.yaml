@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: media-dashboard-postgres-backup
+  namespace: analytics-tools
+  labels:
+    app: media-dashboard-postgres-backup
+    bu: ads
+  annotations:
+    janitor/ttl: forever
+spec:
+  schedule: "30 18 * * *"          # daily 18:30 UTC (00:00 IST)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app: media-dashboard-postgres-backup
+        spec:
+          serviceAccountName: trustscan-poc-service-account   # IRSA -> dev-serve-trustscan-poc (S3 TS_POC/* access)
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: c.rzp.io/proxy_dockerhub/postgres:15
+            env:
+            - name: AWS_DEFAULT_REGION
+              value: ap-south-1
+            - name: PGHOST
+              value: media-dashboard-postgres
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_PASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_DB } }
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "[1/3] Installing awscli..."
+              apt-get update -qq && apt-get install -y -qq awscli >/dev/null
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+              TS=$(date +%Y%m%d_%H%M%S)
+              FILE="/tmp/${POSTGRES_DB}_${TS}.sql.gz"
+              echo "[2/3] Dumping database $POSTGRES_DB from $PGHOST..."
+              pg_dump -h "$PGHOST" -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > "$FILE"
+              echo "      dump size: $(du -h "$FILE" | cut -f1)"
+              echo "[3/3] Uploading to S3..."
+              aws s3 cp "$FILE" "s3://rzp-1415-prod-general-purpose-analytics/TS_POC/data_dump/$(basename "$FILE")"
+              echo "Backup complete: $(basename "$FILE")"
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { memory: 512Mi }
