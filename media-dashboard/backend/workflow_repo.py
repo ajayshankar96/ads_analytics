@@ -249,8 +249,12 @@ async def close_lead(db: AsyncSession, lead: models.Lead, *, buy_type: str,
 # ── Ops: campaigns + tasks + transitions ───────────────────────────────────────
 
 async def list_campaigns(db: AsyncSession) -> List[models.Campaign]:
+    # Only show campaigns linked to a Sales-pipeline advertiser (rmn_advertisers),
+    # so legacy lead-era campaigns without an advertiser don't appear in Ops.
+    adv_ids = select(models.Advertiser.id)
     stmt = (select(models.Campaign)
-            .where(models.Campaign.is_deleted.is_(False))
+            .where(models.Campaign.is_deleted.is_(False),
+                   models.Campaign.advertiser_ref_id.in_(adv_ids))
             .order_by(models.Campaign.created_at.desc()))
     return list((await db.execute(stmt)).scalars().all())
 
