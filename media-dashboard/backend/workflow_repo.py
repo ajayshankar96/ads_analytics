@@ -400,6 +400,17 @@ async def list_publishers(db: AsyncSession) -> List[Dict[str, Any]]:
     return [{"id": p.id, "name": p.name, "code": p.code} for p in result.scalars().all()]
 
 
+async def create_publisher(db: AsyncSession, name: str, code: str) -> Dict[str, Any]:
+    result = await db.execute(select(models.Publisher))
+    count = len(result.scalars().all())
+    pub_id = f"PUB-{count + 1:03d}"
+    pub = models.Publisher(id=pub_id, name=name, code=code, is_active=True)
+    db.add(pub)
+    await db.commit()
+    await db.refresh(pub)
+    return {"id": pub.id, "name": pub.name, "code": pub.code}
+
+
 async def get_allocations(db: AsyncSession, advertiser_id: str) -> List[Dict[str, Any]]:
     result = await db.execute(
         select(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id)

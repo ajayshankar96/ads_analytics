@@ -1063,6 +1063,17 @@ async def list_publishers(db: AsyncSession = Depends(get_db)):
     return {"publishers": pubs}
 
 
+class CreatePublisherRequest(BaseModel):
+    name: str
+    code: str
+
+
+@app.post("/api/publishers")
+async def create_publisher(req: CreatePublisherRequest, db: AsyncSession = Depends(get_db)):
+    pub = await repo.create_publisher(db, name=req.name, code=req.code)
+    return {"success": True, "publisher": pub}
+
+
 @app.get("/api/advertisers/{adv_id}/allocations")
 async def get_allocations(adv_id: str, db: AsyncSession = Depends(get_db)):
     adv = await repo.get_advertiser(db, adv_id)
