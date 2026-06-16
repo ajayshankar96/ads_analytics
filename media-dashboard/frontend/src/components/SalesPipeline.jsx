@@ -126,7 +126,7 @@ export default function SalesPipeline() {
                 const live = a.status === "ONBOARDED";
                 const goal = goalText(a);
                 return (
-                  <tr key={a.id} style={s.tr} onClick={() => live ? setViewAdv(a) : setWizard(a)} title={live ? "View details" : "Resume draft"}>
+                  <tr key={a.id} style={{ ...s.tr, cursor: "default" }}>
                     <td style={s.td}>
                       <div style={s.advCell}>
                         <div style={{ ...s.avatar, background: avatarColor(a.name) }}>{(a.name || "?").trim().charAt(0).toUpperCase()}</div>
