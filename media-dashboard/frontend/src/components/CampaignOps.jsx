@@ -405,7 +405,6 @@ export default function CampaignOps() {
   const [tasksByCampaign, setTasksByCampaign] = useState({});
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showNewCampaign, setShowNewCampaign] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -439,9 +438,7 @@ export default function CampaignOps() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: c.muted }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</div>
-        <button style={s.btnPrimary} onClick={() => setShowNewCampaign(true)}>+ New Campaign</button>
       </div>
-      {showNewCampaign && <NewCampaignModal onClose={() => setShowNewCampaign(false)} onCreated={load} />}
       {campaigns.length === 0 ? (
         <div style={s.empty}>No campaigns yet. Click "+ New Campaign" or onboard an advertiser to create one.</div>
       ) : (
