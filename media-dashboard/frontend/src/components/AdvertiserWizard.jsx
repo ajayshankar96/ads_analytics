@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { createAdvertiser, updateAdvertiser, submitAdvertiser } from "../api";
+import { createAdvertiser, updateAdvertiser, submitAdvertiser, recordWelcomeEmail } from "../api";
 import { GOOGLE_WEB_CLIENT_ID, useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
 /**
@@ -189,6 +189,11 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
     try {
       const token = await getGmailAccessToken();   // consent popup (first time)
       await sendViaGmail(token, { to, subject: emailSubject, html: textToHtml(emailBody) });
+      // Record the send so the Sales list can show a green mail icon + details.
+      if (advId) {
+        try { await recordWelcomeEmail(advId, { to: to.join(", "), subject: emailSubject, body: emailBody }); }
+        catch (_) { /* non-fatal: the email already went out */ }
+      }
       setEmailStatus({ type: "success", msg: `Email sent to ${to.join(", ")} from your account` });
       setTimeout(onClose, 1400);
     } catch (e) {

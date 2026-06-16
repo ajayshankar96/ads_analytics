@@ -1039,6 +1039,22 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
             "campaign": repo.campaign_dict(campaign)}
 
 
+class WelcomeEmailRequest(BaseModel):
+    to: str = ""
+    subject: str = ""
+    body: str = ""
+
+
+@app.post("/api/advertisers/{adv_id}/welcome-email")
+async def record_welcome_email(adv_id: str, req: WelcomeEmailRequest, db: AsyncSession = Depends(get_db)):
+    """Record that the welcome email was sent (the send itself happens client-side)."""
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    adv = await repo.record_welcome_email(db, adv, to=req.to, subject=req.subject, body=req.body)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+
+
 # ── Campaign Ops stage machine (Dashboard 2) — Postgres-backed ───────────────
 # Campaigns opened from a closed lead progress through validated stages with
 # hand-off emails. ops-tasks gate the go-live transition.

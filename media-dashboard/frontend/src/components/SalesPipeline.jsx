@@ -38,7 +38,7 @@ function avatarColor(name) {
   return PALETTE[h % PALETTE.length];
 }
 
-const STAGE_NAMES = ["Basics", "Commercial", "Performance Goal", "POC", "Agreement", "Review"];
+const STAGE_NAMES = ["Basics", "Commercial", "Performance Goal", "POC", "Agreement", "Review", "Send Email"];
 const stageLabel = (n) => STAGE_NAMES[((n || 1) - 1)] || "Basics";
 const dash = <span style={s.dash}>—</span>;
 
@@ -61,10 +61,29 @@ function budgetText(a) {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+const MailIcon = ({ color }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" />
+  </svg>
+);
+const EyeIcon = ({ color = "#52606D" }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
 export default function SalesPipeline() {
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState(null);
+  const [emailModal, setEmailModal] = useState(null);   // advertiser whose sent email to view
 
   const load = () => {
     setLoading(true);
@@ -94,7 +113,9 @@ export default function SalesPipeline() {
                 <th style={s.th}>Performance goal</th>
                 <th style={{ ...s.th, ...s.thRight }}>Total budget</th>
                 <th style={{ ...s.th, ...s.thRight }}>Live offers</th>
+                <th style={{ ...s.th, textAlign: "center" }}>Email</th>
                 <th style={s.th}>Status</th>
+                <th style={{ ...s.th, textAlign: "center" }}>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -121,15 +142,64 @@ export default function SalesPipeline() {
                     </td>
                     <td style={{ ...s.td, ...s.tdRight }}>{budgetText(a)}</td>
                     <td style={{ ...s.td, ...s.tdRight }}>{dash}</td>
+                    <td style={{ ...s.td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      {a.welcome_email_sent_at ? (
+                        <span
+                          title={`Welcome email sent · ${fmtDateTime(a.welcome_email_sent_at)} · click to view`}
+                          onClick={() => setEmailModal(a)}
+                          style={{ cursor: "pointer", display: "inline-flex" }}
+                        >
+                          <MailIcon color="#0F8C6A" />
+                        </span>
+                      ) : (
+                        <span title="Welcome email not sent yet" style={{ display: "inline-flex", opacity: 0.6 }}>
+                          <MailIcon color="#B0B8C4" />
+                        </span>
+                      )}
+                    </td>
                     <td style={s.td}>
                       <span style={{ ...s.badge, ...(live ? s.badgeLive : s.badgeDraft) }}>{live ? "Onboarded" : "Draft"}</span>
-                      {!live && <div style={s.stageSub}>Step {a.current_step || 1}/6 · {stageLabel(a.current_step)}</div>}
+                      {!live && <div style={s.stageSub}>Step {a.current_step || 1}/7 · {stageLabel(a.current_step)}</div>}
+                    </td>
+                    <td style={{ ...s.td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <span title="Open advertiser details" onClick={() => setWizard(a)} style={{ cursor: "pointer", display: "inline-flex" }}>
+                        <EyeIcon />
+                      </span>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {emailModal && (
+        <div
+          onClick={() => setEmailModal(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,36,0.45)", zIndex: 10000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "48px 20px", overflowY: "auto" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 640, boxShadow: "0 20px 60px rgba(15,23,36,0.25)", overflow: "hidden" }}>
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid " + c.line, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>Welcome email</div>
+                <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>
+                  {emailModal.name} · sent {fmtDateTime(emailModal.welcome_email_sent_at)}
+                </div>
+              </div>
+              <button onClick={() => setEmailModal(null)} style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid " + c.line, background: "#fff", cursor: "pointer", fontSize: 16, color: c.muted }}>✕</button>
+            </div>
+            <div style={{ padding: "18px 22px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em" }}>To</div>
+              <div style={{ fontSize: 14, color: c.ink, margin: "4px 0 14px" }}>{emailModal.welcome_email_to || "—"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em" }}>Subject</div>
+              <div style={{ fontSize: 14, color: c.ink, fontWeight: 600, margin: "4px 0 14px" }}>{emailModal.welcome_email_subject || "—"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em" }}>Body</div>
+              <div style={{ fontSize: 14, color: c.ink, marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.5, background: "#F7F8FA", borderRadius: 10, padding: "14px 16px" }}>
+                {emailModal.welcome_email_body || "—"}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

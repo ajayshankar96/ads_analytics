@@ -79,8 +79,25 @@ def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
         "poc_email": a.poc_email, "poc_phone": a.poc_phone, "cc_finance": a.cc_finance,
         "agreement_name": a.agreement_name, "po_name": a.po_name, "po_ref": a.po_ref,
         "contract_start": a.contract_start.isoformat() if a.contract_start else None,
+        "welcome_email_to": a.welcome_email_to,
+        "welcome_email_subject": a.welcome_email_subject,
+        "welcome_email_body": a.welcome_email_body,
+        "welcome_email_sent_at": a.welcome_email_sent_at.isoformat() if a.welcome_email_sent_at else None,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
+
+
+async def record_welcome_email(db: AsyncSession, adv: models.Advertiser, *,
+                               to: str, subject: str, body: str) -> models.Advertiser:
+    """Persist that the welcome email was sent for this advertiser."""
+    adv.welcome_email_to = to
+    adv.welcome_email_subject = subject
+    adv.welcome_email_body = body
+    adv.welcome_email_sent_at = wf.utcnow()
+    adv.updated_at = wf.utcnow()
+    await db.commit()
+    await db.refresh(adv)
+    return adv
 
 
 def _coerce_adv(payload: Dict[str, Any]) -> Dict[str, Any]:

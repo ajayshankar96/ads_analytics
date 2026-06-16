@@ -158,6 +158,9 @@ export const updateAdvertiser = (id, payload) =>
 export const submitAdvertiser = (id, payload = {}) =>
   apiFetch(`/api/advertisers/${id}/submit`, { method: "POST", body: JSON.stringify(payload) });
 
+export const recordWelcomeEmail = (id, payload) =>
+  apiFetch(`/api/advertisers/${id}/welcome-email`, { method: "POST", body: JSON.stringify(payload) });
+
 // ── Sales pipeline (Dashboard 1) ──────────────────────────────────────────────
 export const getLeads = (status) =>
   apiFetch(`/api/sales/leads${buildQuery({ status })}`);

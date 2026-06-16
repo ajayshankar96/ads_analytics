@@ -14,7 +14,7 @@ explicit queries in the repository layer).
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Index, Integer, String
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base, utcnow
@@ -73,6 +73,11 @@ class Advertiser(Base):
     po_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     po_ref: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     contract_start: Mapped[Optional[date]] = mapped_column(Date, default=None)
+    # Step 7 — welcome email (sent client-side from the wizard; recorded here)
+    welcome_email_to: Mapped[Optional[str]] = mapped_column(String(512), default=None)
+    welcome_email_subject: Mapped[Optional[str]] = mapped_column(String(512), default=None)
+    welcome_email_body: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    welcome_email_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
