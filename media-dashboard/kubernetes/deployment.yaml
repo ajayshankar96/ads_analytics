@@ -27,7 +27,7 @@ spec:
           - -c
           - |
             apt-get update -qq && apt-get install -y -qq git &&
-            git clone --depth 1 https://github.com/ajayshankar96/ads_analytics.git /app &&
+            git clone --depth 1 "https://x-access-token:${GIT_TOKEN}@github.com/ajayshankar96/ads_analytics.git" /app &&
             cd /app/media-dashboard/backend &&
             pip install --no-cache-dir -q -r requirements.txt &&
             alembic upgrade head &&
@@ -40,6 +40,12 @@ spec:
         - secretRef:
             name: media-dashboard-postgres-credentials
         env:
+        # GitHub read-only token for cloning the (private) repo on startup.
+        - name: GIT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: media-dashboard-git
+              key: GITHUB_TOKEN
         - name: MASTER_SPREADSHEET_ID
           valueFrom:
             configMapKeyRef:
