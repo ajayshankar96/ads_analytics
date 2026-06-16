@@ -107,6 +107,9 @@ class Campaign(Base):
     current_stage: Mapped[str] = mapped_column(String(32), index=True, default="OPS_SETUP")
     ads_campaign_ref_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
     advertiser_ref_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, default=None)
+    advertiser_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    publisher_id: Mapped[Optional[str]] = mapped_column(String(32), index=True, default=None)
+    publisher_name: Mapped[Optional[str]] = mapped_column(String(128), default=None)
     # Campaign assets
     landing_link: Mapped[Optional[str]] = mapped_column(Text, default=None)
     offer_title: Mapped[Optional[str]] = mapped_column(String(255), default=None)

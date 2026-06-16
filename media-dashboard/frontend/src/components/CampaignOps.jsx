@@ -8,6 +8,9 @@ import {
   updateCampaignAssets,
   recordPublisherEmail,
   uploadCampaignAsset,
+  createCampaign,
+  getAdvertisers,
+  getPublishers,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
@@ -344,12 +347,65 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
   );
 }
 
+function NewCampaignModal({ onClose, onCreated }) {
+  const [advertisers, setAdvertisers] = useState([]);
+  const [publishers, setPublishers] = useState([]);
+  const [advId, setAdvId] = useState("");
+  const [pubId, setPubId] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    Promise.all([getAdvertisers(), getPublishers()]).then(([a, p]) => {
+      setAdvertisers((a.advertisers || []).filter((x) => x.status === "ONBOARDED"));
+      setPublishers(p.publishers || []);
+    });
+  }, []);
+
+  const handleCreate = async () => {
+    if (!advId || !pubId) { alert("Select both advertiser and publisher"); return; }
+    setCreating(true);
+    try {
+      await createCampaign({ advertiser_id: advId, publisher_id: pubId });
+      onCreated();
+      onClose();
+    } catch (e) { alert("Failed: " + e.message); }
+    finally { setCreating(false); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,36,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 14, padding: "28px 32px", width: 420, boxShadow: "0 20px 60px rgba(15,23,36,0.25)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: c.ink, marginBottom: 18 }}>New Campaign</div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser</label>
+          <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => setAdvId(e.target.value)}>
+            <option value="">Select advertiser…</option>
+            {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.id})</option>)}
+          </select>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Publisher</label>
+          <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)}>
+            <option value="">Select publisher…</option>
+            {publishers.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          <button style={s.btnGhost} onClick={onClose}>Cancel</button>
+          <button style={s.btnPrimary} onClick={handleCreate} disabled={creating}>{creating ? "Creating…" : "Create Campaign"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignOps() {
   const [campaigns, setCampaigns] = useState([]);
   const [meta, setMeta] = useState({ stages: [], labels: {}, transitions: {}, handoff_on: {} });
   const [tasksByCampaign, setTasksByCampaign] = useState({});
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showNewCampaign, setShowNewCampaign] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -376,13 +432,20 @@ export default function CampaignOps() {
   useEffect(load, []);
 
   if (loading) return <div style={s.loading}>Loading campaigns…</div>;
-  if (campaigns.length === 0)
-    return <div style={s.empty}>No campaigns yet. Onboard an advertiser in the Sales Pipeline to open one.</div>;
 
   const stages = meta.stages || [];
 
   return (
-    <div style={s.list}>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: c.muted }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</div>
+        <button style={s.btnPrimary} onClick={() => setShowNewCampaign(true)}>+ New Campaign</button>
+      </div>
+      {showNewCampaign && <NewCampaignModal onClose={() => setShowNewCampaign(false)} onCreated={load} />}
+      {campaigns.length === 0 ? (
+        <div style={s.empty}>No campaigns yet. Click "+ New Campaign" or onboard an advertiser to create one.</div>
+      ) : (
+      <div style={s.list}>
       {campaigns.map((cam) => {
         const curIdx = stages.indexOf(cam.current_stage);
         const isSelected = selected === cam.campaign_id;
@@ -391,7 +454,10 @@ export default function CampaignOps() {
           <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }}>
             <div style={{ ...s.head, cursor: "pointer" }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
               <div>
-                <div style={s.title}>{cam.name}</div>
+                <div style={s.title}>
+                  {cam.advertiser_name || cam.name}
+                  {cam.publisher_name && <span style={{ fontWeight: 400, color: c.muted }}> → {cam.publisher_name}</span>}
+                </div>
                 <div style={s.advRef}>{cam.campaign_id}{cam.advertiser_ref_id ? ` · ${cam.advertiser_ref_id}` : ""}</div>
               </div>
               <span style={{ ...s.badge, ...(isTerminal ? s.badgeDone : s.badgeActive) }}>
@@ -421,6 +487,8 @@ export default function CampaignOps() {
           </div>
         );
       })}
+      </div>
+      )}
     </div>
   );
 }

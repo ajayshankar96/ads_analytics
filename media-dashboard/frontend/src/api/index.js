@@ -191,6 +191,9 @@ export const transitionCampaign = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const createCampaign = (payload) =>
+  apiFetch("/api/workflow/campaigns", { method: "POST", body: JSON.stringify(payload) });
+
 export const updateCampaignAssets = (campaignId, payload) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/assets`, {
     method: "PATCH",

@@ -43,6 +43,8 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "campaign_id": c.id, "agreement_id": c.agreement_id, "name": c.name,
         "current_stage": c.current_stage, "ads_campaign_ref_id": c.ads_campaign_ref_id,
         "advertiser_ref_id": c.advertiser_ref_id,
+        "advertiser_name": c.advertiser_name, "publisher_id": c.publisher_id,
+        "publisher_name": c.publisher_name,
         "landing_link": c.landing_link, "offer_title": c.offer_title,
         "details_tc": c.details_tc, "how_to_redeem": c.how_to_redeem,
         "promo_codes": c.promo_codes, "code_validity": c.code_validity,
@@ -317,25 +319,49 @@ async def record_publisher_email(db: AsyncSession, campaign: models.Campaign, *,
     return campaign
 
 
-async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser) -> models.Campaign:
-    """Idempotently open an Ops campaign for an onboarded advertiser so it shows
-    up in Campaign Ops linked to the new advertiser id (ADV-XXX-NNNN).
-    Returns the existing campaign if one already exists for this advertiser."""
-    existing = (await db.execute(
-        select(models.Campaign).where(
-            models.Campaign.advertiser_ref_id == advertiser.id,
-            models.Campaign.is_deleted.is_(False),
-        )
-    )).scalar_one_or_none()
+async def next_campaign_id(db: AsyncSession, adv_name: str, pub_name: str) -> str:
+    """CMP-<first 3 letters of advertiser>-<first 3 letters of publisher>-NNNN."""
+    adv_code = re.sub(r"[^A-Za-z]", "", adv_name or "")[:3].upper() or "ADV"
+    pub_code = re.sub(r"[^A-Za-z]", "", pub_name or "")[:3].upper() or "PUB"
+    prefix = f"CMP-{adv_code}-{pub_code}-"
+    rows = (await db.execute(
+        select(models.Campaign.id).where(models.Campaign.id.like(prefix + "%"))
+    )).scalars().all()
+    maxn = 0
+    for rid in rows:
+        try:
+            maxn = max(maxn, int(rid.rsplit("-", 1)[1]))
+        except (ValueError, IndexError):
+            pass
+    return f"{prefix}{maxn + 1:04d}"
+
+
+async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser,
+                                       publisher_id: Optional[str] = None,
+                                       publisher_name: Optional[str] = None) -> models.Campaign:
+    """Idempotently open an Ops campaign for an onboarded advertiser (optionally
+    linked to a specific publisher). Returns the existing campaign if one already
+    exists for this advertiser+publisher combo."""
+    q = select(models.Campaign).where(
+        models.Campaign.advertiser_ref_id == advertiser.id,
+        models.Campaign.is_deleted.is_(False),
+    )
+    if publisher_id:
+        q = q.where(models.Campaign.publisher_id == publisher_id)
+    existing = (await db.execute(q)).scalar_one_or_none()
     if existing:
         return existing
 
+    camp_id = await next_campaign_id(db, advertiser.name, publisher_name or "")
     campaign = models.Campaign(
-        id=wf.new_id("camp"),
-        agreement_id="",                       # advertiser-led flow has no separate agreement
+        id=camp_id,
+        agreement_id="",
         name=f"{advertiser.name} campaign",
         current_stage=wf.STAGE_OPS_SETUP,
-        advertiser_ref_id=advertiser.id,       # links Ops back to the Sales advertiser
+        advertiser_ref_id=advertiser.id,
+        advertiser_name=advertiser.name,
+        publisher_id=publisher_id,
+        publisher_name=publisher_name,
     )
     db.add(campaign)
     for step in wf.OPS_STEPS:
@@ -343,7 +369,7 @@ async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Adve
     db.add(models.StageTransition(
         entity_type="CAMPAIGN", entity_id=campaign.id,
         from_stage="ONBOARDED", to_stage=wf.STAGE_OPS_SETUP,
-        note=f"opened from advertiser {advertiser.id}",
+        note=f"opened from advertiser {advertiser.id}" + (f" for publisher {publisher_name}" if publisher_name else ""),
     ))
     await db.commit()
     await db.refresh(campaign)

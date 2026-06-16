@@ -1039,6 +1039,27 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
             "campaign": repo.campaign_dict(campaign)}
 
 
+class CreateCampaignRequest(BaseModel):
+    advertiser_id: str
+    publisher_id: Optional[str] = None
+
+
+@app.post("/api/workflow/campaigns")
+async def create_campaign(req: CreateCampaignRequest, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, req.advertiser_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {req.advertiser_id} not found")
+    pub_name = None
+    if req.publisher_id:
+        pubs = await repo.list_publishers(db)
+        pub = next((p for p in pubs if p["id"] == req.publisher_id), None)
+        if not pub:
+            raise HTTPException(status_code=404, detail=f"publisher {req.publisher_id} not found")
+        pub_name = pub["name"]
+    campaign = await repo.open_campaign_for_advertiser(db, adv, publisher_id=req.publisher_id, publisher_name=pub_name)
+    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
 class WelcomeEmailRequest(BaseModel):
     to: str = ""
     subject: str = ""
