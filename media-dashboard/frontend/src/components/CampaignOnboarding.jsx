@@ -1,72 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { GOOGLE_WEB_CLIENT_ID, useGisLoaded, getGmailAccessToken, sendViaGmail } from "../lib/gmail";
 
 const API = process.env.REACT_APP_API_URL || "";
-
-// ─── Client-side Google Sign-In for per-user email sending (Option A) ──────────
-// GCP OAuth *Web application* client ID. While empty, the app falls back to
-// the server-side sender (from the service account).
-const GOOGLE_WEB_CLIENT_ID = "38441679546-r2kloe55sdg1gsv334ohf36kqsf88t28.apps.googleusercontent.com";
-
-// Loads the Google Identity Services script once; returns true when ready.
-function useGisLoaded() {
-  const [loaded, setLoaded] = useState(
-    typeof window !== "undefined" && !!window.google?.accounts?.oauth2
-  );
-  useEffect(() => {
-    if (!GOOGLE_WEB_CLIENT_ID) return;
-    if (window.google?.accounts?.oauth2) { setLoaded(true); return; }
-    if (document.getElementById("gis-client")) return;
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.id = "gis-client"; s.async = true; s.defer = true;
-    s.onload = () => setLoaded(true);
-    document.body.appendChild(s);
-  }, []);
-  return loaded;
-}
-
-// Opens the Google consent/picker popup and resolves with a gmail.send access token.
-function getGmailAccessToken() {
-  return new Promise((resolve, reject) => {
-    if (!window.google?.accounts?.oauth2) return reject(new Error("Google Sign-In not loaded yet."));
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_WEB_CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/gmail.send",
-      callback: (resp) => resp.error ? reject(new Error(resp.error)) : resolve(resp.access_token),
-    });
-    client.requestAccessToken();
-  });
-}
-
-// UTF-8 safe base64 (handles ₹ etc.)
-function utf8ToBase64(str) {
-  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p) => String.fromCharCode("0x" + p)));
-}
-
-// Sends an HTML email via the Gmail API as the signed-in user ("me").
-async function sendViaGmail(token, { to, cc, subject, html }) {
-  // Build header lines, filtering only the absent Cc (NOT empty strings).
-  const headerLines = [
-    `To: ${to.join(", ")}`,
-    cc && cc.length ? `Cc: ${cc.join(", ")}` : null,
-    "MIME-Version: 1.0",
-    "Content-Type: text/html; charset=UTF-8",
-    `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
-  ].filter((l) => l != null);
-  // A single blank line MUST separate headers from the body (RFC 822/MIME).
-  const message = headerLines.join("\r\n") + "\r\n\r\n" + html;
-  const raw = utf8ToBase64(message).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gmail API error ${res.status}`);
-  }
-  return res.json();
-}
 
 // ─────────────────────────── Styles ──────────────────────────────────────────
 const S = {

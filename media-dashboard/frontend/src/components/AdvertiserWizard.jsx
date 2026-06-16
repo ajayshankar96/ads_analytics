@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { createAdvertiser, updateAdvertiser, submitAdvertiser } from "../api";
+import { GOOGLE_WEB_CLIENT_ID, useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
 /**
- * New Advertiser onboarding wizard — all 6 steps:
- * 1 Basics · 2 Commercial · 3 Performance Goal · 4 POC · 5 Agreement & PO · 6 Review.
- * UI-only for now — persistence is wired once the schema is finalized.
+ * New Advertiser onboarding wizard — 7 steps:
+ * 1 Basics · 2 Commercial · 3 Performance Goal · 4 POC · 5 Agreement & PO ·
+ * 6 Review · 7 Send welcome email to the POC.
  */
 
 const STEPS = [
@@ -14,7 +15,23 @@ const STEPS = [
   { id: 4, label: "POC" },
   { id: 5, label: "Agreement" },
   { id: 6, label: "Review" },
+  { id: 7, label: "Send Email" },
 ];
+
+// Welcome email draft sent to the POC after onboarding (editable before send).
+function buildWelcomeDraft(brand) {
+  const b = (brand || "").trim() || "there";
+  return `Hi ${b} team,
+
+Welcome aboard. To launch your first RMN campaign, please share the following:
+• Brand logo (SVG + 512×512 PNG)
+• Campaign creatives (1200×628 and 1080×1080)
+• Campaign details: offer copy, landing page, dates
+• Data reporting structure preference (daily / weekly)
+• Coupon codes (unique or static) where applicable
+
+Reply-all to this thread; our Ops team will take it from here.`;
+}
 
 const CATEGORIES = [
   "Beauty & Personal Care", "Skincare", "Apparel & Fashion", "Jewellery",
@@ -155,6 +172,30 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
   const [poFile, setPoFile] = useState(a.po_name ? { name: a.po_name } : null);
   const [error, setError] = useState("");
 
+  // Step 7 — welcome email
+  useGisLoaded();
+  const [emailTo, setEmailTo] = useState(a.poc_email || "");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null);   // {type, msg}
+
+  const sendWelcomeEmail = async () => {
+    const to = (emailTo || "").split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+    if (!to.length) { setEmailStatus({ type: "error", msg: "Enter at least one recipient." }); return; }
+    if (!emailBody.trim()) { setEmailStatus({ type: "error", msg: "Email body is empty." }); return; }
+    if (!GOOGLE_WEB_CLIENT_ID) { setEmailStatus({ type: "error", msg: "Google sign-in not configured." }); return; }
+    setSendingEmail(true); setEmailStatus(null);
+    try {
+      const token = await getGmailAccessToken();   // consent popup (first time)
+      await sendViaGmail(token, { to, subject: emailSubject, html: textToHtml(emailBody) });
+      setEmailStatus({ type: "success", msg: `Email sent to ${to.join(", ")} from your account` });
+      setTimeout(onClose, 1400);
+    } catch (e) {
+      setEmailStatus({ type: "error", msg: e.message });
+    } finally { setSendingEmail(false); }
+  };
+
   const set = (patch) => setData((d) => ({ ...d, ...patch }));
   const pickFile = (setter) => (e) => { const f = e.target.files && e.target.files[0]; if (f) setter({ name: f.name, url: URL.createObjectURL(f) }); };
 
@@ -209,16 +250,22 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
     if (err) { setError(err); return; }
     setError("");
     try {
-      if (step < STEPS.length) {
+      if (step < 6) {
         const ns = step + 1;
         await persist({ current_step: ns });   // autosave draft as you go
         setStep(ns);
-      } else {
-        const id = await persist({ current_step: 6 });
+      } else if (step === 6) {
+        // Review → create/onboard the advertiser, then go to the email step.
+        const id = await persist({ current_step: 7 });
         await submitAdvertiser(id, {});
-        alert("Advertiser onboarded ✓");
-        onClose();
+        // Seed the welcome-email draft from the collected data.
+        setEmailTo(data.poc_email || "");
+        setEmailSubject(`Welcome to Razorpay Media Network — next steps for ${(data.name || "your brand").trim()}`);
+        setEmailBody(buildWelcomeDraft(data.name));
+        setEmailStatus(null);
+        setStep(7);
       }
+      // step 7 (email) is driven by its own Send / Skip buttons, not next().
     } catch (e) {
       setError("Save failed: " + e.message);
     }
@@ -470,32 +517,64 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
       );
     }
 
-    // Step 6 — Review
-    const v = (x) => (x === "" || x === undefined || x === null ? "—" : x);
-    const rate = data.buy_type === "ROAS" ? (data.roas_multiplier ? `${data.roas_multiplier}x ROAS` : "—") : (data.cpc_rate ? `₹${data.cpc_rate} / click` : "—");
-    const target = data.goal_type === "ROAS" ? (data.target_roas ? `${data.target_roas}x` : "—") : (data.target_cac ? `₹${data.target_cac}` : "—");
-    const groups = [
-      { step: 1, title: "Basics", rows: [["Advertiser name", v(data.name)], ["Industry / Category", v(data.category)], ["Brand logo", logo ? logo.name : "—"], ["Description", v(data.description)]] },
-      { step: 2, title: "Commercial", rows: [["Buy type", data.buy_type], ["Rate", rate], ["Budget hint", data.budget_hint ? `₹${data.budget_hint}` : "—"], ["GST", v(data.gst)], ["PAN", v(data.pan)]] },
-      { step: 3, title: "Performance Goal", rows: [["Goal type", data.goal_type], ["Target", target]] },
-      { step: 4, title: "Point of contact", rows: [["Name", v(data.poc_name)], ["Designation", v(data.poc_designation)], ["Email", v(data.poc_email)], ["Phone", data.poc_phone ? `+91 ${data.poc_phone}` : "—"], ["CC finance", data.cc_finance ? "Yes" : "No"]] },
-      { step: 5, title: "Agreement & PO", rows: [["Legal agreement", agreementFile ? agreementFile.name : "—"], ["PO", poFile ? poFile.name : "—"], ["PO reference", v(data.po_ref)], ["Contract start", v(data.contract_start)]] },
-    ];
+    if (step === 6) {
+      // Review
+      const v = (x) => (x === "" || x === undefined || x === null ? "—" : x);
+      const rate = data.buy_type === "ROAS" ? (data.roas_multiplier ? `${data.roas_multiplier}x ROAS` : "—") : (data.cpc_rate ? `₹${data.cpc_rate} / click` : "—");
+      const target = data.goal_type === "ROAS" ? (data.target_roas ? `${data.target_roas}x` : "—") : (data.target_cac ? `₹${data.target_cac}` : "—");
+      const groups = [
+        { step: 1, title: "Basics", rows: [["Advertiser name", v(data.name)], ["Industry / Category", v(data.category)], ["Brand logo", logo ? logo.name : "—"], ["Description", v(data.description)]] },
+        { step: 2, title: "Commercial", rows: [["Buy type", data.buy_type], ["Rate", rate], ["Budget hint", data.budget_hint ? `₹${data.budget_hint}` : "—"], ["GST", v(data.gst)], ["PAN", v(data.pan)]] },
+        { step: 3, title: "Performance Goal", rows: [["Goal type", data.goal_type], ["Target", target]] },
+        { step: 4, title: "Point of contact", rows: [["Name", v(data.poc_name)], ["Designation", v(data.poc_designation)], ["Email", v(data.poc_email)], ["Phone", data.poc_phone ? `+91 ${data.poc_phone}` : "—"], ["CC finance", data.cc_finance ? "Yes" : "No"]] },
+        { step: 5, title: "Agreement & PO", rows: [["Legal agreement", agreementFile ? agreementFile.name : "—"], ["PO", poFile ? poFile.name : "—"], ["PO reference", v(data.po_ref)], ["Contract start", v(data.contract_start)]] },
+      ];
+      return (
+        <>
+          <div style={s.secTitle}>Review &amp; submit</div>
+          <div style={s.secSub}>Confirm the details below. On continue, the advertiser is created (ID auto-generated) and you'll review &amp; send the welcome email to the POC.</div>
+          {groups.map((g) => (
+            <div style={s.revGroup} key={g.step}>
+              <div style={s.revHead}>
+                <div style={s.revTitle}>{g.title}</div>
+                <button style={s.editLink} onClick={() => { setError(""); setStep(g.step); }}>Edit</button>
+              </div>
+              {g.rows.map(([k, val]) => (
+                <div style={s.revRow} key={k}><span style={s.revKey}>{k}</span><span style={s.revVal}>{val}</span></div>
+              ))}
+            </div>
+          ))}
+        </>
+      );
+    }
+
+    // Step 7 — Send welcome email to the POC
     return (
       <>
-        <div style={s.secTitle}>Review &amp; submit</div>
-        <div style={s.secSub}>Confirm the details below. On submit, the advertiser is created (ID auto-generated) and the onboarding auto-emailer fires to the POC.</div>
-        {groups.map((g) => (
-          <div style={s.revGroup} key={g.step}>
-            <div style={s.revHead}>
-              <div style={s.revTitle}>{g.title}</div>
-              <button style={s.editLink} onClick={() => { setError(""); setStep(g.step); }}>Edit</button>
-            </div>
-            {g.rows.map(([k, val]) => (
-              <div style={s.revRow} key={k}><span style={s.revKey}>{k}</span><span style={s.revVal}>{val}</span></div>
-            ))}
+        <div style={s.secTitle}>Send welcome email</div>
+        <div style={s.secSub}>The advertiser is onboarded. Review the draft below and send it to the POC — it goes from your own Google account.</div>
+        <div style={{ ...s.field, marginBottom: 18 }}>
+          <label style={s.label}>To<span style={s.req}>*</span></label>
+          <div style={s.suffixWrap}>
+            <div style={s.prefixBox}>✉️</div>
+            <input style={s.affixInput} type="text" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="poc@brand.com" />
           </div>
-        ))}
+          <div style={s.help}>Pre-filled from the POC email · comma-separate for multiple recipients.</div>
+        </div>
+        <div style={{ ...s.field, marginBottom: 18 }}>
+          <label style={s.label}>Subject</label>
+          <input style={s.input} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Body</label>
+          <textarea style={{ ...s.textarea, minHeight: 260 }} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+          <div style={s.help}>Edit freely — sent as a formatted email preserving these line breaks.</div>
+        </div>
+        {emailStatus && (
+          <div style={{ ...s.errText, color: emailStatus.type === "success" ? c.green : c.red }}>
+            {emailStatus.type === "success" ? "✓ " : "✕ "}{emailStatus.msg}
+          </div>
+        )}
       </>
     );
   };
@@ -533,15 +612,26 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
 
         <div style={s.footer}>
           <div style={s.footNote}>
-            Step {step} of 6 · {saving ? "Saving…" : "Saved automatically as you go"}
+            Step {step} of {STEPS.length} · {saving ? "Saving…" : (step === 7 ? "Advertiser onboarded ✓" : "Saved automatically as you go")}
             {advId ? ` · ${advId}` : ""}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button style={s.ghost} onClick={saveDraft} disabled={saving}>Save draft</button>
-            {step > 1 && <button style={s.ghost} onClick={() => { setError(""); setStep(step - 1); }}>← Back</button>}
-            <button style={s.primary} onClick={next} disabled={saving}>
-              {step === STEPS.length ? "Create advertiser" : "Continue"} <span>→</span>
-            </button>
+            {step === 7 ? (
+              <>
+                <button style={s.ghost} onClick={onClose} disabled={sendingEmail}>Skip &amp; finish</button>
+                <button style={s.primary} onClick={sendWelcomeEmail} disabled={sendingEmail}>
+                  {sendingEmail ? "Sending…" : "Send email & finish"} <span>✉️</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button style={s.ghost} onClick={saveDraft} disabled={saving}>Save draft</button>
+                {step > 1 && <button style={s.ghost} onClick={() => { setError(""); setStep(step - 1); }}>← Back</button>}
+                <button style={s.primary} onClick={next} disabled={saving}>
+                  {step === 6 ? "Create advertiser" : "Continue"} <span>→</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
