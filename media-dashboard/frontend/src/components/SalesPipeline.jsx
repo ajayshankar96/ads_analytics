@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getAdvertisers } from "../api";
 import AdvertiserWizard from "./AdvertiserWizard";
+import AdvertiserDetails from "./AdvertiserDetails";
 
 const c = { ink: "#0F1724", sub: "#52606D", muted: "#768EA7", line: "#E6EAF0", blue: "#2E5BFF", green: "#0F8C6A", amber: "#B7791F" };
 
@@ -83,7 +84,8 @@ export default function SalesPipeline() {
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState(null);
-  const [emailModal, setEmailModal] = useState(null);   // advertiser whose sent email to view
+  const [emailModal, setEmailModal] = useState(null);
+  const [viewAdv, setViewAdv] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -99,6 +101,7 @@ export default function SalesPipeline() {
     <div>
       <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} />}
+      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => setViewAdv(null)} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
@@ -123,7 +126,7 @@ export default function SalesPipeline() {
                 const live = a.status === "ONBOARDED";
                 const goal = goalText(a);
                 return (
-                  <tr key={a.id} style={s.tr} onClick={() => setWizard(a)} title={live ? "View / edit" : "Resume draft"}>
+                  <tr key={a.id} style={s.tr} onClick={() => live ? setViewAdv(a) : setWizard(a)} title={live ? "View details" : "Resume draft"}>
                     <td style={s.td}>
                       <div style={s.advCell}>
                         <div style={{ ...s.avatar, background: avatarColor(a.name) }}>{(a.name || "?").trim().charAt(0).toUpperCase()}</div>
@@ -162,7 +165,7 @@ export default function SalesPipeline() {
                       {!live && <div style={s.stageSub}>Step {a.current_step || 1}/7 · {stageLabel(a.current_step)}</div>}
                     </td>
                     <td style={{ ...s.td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
-                      <span title="Open advertiser details" onClick={() => setWizard(a)} style={{ cursor: "pointer", display: "inline-flex" }}>
+                      <span title="Open advertiser details" onClick={() => live ? setViewAdv(a) : setWizard(a)} style={{ cursor: "pointer", display: "inline-flex" }}>
                         <EyeIcon />
                       </span>
                     </td>
