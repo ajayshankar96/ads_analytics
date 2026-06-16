@@ -16,7 +16,7 @@ const s = {
   loading: { textAlign: "center", padding: 40, color: "#888" },
   empty: { textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 },
   list: { display: "flex", flexDirection: "column", gap: 10 },
-  card: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
+  card: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
   cardActive: { borderColor: c.blue, boxShadow: "0 2px 12px rgba(46,91,255,0.12)" },
   head: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   title: { fontSize: 15, fontWeight: 700, color: c.ink },
@@ -183,13 +183,21 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
         <div style={s.section}>
           <div style={s.secTitle}>Ops Checklist</div>
           <div style={s.tasks}>
-            {tasks.map((t) => (
-              <div key={t.task_id} style={s.task}>
-                <span>{t.status === "DONE" ? "✅" : "⬜"}</span>
-                <span style={{ flex: 1 }}>{t.step.replace(/_/g, " ")}</span>
-                <button style={s.taskBtn} onClick={() => toggleTask(t)}>{t.status === "DONE" ? "Undo" : "Mark done"}</button>
-              </div>
-            ))}
+            {tasks.map((t) => {
+              const isReceiveAssets = t.step === "RECEIVE_ASSETS";
+              const blocked = isReceiveAssets && t.status !== "DONE" && !allFilled;
+              return (
+                <div key={t.task_id} style={s.task}>
+                  <span>{t.status === "DONE" ? "✅" : "⬜"}</span>
+                  <span style={{ flex: 1 }}>{t.step.replace(/_/g, " ")}</span>
+                  {blocked ? (
+                    <span style={{ fontSize: 11, color: c.muted }}>Fill all assets first</span>
+                  ) : (
+                    <button style={s.taskBtn} onClick={() => toggleTask(t)}>{t.status === "DONE" ? "Undo" : "Mark done"}</button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -326,8 +334,8 @@ export default function CampaignOps() {
         const isSelected = selected === cam.campaign_id;
         const isTerminal = ["COMPLETED", "CANCELLED"].includes(cam.current_stage);
         return (
-          <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
-            <div style={s.head}>
+          <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }}>
+            <div style={{ ...s.head, cursor: "pointer" }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
               <div>
                 <div style={s.title}>{cam.name}</div>
                 <div style={s.advRef}>{cam.campaign_id}{cam.advertiser_ref_id ? ` · ${cam.advertiser_ref_id}` : ""}</div>
