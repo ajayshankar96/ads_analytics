@@ -5,47 +5,298 @@ import {
   getOpsTasks,
   updateOpsTask,
   transitionCampaign,
+  updateCampaignAssets,
+  recordPublisherEmail,
 } from "../api";
+import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
+
+const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
 const s = {
   loading: { textAlign: "center", padding: 40, color: "#888" },
   empty: { textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 },
-  card: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)" },
-  head: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  title: { fontSize: 15, fontWeight: 700, color: "#1e293b" },
-  sub: { fontSize: 12, color: "#64748b" },
-  stepper: { display: "flex", alignItems: "center", margin: "12px 0", flexWrap: "wrap", gap: 4 },
-  step: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 14 },
-  connector: { width: 22, height: 2, background: "#e5e7eb" },
-  tasks: { margin: "10px 0", display: "flex", flexDirection: "column", gap: 6 },
-  task: { display: "flex", alignItems: "center", gap: 8, fontSize: 13 },
-  taskBtn: { background: "#fff", border: "1px solid #d1d5db", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 12 },
-  row: { display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" },
-  select: { border: "1px solid #d1d5db", borderRadius: 5, padding: "6px 8px", fontSize: 13 },
-  input: { border: "1px solid #d1d5db", borderRadius: 5, padding: "6px 8px", fontSize: 13, minWidth: 220 },
-  btn: { background: "#2563eb", color: "#fff", border: "none", borderRadius: 5, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 },
-  hint: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
+  list: { display: "flex", flexDirection: "column", gap: 10 },
+  card: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
+  cardActive: { borderColor: c.blue, boxShadow: "0 2px 12px rgba(46,91,255,0.12)" },
+  head: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  title: { fontSize: 15, fontWeight: 700, color: c.ink },
+  advRef: { fontSize: 12, color: c.muted, marginTop: 2 },
+  badge: { fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 14, display: "inline-block" },
+  badgeActive: { background: "#EAF0FF", color: c.blue },
+  badgeDone: { background: "#E3F6EE", color: c.green },
+  stepper: { display: "flex", alignItems: "center", margin: "14px 0 10px", flexWrap: "wrap", gap: 4 },
+  step: { fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12 },
+  stepDone: { background: "#E3F6EE", color: c.green },
+  stepCurrent: { background: c.blue, color: "#fff" },
+  stepFuture: { background: "#F1F5F9", color: "#94a3b8" },
+  connector: { width: 18, height: 2, background: c.line },
+  // Detail panel
+  panel: { marginTop: 16, borderTop: `1px solid ${c.line}`, paddingTop: 16 },
+  section: { marginBottom: 20 },
+  secTitle: { fontSize: 14, fontWeight: 800, color: c.ink, marginBottom: 12 },
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  field: { display: "flex", flexDirection: "column", marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: c.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".03em" },
+  input: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%" },
+  textarea: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%", minHeight: 80, resize: "vertical" },
+  assetStatus: { display: "flex", alignItems: "center", gap: 8, marginBottom: 14 },
+  assetCount: { fontSize: 13, fontWeight: 700, color: c.ink },
+  assetBar: { flex: 1, height: 6, borderRadius: 3, background: "#EEF2F9", overflow: "hidden" },
+  assetFill: (pct) => ({ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct >= 100 ? c.green : c.amber, transition: "width .2s" }),
+  btnRow: { display: "flex", gap: 10, marginTop: 14 },
+  btnPrimary: { background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  btnGhost: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  btnGreen: { background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  emailSent: { background: "#E3F6EE", borderRadius: 10, padding: "14px 16px", marginTop: 10 },
+  emailSentTitle: { fontSize: 13, fontWeight: 700, color: c.green, marginBottom: 4 },
+  emailSentDetail: { fontSize: 12, color: c.sub },
+  tasks: { display: "flex", flexDirection: "column", gap: 6, marginTop: 10 },
+  task: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 0" },
+  taskBtn: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 },
 };
 
-const DONE = { background: "#dcfce7", color: "#15803d" };
-const CURRENT = { background: "#2563eb", color: "#fff" };
-const FUTURE = { background: "#f1f5f9", color: "#94a3b8" };
-const CANCELLED = { background: "#fee2e2", color: "#b91c1c" };
+const ASSET_FIELDS = [
+  { key: "landing_link", label: "Landing Link (UTM)", type: "input" },
+  { key: "offer_title", label: "Offer Title", type: "input" },
+  { key: "details_tc", label: "Details / T&C", type: "textarea" },
+  { key: "how_to_redeem", label: "How to Redeem", type: "textarea" },
+  { key: "promo_codes", label: "Promo Code(s)", type: "input" },
+  { key: "code_validity", label: "Code Validity", type: "input" },
+  { key: "creative_url", label: "Creative (URL/link)", type: "input" },
+  { key: "logo_url", label: "Logo (URL/link)", type: "input" },
+  { key: "targeting", label: "Targeting / Persona", type: "textarea" },
+  { key: "daily_budget", label: "Daily Budget (₹)", type: "input" },
+  { key: "cpc_cpd", label: "CPC / CPD", type: "input" },
+];
+
+function buildEmailDraft(campaign) {
+  const lines = [
+    "Hi,",
+    "",
+    "Please find below the campaign details for your reference.",
+    "",
+    `Landing Link: ${campaign.landing_link || "—"}`,
+    `Offer Title: ${campaign.offer_title || "—"}`,
+    "",
+    "Terms & Conditions:",
+    campaign.details_tc || "—",
+    "",
+    "How to Redeem:",
+    campaign.how_to_redeem || "—",
+    "",
+    `Promo Code(s): ${campaign.promo_codes || "—"}`,
+    `Code Validity: ${campaign.code_validity || "—"}`,
+    "",
+    `Creative: ${campaign.creative_url || "—"}`,
+    `Logo: ${campaign.logo_url || "—"}`,
+    "",
+    `Targeting: ${campaign.targeting || "—"}`,
+    "",
+    `Daily Budget: ${campaign.daily_budget || "—"}`,
+    `CPC/CPD: ${campaign.cpc_cpd || "—"}`,
+    "",
+    "Regards,",
+    "AdOps Team | Razorpay",
+  ];
+  return lines.join("\n");
+}
+
+function CampaignDetail({ campaign, meta, tasks, onReload }) {
+  const [assets, setAssets] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [emailTo, setEmailTo] = useState(campaign.publisher_email_to || "");
+  const [emailSubject, setEmailSubject] = useState(campaign.publisher_email_subject || "");
+  const [emailBody, setEmailBody] = useState(campaign.publisher_email_body || "");
+  const [sending, setSending] = useState(false);
+  const [emailDrafted, setEmailDrafted] = useState(false);
+  const gisReady = useGisLoaded();
+
+  const stage = campaign.current_stage;
+  const emailSent = !!campaign.publisher_email_sent_at;
+
+  useEffect(() => {
+    const a = {};
+    ASSET_FIELDS.forEach((f) => { a[f.key] = campaign[f.key] || ""; });
+    setAssets(a);
+  }, [campaign.campaign_id]);
+
+  const filledCount = ASSET_FIELDS.filter((f) => assets[f.key]?.trim()).length;
+  const totalFields = ASSET_FIELDS.length;
+  const allFilled = filledCount === totalFields;
+  const pct = (filledCount / totalFields) * 100;
+
+  const handleSaveAssets = async () => {
+    setSaving(true);
+    try {
+      await updateCampaignAssets(campaign.campaign_id, assets);
+      onReload();
+    } catch (e) { alert("Save failed: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const handleDraftEmail = () => {
+    const subject = `Campaign Details: ${campaign.name} — ${campaign.offer_title || "RMN"}`;
+    setEmailSubject(subject);
+    setEmailBody(buildEmailDraft({ ...campaign, ...assets }));
+    setEmailDrafted(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailTo.trim()) { alert("Enter recipient email(s)"); return; }
+    if (!emailBody.trim()) { alert("Email body cannot be empty"); return; }
+    setSending(true);
+    try {
+      const token = await getGmailAccessToken();
+      await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), subject: emailSubject, html: textToHtml(emailBody) });
+      await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
+      try {
+        await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" });
+      } catch (e) { /* might already be at this stage */ }
+      onReload();
+    } catch (e) { alert("Send failed: " + e.message); }
+    finally { setSending(false); }
+  };
+
+  const handleTransition = async (toStage) => {
+    try {
+      await transitionCampaign(campaign.campaign_id, { to_stage: toStage });
+      onReload();
+    } catch (e) { alert("Transition failed: " + e.message); }
+  };
+
+  const toggleTask = async (task) => {
+    const next = task.status === "DONE" ? "PENDING" : "DONE";
+    try {
+      await updateOpsTask(task.task_id, { status: next });
+      onReload();
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const showAssetForm = ["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage);
+  const showEmailCompose = (stage === "OPS_SETUP" || stage === "ASSETS_RECEIVED") && !emailSent;
+  const showPostSend = ["SHARED_TO_PUBLISHER", "CREATIVE_REVIEW", "LIVE", "COMPLETED"].includes(stage) || emailSent;
+
+  return (
+    <div style={s.panel}>
+      {/* Ops Tasks */}
+      {tasks.length > 0 && (
+        <div style={s.section}>
+          <div style={s.secTitle}>Ops Checklist</div>
+          <div style={s.tasks}>
+            {tasks.map((t) => (
+              <div key={t.task_id} style={s.task}>
+                <span>{t.status === "DONE" ? "✅" : "⬜"}</span>
+                <span style={{ flex: 1 }}>{t.step.replace(/_/g, " ")}</span>
+                <button style={s.taskBtn} onClick={() => toggleTask(t)}>{t.status === "DONE" ? "Undo" : "Mark done"}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Asset Form */}
+      {showAssetForm && (
+        <div style={s.section}>
+          <div style={s.secTitle}>Campaign Assets</div>
+          <div style={s.assetStatus}>
+            <span style={s.assetCount}>{filledCount}/{totalFields} received</span>
+            <div style={s.assetBar}><div style={s.assetFill(pct)} /></div>
+          </div>
+          <div style={s.grid2}>
+            {ASSET_FIELDS.map((f) => (
+              <div key={f.key} style={s.field}>
+                <label style={s.label}>{f.label}</label>
+                {f.type === "textarea" ? (
+                  <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
+                ) : (
+                  <input style={s.input} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={s.btnRow}>
+            <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : "Save Assets"}</button>
+            {allFilled && !emailDrafted && (
+              <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Email Compose (draft → review → send) */}
+      {showEmailCompose && emailDrafted && (
+        <div style={s.section}>
+          <div style={s.secTitle}>Share to Publisher — Review & Send</div>
+          <div style={s.field}>
+            <label style={s.label}>To (comma-separated)</label>
+            <input style={s.input} value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="publisher@example.com" />
+          </div>
+          <div style={s.field}>
+            <label style={s.label}>Subject</label>
+            <input style={s.input} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+          </div>
+          <div style={s.field}>
+            <label style={s.label}>Body</label>
+            <textarea style={{ ...s.textarea, minHeight: 200 }} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+          </div>
+          <div style={s.btnRow}>
+            <button style={s.btnGreen} onClick={handleSendEmail} disabled={sending || !gisReady}>
+              {sending ? "Sending…" : "Send email & mark shared ✉️"}
+            </button>
+            <button style={s.btnGhost} onClick={() => handleTransition("SHARED_TO_PUBLISHER")}>Skip (mark shared without email)</button>
+          </div>
+        </div>
+      )}
+
+      {/* Post-send: show sent email info */}
+      {showPostSend && emailSent && (
+        <div style={s.section}>
+          <div style={s.emailSent}>
+            <div style={s.emailSentTitle}>✉️ Email sent to publisher</div>
+            <div style={s.emailSentDetail}>
+              <strong>To:</strong> {campaign.publisher_email_to}<br/>
+              <strong>Subject:</strong> {campaign.publisher_email_subject}<br/>
+              <strong>Sent:</strong> {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stage transitions for later stages */}
+      {stage === "SHARED_TO_PUBLISHER" && (
+        <div style={s.btnRow}>
+          <button style={s.btnPrimary} onClick={() => handleTransition("CREATIVE_REVIEW")}>Mark Creative Review ✓</button>
+        </div>
+      )}
+      {stage === "CREATIVE_REVIEW" && (
+        <div style={s.btnRow}>
+          <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Go Live 🚀</button>
+        </div>
+      )}
+      {stage === "LIVE" && (
+        <div style={s.btnRow}>
+          <button style={s.btnPrimary} onClick={() => handleTransition("COMPLETED")}>Mark Completed</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CampaignOps() {
   const [campaigns, setCampaigns] = useState([]);
   const [meta, setMeta] = useState({ stages: [], labels: {}, transitions: {}, handoff_on: {} });
   const [tasksByCampaign, setTasksByCampaign] = useState({});
-  const [pending, setPending] = useState({}); // campaign_id -> { to_stage, notify_recipients }
+  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
     Promise.all([getWorkflowCampaigns(), getWorkflowStages()])
-      .then(([c, m]) => {
-        const camps = c.campaigns || [];
+      .then(([cRes, m]) => {
+        const camps = cRes.campaigns || [];
         setCampaigns(camps);
         setMeta(m);
+        campaignsRef.current = camps;
         return Promise.all(camps.map((cp) => getOpsTasks(cp.campaign_id)));
       })
       .then((taskLists) => {
@@ -59,61 +310,30 @@ export default function CampaignOps() {
       .finally(() => setLoading(false));
   };
 
-  // keep a ref so the second .then can map task lists back to campaign ids
   const campaignsRef = React.useRef([]);
-  useEffect(() => { campaignsRef.current = campaigns; }, [campaigns]);
   useEffect(load, []);
-
-  const toggleTask = async (task) => {
-    const next = task.status === "DONE" ? "PENDING" : "DONE";
-    try {
-      await updateOpsTask(task.task_id, { status: next });
-      load();
-    } catch (e) {
-      alert("Error updating task: " + e.message);
-    }
-  };
-
-  const advance = async (campaign) => {
-    const p = pending[campaign.campaign_id] || {};
-    if (!p.to_stage) { alert("Pick a stage to move to"); return; }
-    try {
-      const recips = (p.notify_recipients || "").split(",").map((x) => x.trim()).filter(Boolean);
-      await transitionCampaign(campaign.campaign_id, {
-        to_stage: p.to_stage,
-        notify_recipients: recips.length ? recips : null,
-      });
-      setPending({ ...pending, [campaign.campaign_id]: {} });
-      load();
-    } catch (e) {
-      alert("Error updating stage: " + e.message);
-    }
-  };
 
   if (loading) return <div style={s.loading}>Loading campaigns…</div>;
   if (campaigns.length === 0)
-    return <div style={s.empty}>No campaigns yet. Close a lead in the Sales Pipeline to open one.</div>;
+    return <div style={s.empty}>No campaigns yet. Onboard an advertiser in the Sales Pipeline to open one.</div>;
 
   const stages = meta.stages || [];
 
   return (
-    <div>
-      {campaigns.map((c) => {
-        const current = c.current_stage;
-        const curIdx = stages.indexOf(current);
-        const allowed = meta.transitions?.[current] || [];
-        const p = pending[c.campaign_id] || {};
-        const showNotify = p.to_stage && meta.handoff_on?.[p.to_stage];
-        const tasks = tasksByCampaign[c.campaign_id] || [];
+    <div style={s.list}>
+      {campaigns.map((cam) => {
+        const curIdx = stages.indexOf(cam.current_stage);
+        const isSelected = selected === cam.campaign_id;
+        const isTerminal = ["COMPLETED", "CANCELLED"].includes(cam.current_stage);
         return (
-          <div key={c.campaign_id} style={s.card}>
+          <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
             <div style={s.head}>
               <div>
-                <div style={s.title}>{c.name}</div>
-                <div style={s.sub}>{c.campaign_id}{c.advertiser_ref_id ? ` · adv ${c.advertiser_ref_id}` : ""}</div>
+                <div style={s.title}>{cam.name}</div>
+                <div style={s.advRef}>{cam.campaign_id}{cam.advertiser_ref_id ? ` · ${cam.advertiser_ref_id}` : ""}</div>
               </div>
-              <span style={{ ...s.step, ...(current === "CANCELLED" ? CANCELLED : CURRENT) }}>
-                {meta.labels?.[current] || current}
+              <span style={{ ...s.badge, ...(isTerminal ? s.badgeDone : s.badgeActive) }}>
+                {meta.labels?.[cam.current_stage] || cam.current_stage}
               </span>
             </div>
 
@@ -121,51 +341,20 @@ export default function CampaignOps() {
               {stages.map((st, i) => (
                 <React.Fragment key={st}>
                   {i > 0 && <div style={s.connector} />}
-                  <span style={{ ...s.step, ...(i < curIdx ? DONE : i === curIdx ? CURRENT : FUTURE) }}>
+                  <span style={{ ...s.step, ...(i < curIdx ? s.stepDone : i === curIdx ? s.stepCurrent : s.stepFuture) }}>
                     {i < curIdx ? "✓ " : ""}{meta.labels?.[st] || st}
                   </span>
                 </React.Fragment>
               ))}
             </div>
 
-            {tasks.length > 0 && (
-              <div style={s.tasks}>
-                {tasks.map((t) => (
-                  <div key={t.task_id} style={s.task}>
-                    <span style={{ width: 16 }}>{t.status === "DONE" ? "✅" : "⬜"}</span>
-                    <span style={{ flex: 1 }}>{t.step.replace(/_/g, " ")}</span>
-                    <button style={s.taskBtn} onClick={() => toggleTask(t)}>
-                      {t.status === "DONE" ? "Undo" : "Mark done"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {allowed.length > 0 ? (
-              <div style={s.row}>
-                <select
-                  style={s.select}
-                  value={p.to_stage || ""}
-                  onChange={(e) => setPending({ ...pending, [c.campaign_id]: { ...p, to_stage: e.target.value } })}
-                >
-                  <option value="">Move to…</option>
-                  {allowed.map((st) => (
-                    <option key={st} value={st}>{meta.labels?.[st] || st}</option>
-                  ))}
-                </select>
-                {showNotify && (
-                  <input
-                    style={s.input}
-                    placeholder={`Notify ${meta.handoff_on[p.to_stage]} (comma-separated emails)`}
-                    value={p.notify_recipients || ""}
-                    onChange={(e) => setPending({ ...pending, [c.campaign_id]: { ...p, notify_recipients: e.target.value } })}
-                  />
-                )}
-                <button style={s.btn} onClick={() => advance(c)}>Update Stage</button>
-              </div>
-            ) : (
-              <div style={s.hint}>No further transitions — campaign is {meta.labels?.[current] || current}.</div>
+            {isSelected && (
+              <CampaignDetail
+                campaign={cam}
+                meta={meta}
+                tasks={tasksByCampaign[cam.campaign_id] || []}
+                onReload={load}
+              />
             )}
           </div>
         );

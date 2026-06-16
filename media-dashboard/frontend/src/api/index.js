@@ -191,6 +191,18 @@ export const transitionCampaign = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const updateCampaignAssets = (campaignId, payload) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/assets`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+export const recordPublisherEmail = (campaignId, payload) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/publisher-email`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 

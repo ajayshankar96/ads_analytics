@@ -43,6 +43,15 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "campaign_id": c.id, "agreement_id": c.agreement_id, "name": c.name,
         "current_stage": c.current_stage, "ads_campaign_ref_id": c.ads_campaign_ref_id,
         "advertiser_ref_id": c.advertiser_ref_id,
+        "landing_link": c.landing_link, "offer_title": c.offer_title,
+        "details_tc": c.details_tc, "how_to_redeem": c.how_to_redeem,
+        "promo_codes": c.promo_codes, "code_validity": c.code_validity,
+        "creative_url": c.creative_url, "logo_url": c.logo_url,
+        "targeting": c.targeting, "daily_budget": c.daily_budget, "cpc_cpd": c.cpc_cpd,
+        "publisher_email_to": c.publisher_email_to,
+        "publisher_email_subject": c.publisher_email_subject,
+        "publisher_email_body": c.publisher_email_body,
+        "publisher_email_sent_at": c.publisher_email_sent_at.isoformat() if c.publisher_email_sent_at else None,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
@@ -278,6 +287,34 @@ async def list_campaigns(db: AsyncSession) -> List[models.Campaign]:
 
 async def get_campaign(db: AsyncSession, campaign_id: str) -> Optional[models.Campaign]:
     return (await db.execute(select(models.Campaign).where(models.Campaign.id == campaign_id))).scalar_one_or_none()
+
+
+_ASSET_FIELDS = [
+    "landing_link", "offer_title", "details_tc", "how_to_redeem",
+    "promo_codes", "code_validity", "creative_url", "logo_url",
+    "targeting", "daily_budget", "cpc_cpd",
+]
+
+
+async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, payload: Dict[str, Any]) -> models.Campaign:
+    for f in _ASSET_FIELDS:
+        if f in payload:
+            setattr(campaign, f, payload[f] or None)
+    campaign.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
+async def record_publisher_email(db: AsyncSession, campaign: models.Campaign, *, to: str, subject: str, body: str) -> models.Campaign:
+    campaign.publisher_email_to = to
+    campaign.publisher_email_subject = subject
+    campaign.publisher_email_body = body
+    campaign.publisher_email_sent_at = datetime.now(timezone.utc)
+    campaign.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
 
 
 async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser) -> models.Campaign:

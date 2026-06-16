@@ -1156,6 +1156,31 @@ async def workflow_ops_tasks(campaign_id: str, db: AsyncSession = Depends(get_db
     return {"ops_tasks": [repo.ops_task_dict(t) for t in tasks]}
 
 
+@app.patch("/api/workflow/campaigns/{campaign_id}/assets")
+async def workflow_update_assets(campaign_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    payload = await request.json()
+    campaign = await repo.update_campaign_assets(db, campaign, payload)
+    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
+class PublisherEmailRequest(BaseModel):
+    to: str = ""
+    subject: str = ""
+    body: str = ""
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/publisher-email")
+async def workflow_record_publisher_email(campaign_id: str, req: PublisherEmailRequest, db: AsyncSession = Depends(get_db)):
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    campaign = await repo.record_publisher_email(db, campaign, to=req.to, subject=req.subject, body=req.body)
+    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
 @app.patch("/api/workflow/ops-tasks/{task_id}")
 async def workflow_update_ops_task(task_id: str, req: UpdateOpsTaskRequest, db: AsyncSession = Depends(get_db)):
     task = await repo.get_ops_task(db, task_id)
