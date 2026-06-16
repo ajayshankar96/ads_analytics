@@ -411,24 +411,42 @@ async def create_publisher(db: AsyncSession, name: str, code: str) -> Dict[str, 
     return {"id": pub.id, "name": pub.name, "code": pub.code}
 
 
-async def get_allocations(db: AsyncSession, advertiser_id: str) -> List[Dict[str, Any]]:
-    result = await db.execute(
-        select(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id)
-    )
+async def get_allocations(db: AsyncSession, advertiser_id: str, month: str = None) -> List[Dict[str, Any]]:
+    q = select(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id)
+    if month:
+        q = q.where(models.BudgetAllocation.month == month)
+    result = await db.execute(q)
     return [
         {"id": a.id, "publisher_id": a.publisher_id, "amount": a.amount,
-         "status": a.status, "notes": a.notes}
+         "status": a.status, "notes": a.notes, "month": a.month}
         for a in result.scalars().all()
     ]
 
 
-async def upsert_allocations(db: AsyncSession, advertiser_id: str, allocations: List[Dict[str, Any]]) -> None:
-    await db.execute(delete(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id))
+async def get_all_allocations_for_month(db: AsyncSession, month: str) -> List[Dict[str, Any]]:
+    result = await db.execute(
+        select(models.BudgetAllocation).where(models.BudgetAllocation.month == month)
+    )
+    return [
+        {"id": a.id, "advertiser_id": a.advertiser_id, "publisher_id": a.publisher_id,
+         "amount": a.amount, "status": a.status, "notes": a.notes}
+        for a in result.scalars().all()
+    ]
+
+
+async def upsert_allocations(db: AsyncSession, advertiser_id: str, month: str, allocations: List[Dict[str, Any]]) -> None:
+    await db.execute(
+        delete(models.BudgetAllocation).where(
+            models.BudgetAllocation.advertiser_id == advertiser_id,
+            models.BudgetAllocation.month == month,
+        )
+    )
     now = datetime.now(timezone.utc)
     for alloc in allocations:
         db.add(models.BudgetAllocation(
             advertiser_id=advertiser_id,
             publisher_id=alloc["publisher_id"],
+            month=month,
             amount=alloc.get("amount"),
             status=alloc.get("status"),
             notes=alloc.get("notes"),

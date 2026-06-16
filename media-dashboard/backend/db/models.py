@@ -166,11 +166,12 @@ class Publisher(Base):
 
 class BudgetAllocation(Base):
     __tablename__ = "rmn_budget_allocations"
-    __table_args__ = (Index("ix_rmn_alloc_adv_pub", "advertiser_id", "publisher_id", unique=True),)
+    __table_args__ = (Index("ix_rmn_alloc_adv_pub_month", "advertiser_id", "publisher_id", "month", unique=True),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     advertiser_id: Mapped[str] = mapped_column(String(20), index=True)
     publisher_id: Mapped[str] = mapped_column(String(32), index=True)
+    month: Mapped[str] = mapped_column(String(7), index=True, default="2026-06")  # YYYY-MM
     amount: Mapped[Optional[int]] = mapped_column(BigInteger, default=None)
     status: Mapped[Optional[str]] = mapped_column(String(24), default=None)  # ALLOCATED / CANT_GO_LIVE
     notes: Mapped[Optional[str]] = mapped_column(Text, default=None)

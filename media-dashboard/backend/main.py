@@ -1075,11 +1075,17 @@ async def create_publisher(req: CreatePublisherRequest, db: AsyncSession = Depen
 
 
 @app.get("/api/advertisers/{adv_id}/allocations")
-async def get_allocations(adv_id: str, db: AsyncSession = Depends(get_db)):
+async def get_allocations(adv_id: str, month: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
-    allocs = await repo.get_allocations(db, adv_id)
+    allocs = await repo.get_allocations(db, adv_id, month=month)
+    return {"allocations": allocs}
+
+
+@app.get("/api/allocations")
+async def get_all_allocations(month: str, db: AsyncSession = Depends(get_db)):
+    allocs = await repo.get_all_allocations_for_month(db, month)
     return {"allocations": allocs}
 
 
@@ -1091,6 +1097,7 @@ class AllocationItem(BaseModel):
 
 
 class SaveAllocationsRequest(BaseModel):
+    month: str
     allocations: list[AllocationItem]
 
 
@@ -1099,8 +1106,8 @@ async def save_allocations(adv_id: str, req: SaveAllocationsRequest, db: AsyncSe
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
-    await repo.upsert_allocations(db, adv_id, [a.model_dump() for a in req.allocations])
-    allocs = await repo.get_allocations(db, adv_id)
+    await repo.upsert_allocations(db, adv_id, req.month, [a.model_dump() for a in req.allocations])
+    allocs = await repo.get_allocations(db, adv_id, month=req.month)
     return {"success": True, "allocations": allocs}
 
 

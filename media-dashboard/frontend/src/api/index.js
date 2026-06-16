@@ -194,11 +194,14 @@ export const transitionCampaign = (campaignId, payload) =>
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 
-export const getAllocations = (advId) =>
-  apiFetch(`/api/advertisers/${advId}/allocations`);
+export const getAllocations = (advId, month) =>
+  apiFetch(`/api/advertisers/${advId}/allocations${buildQuery({ month })}`);
 
-export const saveAllocations = (advId, allocations) =>
+export const getAllAllocationsForMonth = (month) =>
+  apiFetch(`/api/allocations${buildQuery({ month })}`);
+
+export const saveAllocations = (advId, month, allocations) =>
   apiFetch(`/api/advertisers/${advId}/allocations`, {
     method: "POST",
-    body: JSON.stringify({ allocations }),
+    body: JSON.stringify({ month, allocations }),
   });

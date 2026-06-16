@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { getAdvertisers, getPublishers, getAllocations, saveAllocations } from "../api";
+import { getAdvertisers, getPublishers, getAllAllocationsForMonth, saveAllocations } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
 const s = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
+  titleRow: { display: "flex", alignItems: "center", gap: 16 },
   title: { fontSize: 20, fontWeight: 800, color: c.ink },
+  monthPicker: { border: `1px solid ${c.line}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, fontWeight: 600, color: c.ink, outline: "none", cursor: "pointer" },
   btnRow: { display: "flex", gap: 10 },
   addBtn: { background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
   ghostBtn: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 },
@@ -18,13 +20,13 @@ const s = {
   advName: { fontWeight: 700, fontSize: 13.5, color: c.ink },
   advId: { fontSize: 11, color: c.muted },
   input: { border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 80, outline: "none", textAlign: "right", fontFamily: "inherit" },
-  inputDisabled: { background: "#F3F4F6", color: "#9CA3AF", cursor: "not-allowed", fontSize: 11, textAlign: "center", border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", width: 80 },
   saveRow: { background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 },
   pct: (v) => ({ fontSize: 12, fontWeight: 700, color: v >= 100 ? c.green : v >= 70 ? c.amber : c.red }),
-  cantLive: { fontSize: 11, color: c.red, fontWeight: 600 },
+  cantLive: { fontSize: 11, color: c.red, fontWeight: 600, cursor: "pointer" },
+  totalRow: { background: "#F0F4FF", fontWeight: 800 },
+  totalTd: { padding: "12px 14px", fontSize: 13, fontWeight: 800, color: c.ink, borderTop: `2px solid ${c.blue}` },
   loading: { textAlign: "center", padding: 40, color: "#888" },
   empty: { textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 },
-  // modal
   overlay: { position: "fixed", inset: 0, background: "rgba(15,23,36,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" },
   modal: { background: "#fff", borderRadius: 14, padding: "28px 32px", width: 400, boxShadow: "0 20px 60px rgba(15,23,36,0.25)" },
   modalTitle: { fontSize: 18, fontWeight: 800, color: c.ink, marginBottom: 18 },
@@ -46,6 +48,11 @@ function parseBudget(hint) {
   return isNaN(n) ? 0 : n;
 }
 
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function AddPublisherModal({ onClose, onSave }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -59,9 +66,7 @@ function AddPublisherModal({ onClose, onSave }) {
       onClose();
     } catch (e) {
       alert("Failed: " + e.message);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -86,6 +91,7 @@ function AddPublisherModal({ onClose, onSave }) {
 }
 
 export default function BudgetAllocation() {
+  const [month, setMonth] = useState(currentMonth());
   const [advertisers, setAdvertisers] = useState([]);
   const [publishers, setPublishers] = useState([]);
   const [allocMap, setAllocMap] = useState({});
@@ -97,26 +103,28 @@ export default function BudgetAllocation() {
   const load = async () => {
     setLoading(true);
     try {
-      const [advRes, pubRes] = await Promise.all([getAdvertisers(), getPublishers()]);
+      const [advRes, pubRes, allocRes] = await Promise.all([
+        getAdvertisers(),
+        getPublishers(),
+        getAllAllocationsForMonth(month),
+      ]);
       const advs = (advRes.advertisers || []).filter((a) => a.status === "ONBOARDED");
       const pubs = pubRes.publishers || [];
       setAdvertisers(advs);
       setPublishers(pubs);
 
-      const allAllocations = {};
-      await Promise.all(advs.map(async (a) => {
-        const res = await getAllocations(a.id);
-        allAllocations[a.id] = {};
-        (res.allocations || []).forEach((al) => {
-          allAllocations[a.id][al.publisher_id] = al;
-        });
-      }));
-      setAllocMap(allAllocations);
+      const map = {};
+      (allocRes.allocations || []).forEach((al) => {
+        if (!map[al.advertiser_id]) map[al.advertiser_id] = {};
+        map[al.advertiser_id][al.publisher_id] = al;
+      });
+      setAllocMap(map);
+      setDirty({});
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [month]);
 
   const getCell = (advId, pubId) => {
     if (dirty[advId]?.[pubId] !== undefined) return dirty[advId][pubId];
@@ -147,6 +155,25 @@ export default function BudgetAllocation() {
     }, 0);
   };
 
+  const pubTotals = useMemo(() => {
+    const totals = {};
+    publishers.forEach((p) => { totals[p.id] = 0; });
+    advertisers.forEach((a) => {
+      publishers.forEach((p) => {
+        const cell = getCell(a.id, p.id);
+        if (cell.status !== "CANT_GO_LIVE") {
+          const n = parseInt(cell.amount, 10);
+          if (!isNaN(n)) totals[p.id] += n;
+        }
+      });
+    });
+    return totals;
+  }, [advertisers, publishers, allocMap, dirty]);
+
+  const grandTotal = useMemo(() => {
+    return Object.values(pubTotals).reduce((s, v) => s + v, 0);
+  }, [pubTotals]);
+
   const handleSaveRow = async (advId) => {
     setSavingAdv(advId);
     try {
@@ -159,14 +186,14 @@ export default function BudgetAllocation() {
           notes: null,
         };
       });
-      await saveAllocations(advId, allocs);
-      // refresh this advertiser's allocations
-      const res = await getAllocations(advId);
-      setAllocMap((prev) => {
-        const updated = { ...prev, [advId]: {} };
-        (res.allocations || []).forEach((al) => { updated[advId][al.publisher_id] = al; });
-        return updated;
+      await saveAllocations(advId, month, allocs);
+      const allocRes = await getAllAllocationsForMonth(month);
+      const map = {};
+      (allocRes.allocations || []).forEach((al) => {
+        if (!map[al.advertiser_id]) map[al.advertiser_id] = {};
+        map[al.advertiser_id][al.publisher_id] = al;
       });
+      setAllocMap(map);
       setDirty((prev) => { const n = { ...prev }; delete n[advId]; return n; });
     } catch (e) { alert("Save failed: " + e.message); }
     finally { setSavingAdv(null); }
@@ -190,7 +217,10 @@ export default function BudgetAllocation() {
   return (
     <div>
       <div style={s.header}>
-        <div style={s.title}>Publisher Budget Allocation</div>
+        <div style={s.titleRow}>
+          <div style={s.title}>Publisher Budget Allocation</div>
+          <input type="month" style={s.monthPicker} value={month} onChange={(e) => setMonth(e.target.value)} />
+        </div>
         <div style={s.btnRow}>
           <button style={s.addBtn} onClick={() => setShowAddPub(true)}>+ New Publisher</button>
         </div>
@@ -263,6 +293,16 @@ export default function BudgetAllocation() {
                   </tr>
                 );
               })}
+              <tr style={s.totalRow}>
+                <td style={s.totalTd}>TOTAL</td>
+                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0))}</td>
+                {publishers.map((p) => (
+                  <td key={p.id} style={{ ...s.totalTd, textAlign: "center" }}>{fmtInr(pubTotals[p.id])}</td>
+                ))}
+                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(grandTotal)}</td>
+                <td style={s.totalTd}></td>
+                <td style={s.totalTd}></td>
+              </tr>
             </tbody>
           </table>
         </div>
