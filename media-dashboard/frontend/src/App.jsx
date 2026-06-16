@@ -58,7 +58,7 @@ const TAB_GROUPS = [
     tabs: [
       { id: "sales",  label: "Sales Pipeline",     icon: "🤝" },
       { id: "ops",    label: "Campaign Ops",      icon: "🚦" },
-      { id: "budget", label: "Budget Allocation", icon: "💰" },
+      { id: "pub-allocation", label: "Budget Allocation", icon: "💰" },
     ],
   },
   {
@@ -84,7 +84,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "budget",
+  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ export default function App() {
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
       case "sales":          return <SalesPipeline />;
       case "ops":            return <CampaignOps />;
-      case "budget":         return <BudgetAllocation />;
+      case "pub-allocation": return <BudgetAllocation />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
       case "performance":    return <AdvertiserPerformance {...props} />;
