@@ -412,6 +412,11 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
         raise ValueError(err)
     to_norm = wf.normalize_stage(to_stage)
 
+    if to_norm in (wf.STAGE_ASSETS_RECEIVED, wf.STAGE_SHARED_TO_PUBLISHER):
+        missing = [f for f in _ASSET_FIELDS if not getattr(campaign, f, None)]
+        if missing:
+            raise ValueError(f"cannot proceed: {len(missing)} asset(s) still missing ({', '.join(missing[:3])}...)")
+
     if to_norm == wf.STAGE_LIVE:
         open_tasks = await count_open_ops_tasks(db, campaign.id)
         if open_tasks > 0:
