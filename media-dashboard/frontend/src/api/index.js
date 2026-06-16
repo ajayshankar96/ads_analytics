@@ -197,6 +197,20 @@ export const updateCampaignAssets = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const uploadCampaignAsset = async (campaignId, field, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const resp = await fetch(`/api/workflow/campaigns/${campaignId}/upload-asset?field=${field}`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    throw new Error(d.detail || "Upload failed");
+  }
+  return resp.json();
+};
+
 export const recordPublisherEmail = (campaignId, payload) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/publisher-email`, {
     method: "POST",

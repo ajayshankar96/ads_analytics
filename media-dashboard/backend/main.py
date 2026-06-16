@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -1154,6 +1154,28 @@ async def workflow_backfill_campaigns(db: AsyncSession = Depends(get_db)):
 async def workflow_ops_tasks(campaign_id: str, db: AsyncSession = Depends(get_db)):
     tasks = await repo.list_ops_tasks(db, campaign_id)
     return {"ops_tasks": [repo.ops_task_dict(t) for t in tasks]}
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/upload-asset")
+async def workflow_upload_asset(campaign_id: str, file: UploadFile = File(...), field: str = Query(...), db: AsyncSession = Depends(get_db)):
+    """Upload a creative or logo image to Google Drive and save the URL on the campaign."""
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    if field not in ("creative_url", "logo_url"):
+        raise HTTPException(status_code=400, detail="field must be creative_url or logo_url")
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=400, detail="Only JPG/PNG files are allowed")
+
+    content = await file.read()
+    from sheets_client import upload_campaign_asset
+    result = upload_campaign_asset(content, file.filename, file.content_type)
+
+    setattr(campaign, field, result["url"])
+    campaign.updated_at = repo.datetime.now(repo.timezone.utc)
+    await db.commit()
+    await db.refresh(campaign)
+    return {"success": True, "url": result["url"], "drive_id": result["id"], "campaign": repo.campaign_dict(campaign)}
 
 
 @app.patch("/api/workflow/campaigns/{campaign_id}/assets")

@@ -7,6 +7,7 @@ import {
   transitionCampaign,
   updateCampaignAssets,
   recordPublisherEmail,
+  uploadCampaignAsset,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
@@ -62,8 +63,8 @@ const ASSET_FIELDS = [
   { key: "how_to_redeem", label: "How to Redeem", type: "textarea" },
   { key: "promo_codes", label: "Promo Code(s)", type: "input" },
   { key: "code_validity", label: "Code Validity", type: "input" },
-  { key: "creative_url", label: "Creative (URL/link)", type: "input" },
-  { key: "logo_url", label: "Logo (URL/link)", type: "input" },
+  { key: "creative_url", label: "Creative (600×600 JPG/PNG)", type: "upload" },
+  { key: "logo_url", label: "Logo (300×300 JPG/PNG)", type: "upload" },
   { key: "targeting", label: "Targeting / Persona", type: "textarea" },
   { key: "daily_budget", label: "Daily Budget (₹)", type: "input" },
   { key: "cpc_cpd", label: "CPC / CPD", type: "input" },
@@ -132,6 +133,14 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
       onReload();
     } catch (e) { alert("Save failed: " + e.message); }
     finally { setSaving(false); }
+  };
+
+  const handleFileUpload = async (field, file) => {
+    try {
+      const result = await uploadCampaignAsset(campaign.campaign_id, field, file);
+      setAssets((prev) => ({ ...prev, [field]: result.url }));
+      onReload();
+    } catch (e) { alert("Upload failed: " + e.message); }
   };
 
   const handleDraftEmail = () => {
@@ -214,7 +223,31 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
             {ASSET_FIELDS.map((f) => (
               <div key={f.key} style={s.field}>
                 <label style={s.label}>{f.label}</label>
-                {f.type === "textarea" ? (
+                {f.type === "upload" ? (
+                  <div>
+                    {assets[f.key] ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <img src={assets[f.key]} alt={f.label} style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: `1px solid ${c.line}` }} />
+                        <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Uploaded ✓</span>
+                        <label style={{ ...s.taskBtn, cursor: "pointer" }}>
+                          Replace
+                          <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFileUpload(f.key, file);
+                          }} />
+                        </label>
+                      </div>
+                    ) : (
+                      <label style={{ ...s.input, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: c.muted }}>
+                        📎 Click to upload JPG/PNG
+                        <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileUpload(f.key, file);
+                        }} />
+                      </label>
+                    )}
+                  </div>
+                ) : f.type === "textarea" ? (
                   <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
                 ) : (
                   <input style={s.input} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
@@ -277,8 +310,29 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
         </div>
       )}
       {stage === "CREATIVE_REVIEW" && (
-        <div style={s.btnRow}>
-          <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Go Live 🚀</button>
+        <div style={s.section}>
+          <div style={s.secTitle}>Creative Review</div>
+          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+            {campaign.creative_url && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Creative</div>
+                <a href={campaign.creative_url} target="_blank" rel="noopener noreferrer">
+                  <img src={campaign.creative_url} alt="Creative" style={{ width: 150, height: 150, borderRadius: 10, objectFit: "cover", border: `1px solid ${c.line}`, cursor: "pointer" }} />
+                </a>
+              </div>
+            )}
+            {campaign.logo_url && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Logo</div>
+                <a href={campaign.logo_url} target="_blank" rel="noopener noreferrer">
+                  <img src={campaign.logo_url} alt="Logo" style={{ width: 100, height: 100, borderRadius: 10, objectFit: "contain", border: `1px solid ${c.line}`, cursor: "pointer" }} />
+                </a>
+              </div>
+            )}
+          </div>
+          <div style={s.btnRow}>
+            <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Approve & Go Live 🚀</button>
+          </div>
         </div>
       )}
       {stage === "LIVE" && (

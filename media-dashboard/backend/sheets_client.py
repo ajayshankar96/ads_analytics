@@ -181,6 +181,56 @@ def move_to_folder(file_id: str, folder_id: str) -> None:
     ).execute()
 
 
+ASSETS_FOLDER_NAME = "Media Dashboard - Campaign Assets"
+_assets_folder_id = None
+
+
+def ensure_assets_folder() -> str:
+    """Find-or-create the Drive folder for campaign asset uploads."""
+    global _assets_folder_id
+    if _assets_folder_id:
+        return _assets_folder_id
+
+    drive = _get_drive()
+    q = (
+        "mimeType='application/vnd.google-apps.folder' "
+        f"and name='{ASSETS_FOLDER_NAME}' and trashed=false"
+    )
+    res = drive.files().list(q=q, fields="files(id,name)", spaces="drive").execute()
+    files = res.get("files", [])
+    if files:
+        _assets_folder_id = files[0]["id"]
+    else:
+        meta = {"name": ASSETS_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"}
+        folder = drive.files().create(body=meta, fields="id").execute()
+        _assets_folder_id = folder["id"]
+    return _assets_folder_id
+
+
+def upload_campaign_asset(file_bytes: bytes, filename: str, mime_type: str) -> dict:
+    """Upload an image to the assets Drive folder. Returns {id, url, name}."""
+    from googleapiclient.http import MediaInMemoryUpload
+
+    drive = _get_drive()
+    folder_id = ensure_assets_folder()
+
+    media = MediaInMemoryUpload(file_bytes, mimetype=mime_type)
+    file_meta = {"name": filename, "parents": [folder_id]}
+    created = drive.files().create(
+        body=file_meta, media_body=media, fields="id,webViewLink,webContentLink"
+    ).execute()
+
+    # Make the file publicly viewable (anyone with the link)
+    drive.permissions().create(
+        fileId=created["id"],
+        body={"type": "anyone", "role": "reader"},
+    ).execute()
+
+    # Get the direct thumbnail/view link
+    view_url = f"https://drive.google.com/uc?id={created['id']}"
+    return {"id": created["id"], "url": view_url, "name": filename, "web_view_link": created.get("webViewLink", "")}
+
+
 def set_app_properties(file_id: str, props: dict) -> None:
     """Set/merge appProperties (app-private metadata) on a Drive file."""
     drive = _get_drive()
