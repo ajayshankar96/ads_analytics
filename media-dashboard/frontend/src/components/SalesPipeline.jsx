@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getAdvertisers } from "../api";
 import AdvertiserWizard from "./AdvertiserWizard";
 import AdvertiserDetails from "./AdvertiserDetails";
+import BudgetAllocationModal from "./BudgetAllocationModal";
 
 const c = { ink: "#0F1724", sub: "#52606D", muted: "#768EA7", line: "#E6EAF0", blue: "#2E5BFF", green: "#0F8C6A", amber: "#B7791F" };
 
@@ -86,6 +87,7 @@ export default function SalesPipeline() {
   const [wizard, setWizard] = useState(null);
   const [emailModal, setEmailModal] = useState(null);
   const [viewAdv, setViewAdv] = useState(null);
+  const [allocAdv, setAllocAdv] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -102,6 +104,7 @@ export default function SalesPipeline() {
       <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} />}
       {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => setViewAdv(null)} />}
+      {allocAdv !== null && <BudgetAllocationModal advertiser={allocAdv} onClose={() => setAllocAdv(null)} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
@@ -143,7 +146,20 @@ export default function SalesPipeline() {
                     <td style={s.td}>
                       {goal ? <><div style={s.goalMain}>{goal}</div><div style={s.goalSub}>brand-level</div></> : dash}
                     </td>
-                    <td style={{ ...s.td, ...s.tdRight }}>{budgetText(a)}</td>
+                    <td style={{ ...s.td, ...s.tdRight }} onClick={(e) => e.stopPropagation()}>
+                      {budgetText(a)}
+                      {a.budget_hint && (
+                        <span
+                          title="Allocate budget across publishers"
+                          onClick={() => setAllocAdv(a)}
+                          style={{ cursor: "pointer", marginLeft: 8, display: "inline-flex", verticalAlign: "middle", opacity: 0.7 }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={c.blue} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20"/><path d="M12 7l-3 5h6l-3 5"/>
+                          </svg>
+                        </span>
+                      )}
+                    </td>
                     <td style={{ ...s.td, ...s.tdRight }}>{dash}</td>
                     <td style={{ ...s.td, textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                       {a.welcome_email_sent_at ? (

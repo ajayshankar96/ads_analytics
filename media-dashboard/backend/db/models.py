@@ -154,6 +154,29 @@ class Invoice(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Publisher(Base):
+    __tablename__ = "rmn_publishers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # PUB-001
+    name: Mapped[str] = mapped_column(String(128))
+    code: Mapped[str] = mapped_column(String(16))  # P1, P2, ...
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BudgetAllocation(Base):
+    __tablename__ = "rmn_budget_allocations"
+    __table_args__ = (Index("ix_rmn_alloc_adv_pub", "advertiser_id", "publisher_id", unique=True),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    advertiser_id: Mapped[str] = mapped_column(String(20), index=True)
+    publisher_id: Mapped[str] = mapped_column(String(32), index=True)
+    amount: Mapped[Optional[int]] = mapped_column(BigInteger, default=None)
+    status: Mapped[Optional[str]] = mapped_column(String(24), default=None)  # ALLOCATED / CANT_GO_LIVE
+    notes: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StageTransition(Base):
     """Audit log; each insert is also what triggers a hand-off notification."""
 

@@ -5,10 +5,10 @@ are explicit, per python-foundation convention.
 """
 
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import workflow_logic as wf
@@ -389,3 +389,38 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
     await db.commit()
     await db.refresh(campaign)
     return campaign
+
+
+# ── publishers & budget allocation ────────────────────────────────────────────
+
+async def list_publishers(db: AsyncSession) -> List[Dict[str, Any]]:
+    result = await db.execute(
+        select(models.Publisher).where(models.Publisher.is_active == True).order_by(models.Publisher.code)
+    )
+    return [{"id": p.id, "name": p.name, "code": p.code} for p in result.scalars().all()]
+
+
+async def get_allocations(db: AsyncSession, advertiser_id: str) -> List[Dict[str, Any]]:
+    result = await db.execute(
+        select(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id)
+    )
+    return [
+        {"id": a.id, "publisher_id": a.publisher_id, "amount": a.amount,
+         "status": a.status, "notes": a.notes}
+        for a in result.scalars().all()
+    ]
+
+
+async def upsert_allocations(db: AsyncSession, advertiser_id: str, allocations: List[Dict[str, Any]]) -> None:
+    await db.execute(delete(models.BudgetAllocation).where(models.BudgetAllocation.advertiser_id == advertiser_id))
+    now = datetime.now(timezone.utc)
+    for alloc in allocations:
+        db.add(models.BudgetAllocation(
+            advertiser_id=advertiser_id,
+            publisher_id=alloc["publisher_id"],
+            amount=alloc.get("amount"),
+            status=alloc.get("status"),
+            notes=alloc.get("notes"),
+            updated_at=now,
+        ))
+    await db.commit()

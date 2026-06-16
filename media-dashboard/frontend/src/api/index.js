@@ -190,3 +190,15 @@ export const transitionCampaign = (campaignId, payload) =>
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+// ── Publishers & Budget Allocation ────────────────────────────────────────────
+export const getPublishers = () => apiFetch("/api/publishers");
+
+export const getAllocations = (advId) =>
+  apiFetch(`/api/advertisers/${advId}/allocations`);
+
+export const saveAllocations = (advId, allocations) =>
+  apiFetch(`/api/advertisers/${advId}/allocations`, {
+    method: "POST",
+    body: JSON.stringify({ allocations }),
+  });

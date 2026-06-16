@@ -1055,6 +1055,44 @@ async def record_welcome_email(adv_id: str, req: WelcomeEmailRequest, db: AsyncS
     return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 
 
+# ── Publishers & Budget Allocation ────────────────────────────────────────────
+
+@app.get("/api/publishers")
+async def list_publishers(db: AsyncSession = Depends(get_db)):
+    pubs = await repo.list_publishers(db)
+    return {"publishers": pubs}
+
+
+@app.get("/api/advertisers/{adv_id}/allocations")
+async def get_allocations(adv_id: str, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    allocs = await repo.get_allocations(db, adv_id)
+    return {"allocations": allocs}
+
+
+class AllocationItem(BaseModel):
+    publisher_id: str
+    amount: Optional[int] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SaveAllocationsRequest(BaseModel):
+    allocations: list[AllocationItem]
+
+
+@app.post("/api/advertisers/{adv_id}/allocations")
+async def save_allocations(adv_id: str, req: SaveAllocationsRequest, db: AsyncSession = Depends(get_db)):
+    adv = await repo.get_advertiser(db, adv_id)
+    if not adv:
+        raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    await repo.upsert_allocations(db, adv_id, [a.model_dump() for a in req.allocations])
+    allocs = await repo.get_allocations(db, adv_id)
+    return {"success": True, "allocations": allocs}
+
+
 # ── Campaign Ops stage machine (Dashboard 2) — Postgres-backed ───────────────
 # Campaigns opened from a closed lead progress through validated stages with
 # hand-off emails. ops-tasks gate the go-live transition.
