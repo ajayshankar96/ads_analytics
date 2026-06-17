@@ -1,0 +1,229 @@
+import React, { useState, useEffect } from "react";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup } from "../api";
+
+const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", bg: "#F7F8FA" };
+
+const s = {
+  loading: { textAlign: "center", padding: 40, color: "#888" },
+  empty: { textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
+  title: { fontSize: 20, fontWeight: 800, color: c.ink },
+  list: { display: "flex", flexDirection: "column", gap: 12 },
+  card: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
+  cardActive: { borderColor: c.blue, boxShadow: "0 2px 12px rgba(46,91,255,0.12)" },
+  head: { display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" },
+  campTitle: { fontSize: 15, fontWeight: 700, color: c.ink },
+  campSub: { fontSize: 12, color: c.muted, marginTop: 2 },
+  badge: { fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 14 },
+  badgePending: { background: "#FEF3E2", color: "#B7791F" },
+  badgeDone: { background: "#E3F6EE", color: c.green },
+  panel: { marginTop: 16, borderTop: `1px solid ${c.line}`, paddingTop: 16 },
+  section: { marginBottom: 20 },
+  secTitle: { fontSize: 14, fontWeight: 800, color: c.ink, marginBottom: 12 },
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  field: { display: "flex", flexDirection: "column", marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: c.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".03em" },
+  input: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%" },
+  textarea: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%", minHeight: 80, resize: "vertical" },
+  btnGreen: { background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  addBtn: { background: "#E3F6EE", color: c.green, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  removeBtn: { background: "#FEE2E2", color: c.red, border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
+  metricCard: { border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px", marginBottom: 12 },
+  metricTitle: { fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10, display: "flex", justifyContent: "space-between" },
+  doneCard: { background: "#E3F6EE", borderRadius: 10, padding: "14px 16px" },
+  doneTitle: { fontSize: 13, fontWeight: 700, color: c.green },
+};
+
+const GOAL_PERIODS = ["daily", "weekly", "monthly", "date_agnostic"];
+
+function TrackingForm({ campaign, segments, onDone }) {
+  const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
+  const [pubDataUrl, setPubDataUrl] = useState(campaign.publisher_data_url || "");
+  const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
+  const [segmentAdv, setSegmentAdv] = useState(campaign.segment_adv || "");
+  const [goals, setGoals] = useState([{ name: "", period: "daily", value: "" }]);
+  const [metrics, setMetrics] = useState([{ display_name: "", definition: "", calculation: "" }]);
+  const [additionalContext, setAdditionalContext] = useState(campaign.additional_context || "");
+  const [submitting, setSubmitting] = useState(false);
+
+  const addGoal = () => setGoals([...goals, { name: "", period: "daily", value: "" }]);
+  const removeGoal = (i) => setGoals(goals.filter((_, idx) => idx !== i));
+  const updateGoal = (i, patch) => setGoals(goals.map((g, idx) => idx === i ? { ...g, ...patch } : g));
+
+  const addMetric = () => setMetrics([...metrics, { display_name: "", definition: "", calculation: "" }]);
+  const removeMetric = (i) => setMetrics(metrics.filter((_, idx) => idx !== i));
+  const updateMetric = (i, patch) => setMetrics(metrics.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+
+  const buildGoalsJson = () => {
+    const obj = { goals: { daily: {}, weekly: {}, monthly: {}, date_agnostic: {} } };
+    goals.forEach((g) => {
+      if (g.name.trim() && g.period) obj.goals[g.period][g.name.trim()] = parseFloat(g.value) || 0;
+    });
+    return JSON.stringify(obj);
+  };
+
+  const buildMetricsJson = () => {
+    const obj = { metrics_library: {} };
+    metrics.forEach((m, i) => {
+      if (m.display_name.trim()) {
+        obj.metrics_library[`metric_${i + 1}`] = { display_name: m.display_name.trim(), definition: m.definition.trim(), calculation: m.calculation.trim() };
+      }
+    });
+    return JSON.stringify(obj);
+  };
+
+  const handleSubmit = async () => {
+    if (!advDataUrl.trim() || !pubDataUrl.trim()) { alert("Advertiser and Publisher Data Sheet URLs are required"); return; }
+    if (!segmentPub.trim() || !segmentAdv.trim()) { alert("Segment names are required"); return; }
+    setSubmitting(true);
+    try {
+      await submitTrackingSetup(campaign.campaign_id, {
+        advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl,
+        segment_pub: segmentPub, segment_adv: segmentAdv,
+        goals_json: buildGoalsJson(), metrics_json: buildMetricsJson(),
+        additional_context: additionalContext,
+      });
+      onDone();
+    } catch (e) { alert("Submit failed: " + e.message); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <div style={s.panel}>
+      <div style={s.grid2}>
+        <div style={s.field}>
+          <label style={s.label}>Advertiser Data Sheet URL *</label>
+          <input style={s.input} value={advDataUrl} onChange={(e) => setAdvDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Publisher Data Sheet URL *</label>
+          <input style={s.input} value={pubDataUrl} onChange={(e) => setPubDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Segment Name (Publisher) *</label>
+          <select style={s.input} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)}>
+            <option value="">Select segment…</option>
+            {segments.map((seg) => <option key={seg} value={seg}>{seg}</option>)}
+            <option value="__custom">— Enter custom —</option>
+          </select>
+          {segmentPub === "__custom" && <input style={{ ...s.input, marginTop: 6 }} onChange={(e) => setSegmentPub(e.target.value)} placeholder="Custom segment name" />}
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Segment Name (Advertiser) *</label>
+          <input style={s.input} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" />
+        </div>
+      </div>
+
+      {/* Goals */}
+      <div style={{ ...s.field, marginTop: 8 }}>
+        <label style={{ ...s.label, fontSize: 13, marginBottom: 10 }}>Goals</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 40px", gap: 8, marginBottom: 6, fontSize: 11, color: c.muted, fontWeight: 700 }}>
+          <span>GOAL NAME</span><span>PERIOD</span><span>VALUE</span><span></span>
+        </div>
+        {goals.map((g, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 40px", gap: 8, marginBottom: 8 }}>
+            <input style={s.input} value={g.name} onChange={(e) => updateGoal(i, { name: e.target.value })} placeholder="e.g. CPL" />
+            <select style={s.input} value={g.period} onChange={(e) => updateGoal(i, { period: e.target.value })}>
+              {GOAL_PERIODS.map((p) => <option key={p} value={p}>{p.replace("_", " ")}</option>)}
+            </select>
+            <input style={s.input} type="number" value={g.value} onChange={(e) => updateGoal(i, { value: e.target.value })} placeholder="0" />
+            <button style={s.removeBtn} onClick={() => removeGoal(i)}>✕</button>
+          </div>
+        ))}
+        <button style={s.addBtn} onClick={addGoal}>+ Add Goal</button>
+      </div>
+
+      {/* Metrics */}
+      <div style={{ ...s.field, marginTop: 16 }}>
+        <label style={{ ...s.label, fontSize: 13, marginBottom: 10 }}>Metrics Library</label>
+        {metrics.map((m, i) => (
+          <div key={i} style={s.metricCard}>
+            <div style={s.metricTitle}><span>Metric {i + 1}</span><button style={s.removeBtn} onClick={() => removeMetric(i)}>Remove</button></div>
+            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Display Name</label><input style={s.input} value={m.display_name} onChange={(e) => updateMetric(i, { display_name: e.target.value })} placeholder="e.g. Leads" /></div>
+            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Definition</label><input style={s.input} value={m.definition} onChange={(e) => updateMetric(i, { definition: e.target.value })} placeholder="e.g. Leads data from advertiser sheet" /></div>
+            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Calculation</label><input style={s.input} value={m.calculation} onChange={(e) => updateMetric(i, { calculation: e.target.value })} placeholder="e.g. Spends/QL" /></div>
+          </div>
+        ))}
+        <button style={s.addBtn} onClick={addMetric}>+ Add Metric</button>
+      </div>
+
+      <div style={{ ...s.field, marginTop: 16 }}>
+        <label style={s.label}>Additional Context</label>
+        <textarea style={s.textarea} value={additionalContext} onChange={(e) => setAdditionalContext(e.target.value)} placeholder="Any notes or context..." />
+      </div>
+
+      <button style={s.btnGreen} onClick={handleSubmit} disabled={submitting}>
+        {submitting ? "Submitting…" : "Submit Tracking & Complete Campaign ✓"}
+      </button>
+    </div>
+  );
+}
+
+export default function CampaignTracking() {
+  const [campaigns, setCampaigns] = useState([]);
+  const [segments, setSegments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [cRes, fRes] = await Promise.all([getWorkflowCampaigns(), getFilters()]);
+      const liveCamps = (cRes.campaigns || []).filter((c) => c.current_stage === "LIVE" || c.current_stage === "COMPLETED");
+      setCampaigns(liveCamps);
+      setSegments(fRes.segments || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <div style={s.loading}>Loading campaigns…</div>;
+
+  return (
+    <div>
+      <div style={s.header}>
+        <div style={s.title}>Campaign Success & Tracking</div>
+      </div>
+
+      {campaigns.length === 0 ? (
+        <div style={s.empty}>No live campaigns yet. Campaigns appear here once they go live in Campaign Ops.</div>
+      ) : (
+        <div style={s.list}>
+          {campaigns.map((cam) => {
+            const isSelected = selected === cam.campaign_id;
+            const isDone = cam.tracking_submitted || cam.current_stage === "COMPLETED";
+            return (
+              <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }}>
+                <div style={s.head} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
+                  <div>
+                    <div style={s.campTitle}>
+                      {cam.advertiser_name || cam.name}
+                      {cam.publisher_name && <span style={{ fontWeight: 400, color: c.muted }}> → {cam.publisher_name}</span>}
+                    </div>
+                    <div style={s.campSub}>{cam.campaign_id}</div>
+                  </div>
+                  <span style={{ ...s.badge, ...(isDone ? s.badgeDone : s.badgePending) }}>
+                    {isDone ? "Tracking Set ✓" : "Pending Setup"}
+                  </span>
+                </div>
+
+                {isSelected && (
+                  isDone ? (
+                    <div style={{ ...s.panel }}>
+                      <div style={s.doneCard}>
+                        <div style={s.doneTitle}>✅ Tracking submitted to Automation Tracker</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <TrackingForm campaign={cam} segments={segments} onDone={load} />
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -15,6 +15,7 @@ import PublisherReporting from "./components/PublisherReporting";
 import SalesPipeline from "./components/SalesPipeline";
 import CampaignOps from "./components/CampaignOps";
 import BudgetAllocation from "./components/BudgetAllocation";
+import CampaignTracking from "./components/CampaignTracking";
 import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess } from "./api";
 import QueryConsole from "./components/QueryConsole";
 
@@ -59,6 +60,7 @@ const TAB_GROUPS = [
       { id: "sales",  label: "Sales Pipeline",     icon: "🤝" },
       { id: "ops",    label: "Campaign Ops",      icon: "🚦" },
       { id: "pub-allocation", label: "Budget Allocation", icon: "💰" },
+      { id: "tracking", label: "Campaign Success & Tracking", icon: "📊" },
     ],
   },
   {
@@ -84,7 +86,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation",
+  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -374,6 +376,7 @@ export default function App() {
       case "sales":          return <SalesPipeline />;
       case "ops":            return <CampaignOps />;
       case "pub-allocation": return <BudgetAllocation />;
+      case "tracking":       return <CampaignTracking />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
       case "performance":    return <AdvertiserPerformance {...props} />;
