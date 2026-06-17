@@ -1209,6 +1209,24 @@ async def workflow_update_assets(campaign_id: str, request: Request, db: AsyncSe
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+class NotLiveRequest(BaseModel):
+    reason: str = ""
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/not-live")
+async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: AsyncSession = Depends(get_db)):
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    campaign.not_live_reason = req.reason
+    await db.commit()
+    try:
+        campaign = await repo.transition_campaign(db, campaign, to_stage="NOT_LIVE")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
 class TrackingSetupRequest(BaseModel):
     advertiser_data_url: str = ""
     publisher_data_url: str = ""

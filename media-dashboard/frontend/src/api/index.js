@@ -226,6 +226,12 @@ export const submitTrackingSetup = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const markNotLive = (campaignId, reason) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/not-live`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 

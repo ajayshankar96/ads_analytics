@@ -122,6 +122,7 @@ class Campaign(Base):
     targeting: Mapped[Optional[str]] = mapped_column(Text, default=None)
     daily_budget: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     cpc_cpd: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    not_live_reason: Mapped[Optional[str]] = mapped_column(Text, default=None)
     # Campaign tracking setup (written to Automation Tracker sheet on go-live)
     advertiser_data_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
     publisher_data_url: Mapped[Optional[str]] = mapped_column(Text, default=None)

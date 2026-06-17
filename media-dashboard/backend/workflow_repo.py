@@ -45,6 +45,7 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "advertiser_ref_id": c.advertiser_ref_id,
         "advertiser_name": c.advertiser_name, "publisher_id": c.publisher_id,
         "publisher_name": c.publisher_name,
+        "not_live_reason": c.not_live_reason,
         "advertiser_data_url": c.advertiser_data_url, "publisher_data_url": c.publisher_data_url,
         "segment_pub": c.segment_pub, "segment_adv": c.segment_adv,
         "goals_json": c.goals_json, "metrics_json": c.metrics_json,
@@ -442,7 +443,7 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
         raise ValueError(err)
     to_norm = wf.normalize_stage(to_stage)
 
-    if to_norm in (wf.STAGE_ASSETS_RECEIVED, wf.STAGE_SHARED_TO_PUBLISHER):
+    if to_norm in (wf.STAGE_ASSETS_RECEIVED, wf.STAGE_CREATIVE_REVIEW):
         missing = [f for f in _ASSET_FIELDS if not getattr(campaign, f, None)]
         if missing:
             raise ValueError(f"cannot proceed: {len(missing)} asset(s) still missing ({', '.join(missing[:3])}...)")

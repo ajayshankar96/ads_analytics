@@ -11,6 +11,7 @@ import {
   createCampaign,
   getAdvertisers,
   getPublishers,
+  markNotLive,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
@@ -167,15 +168,15 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
       const token = await getGmailAccessToken();
       await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), subject: emailSubject, html: textToHtml(emailBody) });
       await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
-      // 3. Transition through stages: OPS_SETUP → ASSETS_RECEIVED → SHARED_TO_PUBLISHER
-      try { await transitionCampaign(campaign.campaign_id, { to_stage: "ASSETS_RECEIVED" }); } catch (e) { /* already past */ }
+      // 3. Transition to SHARED_TO_PUBLISHER (should be at CREATIVE_REVIEW already)
       try { await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }); } catch (e) { /* already past */ }
       onReload();
     } catch (e) { alert("Send failed: " + e.message); }
     finally { setSending(false); }
   };
 
-  const STAGE_ORDER = ["OPS_SETUP", "ASSETS_RECEIVED", "SHARED_TO_PUBLISHER", "CREATIVE_REVIEW", "LIVE", "COMPLETED"];
+  const STAGE_ORDER = ["OPS_SETUP", "ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER", "LIVE"];
+  const [notLiveReason, setNotLiveReason] = useState("");
 
   const handleTransition = async (toStage) => {
     try {
@@ -201,9 +202,10 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
     } catch (e) { alert("Error: " + e.message); }
   };
 
-  const showAssetForm = ["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage) && !emailSent;
-  const showEmailCompose = (stage === "OPS_SETUP" || stage === "ASSETS_RECEIVED") && !emailSent;
-  const showPostSend = ["SHARED_TO_PUBLISHER", "CREATIVE_REVIEW", "LIVE", "COMPLETED"].includes(stage) || emailSent;
+  const showAssetForm = stage === "OPS_SETUP" && !emailSent;
+  const showCreativeReview = stage === "ASSETS_RECEIVED" || stage === "CREATIVE_REVIEW";
+  const showEmailCompose = stage === "CREATIVE_REVIEW" && !emailSent;
+  const showLiveChoice = stage === "SHARED_TO_PUBLISHER";
 
   return (
     <div style={s.panel}>
@@ -231,7 +233,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
         </div>
       )}
 
-      {/* Asset Form */}
+      {/* Step 1: Asset Form (OPS_SETUP) */}
       {showAssetForm && (
         <div style={s.section}>
           <div style={s.secTitle}>Campaign Assets</div>
@@ -251,19 +253,13 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
                         <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Uploaded ✓</span>
                         <label style={{ ...s.taskBtn, cursor: "pointer" }}>
                           Replace
-                          <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleFileUpload(f.key, file);
-                          }} />
+                          <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(f.key, file); }} />
                         </label>
                       </div>
                     ) : (
                       <label style={{ ...s.input, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: c.muted }}>
                         📎 Click to upload JPG/PNG
-                        <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleFileUpload(f.key, file);
-                        }} />
+                        <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(f.key, file); }} />
                       </label>
                     )}
                   </div>
@@ -277,14 +273,51 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
           </div>
           <div style={s.btnRow}>
             <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : assetsSaved ? "Saved ✓" : "Save Assets"}</button>
-            {allFilled && !emailDrafted && !emailSent && (
-              <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
+            {allFilled && (
+              <button style={s.btnGreen} onClick={async () => { await updateCampaignAssets(campaign.campaign_id, assets); await handleTransition("ASSETS_RECEIVED"); }}>
+                Mark Assets Received →
+              </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Email Compose (draft → review → send) */}
+      {/* Step 2: Creative Review (ASSETS_RECEIVED / CREATIVE_REVIEW) */}
+      {showCreativeReview && (
+        <div style={s.section}>
+          <div style={s.secTitle}>Creative Review</div>
+          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+            {campaign.creative_url && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Creative</div>
+                <a href={campaign.creative_url} target="_blank" rel="noopener noreferrer">
+                  <img src={campaign.creative_url} alt="Creative" style={{ width: 150, height: 150, borderRadius: 10, objectFit: "cover", border: `1px solid ${c.line}`, cursor: "pointer" }} />
+                </a>
+              </div>
+            )}
+            {campaign.logo_url && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Logo</div>
+                <a href={campaign.logo_url} target="_blank" rel="noopener noreferrer">
+                  <img src={campaign.logo_url} alt="Logo" style={{ width: 100, height: 100, borderRadius: 10, objectFit: "contain", border: `1px solid ${c.line}`, cursor: "pointer" }} />
+                </a>
+              </div>
+            )}
+          </div>
+          {stage === "ASSETS_RECEIVED" && (
+            <div style={s.btnRow}>
+              <button style={s.btnPrimary} onClick={() => handleTransition("CREATIVE_REVIEW")}>Approve Creatives ✓</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: Email to Publisher (CREATIVE_REVIEW stage) */}
+      {showEmailCompose && !emailDrafted && (
+        <div style={s.btnRow}>
+          <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
+        </div>
+      )}
       {showEmailCompose && emailDrafted && (
         <div style={s.section}>
           <div style={s.secTitle}>Share to Publisher — Review & Send</div>
@@ -309,7 +342,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
         </div>
       )}
 
-      {/* Post-send: show sent email info */}
+      {/* Post-send email info */}
       {emailSent && (
         <div style={s.section}>
           <div style={s.emailSent}>
@@ -320,50 +353,41 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
               <strong>Sent:</strong> {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}
             </div>
           </div>
-          {["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage) && (
-            <div style={{ ...s.btnRow, marginTop: 12 }}>
-              <button style={s.btnPrimary} onClick={() => handleTransition("SHARED_TO_PUBLISHER")}>Proceed to Shared to Publisher →</button>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Stage transitions for later stages */}
-      {stage === "SHARED_TO_PUBLISHER" && (
-        <div style={s.btnRow}>
-          <button style={s.btnPrimary} onClick={() => handleTransition("CREATIVE_REVIEW")}>Mark Creative Review ✓</button>
-        </div>
-      )}
-      {stage === "CREATIVE_REVIEW" && (
+      {/* Step 4: Live or Not Live (SHARED_TO_PUBLISHER) */}
+      {showLiveChoice && (
         <div style={s.section}>
-          <div style={s.secTitle}>Creative Review</div>
-          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
-            {campaign.creative_url && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Creative</div>
-                <a href={campaign.creative_url} target="_blank" rel="noopener noreferrer">
-                  <img src={campaign.creative_url} alt="Creative" style={{ width: 150, height: 150, borderRadius: 10, objectFit: "cover", border: `1px solid ${c.line}`, cursor: "pointer" }} />
-                </a>
-              </div>
-            )}
-            {campaign.logo_url && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Logo</div>
-                <a href={campaign.logo_url} target="_blank" rel="noopener noreferrer">
-                  <img src={campaign.logo_url} alt="Logo" style={{ width: 100, height: 100, borderRadius: 10, objectFit: "contain", border: `1px solid ${c.line}`, cursor: "pointer" }} />
-                </a>
-              </div>
-            )}
-          </div>
+          <div style={s.secTitle}>Campaign Status</div>
+          <div style={{ fontSize: 13, color: c.sub, marginBottom: 14 }}>Is this campaign live on the publisher?</div>
           <div style={s.btnRow}>
-            <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Approve & Go Live 🚀</button>
+            <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Yes, Mark Live 🚀</button>
+          </div>
+          <div style={{ marginTop: 16, padding: "14px 16px", background: "#FEF3E2", borderRadius: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#B7791F", marginBottom: 8 }}>Not going live?</div>
+            <textarea style={{ ...s.textarea, minHeight: 60 }} value={notLiveReason} onChange={(e) => setNotLiveReason(e.target.value)} placeholder="Enter reason why this campaign is not going live..." />
+            <button style={{ ...s.btnGhost, marginTop: 8, color: c.red, borderColor: c.red }} onClick={async () => {
+              if (!notLiveReason.trim()) { alert("Please enter a reason"); return; }
+              try { await markNotLive(campaign.campaign_id, notLiveReason); onReload(); } catch (e) { alert(e.message); }
+            }}>Mark Not Live</button>
           </div>
         </div>
       )}
+
+      {/* Terminal: Live */}
       {stage === "LIVE" && (
         <div style={s.emailSent}>
           <div style={s.emailSentTitle}>🚀 Campaign is Live</div>
-          <div style={s.emailSentDetail}>Head to the <strong>Campaign Success & Tracking</strong> tab to set up tracking for this campaign.</div>
+          <div style={s.emailSentDetail}>Head to the <strong>Campaign Success & Tracking</strong> tab to set up tracking.</div>
+        </div>
+      )}
+
+      {/* Terminal: Not Live */}
+      {stage === "NOT_LIVE" && (
+        <div style={{ background: "#FEE2E2", borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: c.red }}>Campaign Not Live</div>
+          <div style={{ fontSize: 12, color: c.sub, marginTop: 4 }}>Reason: {campaign.not_live_reason || "—"}</div>
         </div>
       )}
     </div>
