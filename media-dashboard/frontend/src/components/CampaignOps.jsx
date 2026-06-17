@@ -274,7 +274,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
     } catch (e) { alert("Error: " + e.message); }
   };
 
-  const showAssetForm = ["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage);
+  const showAssetForm = ["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage) && !emailSent;
   const showEmailCompose = (stage === "OPS_SETUP" || stage === "ASSETS_RECEIVED") && !emailSent;
   const showPostSend = ["SHARED_TO_PUBLISHER", "CREATIVE_REVIEW", "LIVE", "COMPLETED"].includes(stage) || emailSent;
 
@@ -350,7 +350,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
           </div>
           <div style={s.btnRow}>
             <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : assetsSaved ? "Saved ✓" : "Save Assets"}</button>
-            {allFilled && !emailDrafted && (
+            {allFilled && !emailDrafted && !emailSent && (
               <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
             )}
           </div>
@@ -383,7 +383,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
       )}
 
       {/* Post-send: show sent email info */}
-      {showPostSend && emailSent && (
+      {emailSent && (
         <div style={s.section}>
           <div style={s.emailSent}>
             <div style={s.emailSentTitle}>✉️ Email sent to publisher</div>
@@ -393,6 +393,11 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
               <strong>Sent:</strong> {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}
             </div>
           </div>
+          {["OPS_SETUP", "ASSETS_RECEIVED"].includes(stage) && (
+            <div style={{ ...s.btnRow, marginTop: 12 }}>
+              <button style={s.btnPrimary} onClick={() => handleTransition("SHARED_TO_PUBLISHER")}>Proceed to Shared to Publisher →</button>
+            </div>
+          )}
         </div>
       )}
 
