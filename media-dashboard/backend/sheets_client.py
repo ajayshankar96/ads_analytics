@@ -220,14 +220,23 @@ def upload_campaign_asset(file_bytes: bytes, filename: str, mime_type: str) -> d
         body=file_meta, media_body=media, fields="id,webViewLink,webContentLink"
     ).execute()
 
-    # Make the file publicly viewable (anyone with the link)
-    drive.permissions().create(
-        fileId=created["id"],
-        body={"type": "anyone", "role": "reader"},
-    ).execute()
+    # Try to make publicly viewable; if org policy blocks it, share with domain instead
+    try:
+        drive.permissions().create(
+            fileId=created["id"],
+            body={"type": "anyone", "role": "reader"},
+        ).execute()
+    except Exception:
+        try:
+            drive.permissions().create(
+                fileId=created["id"],
+                body={"type": "domain", "domain": "razorpay.com", "role": "reader"},
+            ).execute()
+        except Exception:
+            pass  # file is still accessible by service account and shared folder viewers
 
-    # Get the direct thumbnail/view link
-    view_url = f"https://drive.google.com/uc?id={created['id']}"
+    # Use thumbnail link that works within the org
+    view_url = f"https://lh3.googleusercontent.com/d/{created['id']}"
     return {"id": created["id"], "url": view_url, "name": filename, "web_view_link": created.get("webViewLink", "")}
 
 
