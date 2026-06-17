@@ -220,6 +220,12 @@ export const recordPublisherEmail = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const submitTrackingSetup = (campaignId, payload) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/tracking-setup`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 

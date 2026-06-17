@@ -1209,6 +1209,89 @@ async def workflow_update_assets(campaign_id: str, request: Request, db: AsyncSe
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+class TrackingSetupRequest(BaseModel):
+    advertiser_data_url: str = ""
+    publisher_data_url: str = ""
+    segment_pub: str = ""
+    segment_adv: str = ""
+    goals_json: str = "{}"
+    metrics_json: str = "{}"
+    additional_context: str = ""
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/tracking-setup")
+async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, db: AsyncSession = Depends(get_db)):
+    """Save tracking fields, write row to Automation Tracker sheet, transition to COMPLETED."""
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+
+    # Save tracking fields on campaign
+    campaign.advertiser_data_url = req.advertiser_data_url
+    campaign.publisher_data_url = req.publisher_data_url
+    campaign.segment_pub = req.segment_pub
+    campaign.segment_adv = req.segment_adv
+    campaign.goals_json = req.goals_json
+    campaign.metrics_json = req.metrics_json
+    campaign.additional_context = req.additional_context
+    campaign.tracking_submitted = True
+    await db.commit()
+    await db.refresh(campaign)
+
+    # Build campaign_details JSON from existing asset fields
+    import json
+    campaign_details = json.dumps({
+        "campaign_details": {
+            "brand_name": campaign.advertiser_name or campaign.name or "",
+            "offer_title": campaign.offer_title or "",
+            "details": campaign.details_tc or "",
+            "how_to_redeem": campaign.how_to_redeem or "",
+            "tracking": {"landing_link": campaign.landing_link or "", "utm_redirection_link": ""},
+            "incentives": {"codes": [c.strip() for c in (campaign.promo_codes or "").split(",") if c.strip()],
+                          "codes_validity": {"start_date": "", "expiry_date": campaign.code_validity or ""}},
+            "assets": {"creative_url": campaign.creative_url or "", "logo_url": campaign.logo_url or ""},
+            "targeting": {"Segment_link": "", "Segment_Description": campaign.targeting or "", "Size": "", "Cohort_Name": ""},
+            "budget_and_metrics": {"total_budget": 0, "cpc_target": 0, "cpm_target": 0},
+            "Rzp_cut": 0,
+        }
+    })
+
+    # Write row to Automation Tracker sheet
+    from sheets_client import append_rows
+    KPI_SPREADSHEET_ID = os.environ.get("KPI_SPREADSHEET_ID", "1VDr2ewZw2Xl43PuYBoKt8PgepItHZs-icD49YnILBss")
+    row = [
+        "Single Campaign Sheet",                  # A: Campaign type
+        campaign.advertiser_name or "",            # B: Advertiser
+        campaign.publisher_name or "",             # C: Publisher
+        "",                                        # D: Advertiser Industry
+        campaign.advertiser_name or "",            # E: Brand
+        campaign.offer_title or "",                # F: Offer
+        req.advertiser_data_url,                   # G: Advertiser Data URL
+        req.publisher_data_url,                    # H: Publisher Data URL
+        "",                                        # I: Merged Sheet URL
+        req.goals_json,                            # J: Goals JSON
+        req.metrics_json,                          # K: Metrics JSON
+        req.segment_pub,                           # L: Segment Pub
+        req.segment_adv,                           # M: Segment Adv
+        req.additional_context,                    # N: Additional Context
+        campaign_details,                          # O: Campaign Details JSON
+        "",                                        # P: Changes
+        "Pending",                                 # Q: Status
+    ]
+    try:
+        append_rows(KPI_SPREADSHEET_ID, "Sheet1", [row])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write to tracker sheet: {e}")
+
+    # Transition to COMPLETED
+    try:
+        campaign = await repo.transition_campaign(db, campaign, to_stage="COMPLETED")
+    except ValueError:
+        pass  # already completed or can't transition — still ok
+
+    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
 class PublisherEmailRequest(BaseModel):
     to: str = ""
     subject: str = ""

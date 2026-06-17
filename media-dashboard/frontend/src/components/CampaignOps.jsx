@@ -11,6 +11,7 @@ import {
   createCampaign,
   getAdvertisers,
   getPublishers,
+  submitTrackingSetup,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
@@ -103,6 +104,78 @@ function buildEmailDraft(campaign) {
     "AdOps Team | Razorpay",
   ];
   return lines.join("\n");
+}
+
+function TrackingSetupForm({ campaign, onReload }) {
+  const [form, setForm] = useState({
+    advertiser_data_url: campaign.advertiser_data_url || "",
+    publisher_data_url: campaign.publisher_data_url || "",
+    segment_pub: campaign.segment_pub || "",
+    segment_adv: campaign.segment_adv || "",
+    goals_json: campaign.goals_json || "{}",
+    metrics_json: campaign.metrics_json || "{}",
+    additional_context: campaign.additional_context || "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  const handleSubmit = async () => {
+    if (!form.advertiser_data_url.trim() || !form.publisher_data_url.trim()) {
+      alert("Advertiser and Publisher Data Sheet URLs are required"); return;
+    }
+    if (!form.segment_pub.trim() || !form.segment_adv.trim()) {
+      alert("Segment names are required"); return;
+    }
+    setSubmitting(true);
+    try {
+      await submitTrackingSetup(campaign.campaign_id, form);
+      onReload();
+    } catch (e) { alert("Submit failed: " + e.message); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <div style={s.section}>
+      <div style={s.secTitle}>Campaign Tracking Setup</div>
+      <div style={{ fontSize: 12, color: c.muted, marginBottom: 14 }}>Fill the remaining fields to set up tracking. On submit, this will be written to the Automation Tracker and the campaign will be marked complete.</div>
+      <div style={s.grid2}>
+        <div style={s.field}>
+          <label style={s.label}>Advertiser Data Sheet URL *</label>
+          <input style={s.input} value={form.advertiser_data_url} onChange={(e) => set({ advertiser_data_url: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Publisher Data Sheet URL *</label>
+          <input style={s.input} value={form.publisher_data_url} onChange={(e) => set({ publisher_data_url: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Segment Name (Publisher) *</label>
+          <input style={s.input} value={form.segment_pub} onChange={(e) => set({ segment_pub: e.target.value })} placeholder="e.g. Seg 1A" />
+        </div>
+        <div style={s.field}>
+          <label style={s.label}>Segment Name (Advertiser) *</label>
+          <input style={s.input} value={form.segment_adv} onChange={(e) => set({ segment_adv: e.target.value })} placeholder="e.g. Partnership_Razorpay" />
+        </div>
+      </div>
+      <div style={s.field}>
+        <label style={s.label}>Goals JSON</label>
+        <textarea style={{ ...s.textarea, fontFamily: "monospace", fontSize: 12 }} value={form.goals_json} onChange={(e) => set({ goals_json: e.target.value })} placeholder='{"goals": {"daily": {...}, "weekly": {...}}}' />
+      </div>
+      <div style={s.field}>
+        <label style={s.label}>Metrics JSON</label>
+        <textarea style={{ ...s.textarea, fontFamily: "monospace", fontSize: 12 }} value={form.metrics_json} onChange={(e) => set({ metrics_json: e.target.value })} placeholder='{"metrics_library": {"metric_1": {...}}}' />
+      </div>
+      <div style={s.field}>
+        <label style={s.label}>Additional Context</label>
+        <textarea style={s.textarea} value={form.additional_context} onChange={(e) => set({ additional_context: e.target.value })} placeholder="Any notes or context..." />
+      </div>
+      <div style={s.btnRow}>
+        <button style={s.btnGreen} onClick={handleSubmit} disabled={submitting}>
+          {submitting ? "Submitting…" : "Submit Tracking & Complete Campaign ✓"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CampaignDetail({ campaign, meta, tasks, onReload }) {
@@ -338,9 +411,12 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
           </div>
         </div>
       )}
-      {stage === "LIVE" && (
-        <div style={s.btnRow}>
-          <button style={s.btnPrimary} onClick={() => handleTransition("COMPLETED")}>Mark Completed</button>
+      {stage === "LIVE" && !campaign.tracking_submitted && (
+        <TrackingSetupForm campaign={campaign} onReload={onReload} />
+      )}
+      {stage === "LIVE" && campaign.tracking_submitted && (
+        <div style={s.emailSent}>
+          <div style={s.emailSentTitle}>✅ Tracking setup submitted to Automation Tracker</div>
         </div>
       )}
     </div>
