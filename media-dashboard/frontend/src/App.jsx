@@ -22,6 +22,16 @@ import QueryConsole from "./components/QueryConsole";
 // ── Tab groups (Option C layout) ──────────────────────────────────────────────
 const TAB_GROUPS = [
   {
+    label: "Workflow",
+    color: "#db2777",
+    tabs: [
+      { id: "sales",  label: "Sales Pipeline",     icon: "🤝" },
+      { id: "pub-allocation", label: "Budget Allocation", icon: "💰" },
+      { id: "ops",    label: "Campaign Ops",      icon: "🚦" },
+      { id: "tracking", label: "Campaign Success & Tracking", icon: "📊" },
+    ],
+  },
+  {
     label: "Analytics",
     color: "#2563eb",
     tabs: [
@@ -51,16 +61,6 @@ const TAB_GROUPS = [
     tabs: [
       { id: "kpis",       label: "Global KPIs",         icon: "🎯" },
       { id: "onboarding", label: "Campaign Onboarding", icon: "📋" },
-    ],
-  },
-  {
-    label: "Workflow",
-    color: "#db2777",
-    tabs: [
-      { id: "sales",  label: "Sales Pipeline",     icon: "🤝" },
-      { id: "ops",    label: "Campaign Ops",      icon: "🚦" },
-      { id: "pub-allocation", label: "Budget Allocation", icon: "💰" },
-      { id: "tracking", label: "Campaign Success & Tracking", icon: "📊" },
     ],
   },
   {
