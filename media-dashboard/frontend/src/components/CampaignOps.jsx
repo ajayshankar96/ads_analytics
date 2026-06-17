@@ -195,18 +195,21 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
     const a = {};
     ASSET_FIELDS.forEach((f) => { a[f.key] = campaign[f.key] || ""; });
     setAssets(a);
-  }, [campaign.campaign_id]);
+  }, [campaign.campaign_id, campaign.current_stage, campaign.creative_url, campaign.logo_url]);
 
   const filledCount = ASSET_FIELDS.filter((f) => assets[f.key]?.trim()).length;
   const totalFields = ASSET_FIELDS.length;
   const allFilled = filledCount === totalFields;
   const pct = (filledCount / totalFields) * 100;
 
+  const [assetsSaved, setAssetsSaved] = useState(false);
+
   const handleSaveAssets = async () => {
     setSaving(true);
     try {
       await updateCampaignAssets(campaign.campaign_id, assets);
-      onReload();
+      setAssetsSaved(true);
+      setTimeout(() => setAssetsSaved(false), 2000);
     } catch (e) { alert("Save failed: " + e.message); }
     finally { setSaving(false); }
   };
@@ -231,20 +234,34 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
     if (!emailBody.trim()) { alert("Email body cannot be empty"); return; }
     setSending(true);
     try {
+      // 1. Save assets first so they persist
+      await updateCampaignAssets(campaign.campaign_id, assets);
+      // 2. Send email
       const token = await getGmailAccessToken();
       await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), subject: emailSubject, html: textToHtml(emailBody) });
       await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
-      try {
-        await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" });
-      } catch (e) { /* might already be at this stage */ }
+      // 3. Transition through stages: OPS_SETUP → ASSETS_RECEIVED → SHARED_TO_PUBLISHER
+      try { await transitionCampaign(campaign.campaign_id, { to_stage: "ASSETS_RECEIVED" }); } catch (e) { /* already past */ }
+      try { await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }); } catch (e) { /* already past */ }
       onReload();
     } catch (e) { alert("Send failed: " + e.message); }
     finally { setSending(false); }
   };
 
+  const STAGE_ORDER = ["OPS_SETUP", "ASSETS_RECEIVED", "SHARED_TO_PUBLISHER", "CREATIVE_REVIEW", "LIVE", "COMPLETED"];
+
   const handleTransition = async (toStage) => {
     try {
-      await transitionCampaign(campaign.campaign_id, { to_stage: toStage });
+      // Step through intermediate stages to reach the target
+      const curIdx = STAGE_ORDER.indexOf(stage);
+      const targetIdx = STAGE_ORDER.indexOf(toStage);
+      if (targetIdx > curIdx) {
+        for (let i = curIdx + 1; i <= targetIdx; i++) {
+          await transitionCampaign(campaign.campaign_id, { to_stage: STAGE_ORDER[i] });
+        }
+      } else {
+        await transitionCampaign(campaign.campaign_id, { to_stage: toStage });
+      }
       onReload();
     } catch (e) { alert("Transition failed: " + e.message); }
   };
@@ -332,7 +349,7 @@ function CampaignDetail({ campaign, meta, tasks, onReload }) {
             ))}
           </div>
           <div style={s.btnRow}>
-            <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : "Save Assets"}</button>
+            <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : assetsSaved ? "Saved ✓" : "Save Assets"}</button>
             {allFilled && !emailDrafted && (
               <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
             )}
