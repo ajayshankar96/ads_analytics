@@ -12,6 +12,7 @@ import {
   getAdvertisers,
   getPublishers,
   submitTrackingSetup,
+  getFilters,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
@@ -106,69 +107,163 @@ function buildEmailDraft(campaign) {
   return lines.join("\n");
 }
 
+const GOAL_PERIODS = ["daily", "weekly", "monthly", "date_agnostic"];
+
 function TrackingSetupForm({ campaign, onReload }) {
-  const [form, setForm] = useState({
-    advertiser_data_url: campaign.advertiser_data_url || "",
-    publisher_data_url: campaign.publisher_data_url || "",
-    segment_pub: campaign.segment_pub || "",
-    segment_adv: campaign.segment_adv || "",
-    goals_json: campaign.goals_json || "{}",
-    metrics_json: campaign.metrics_json || "{}",
-    additional_context: campaign.additional_context || "",
-  });
+  const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
+  const [pubDataUrl, setPubDataUrl] = useState(campaign.publisher_data_url || "");
+  const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
+  const [segmentAdv, setSegmentAdv] = useState(campaign.segment_adv || "");
+  const [goals, setGoals] = useState([{ name: "", period: "daily", value: "" }]);
+  const [metrics, setMetrics] = useState([{ display_name: "", definition: "", calculation: "" }]);
+  const [additionalContext, setAdditionalContext] = useState(campaign.additional_context || "");
+  const [segments, setSegments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  useEffect(() => {
+    getFilters().then((f) => { setSegments(f.segments || []); }).catch(() => {});
+  }, []);
+
+  const addGoal = () => setGoals([...goals, { name: "", period: "daily", value: "" }]);
+  const removeGoal = (i) => setGoals(goals.filter((_, idx) => idx !== i));
+  const updateGoal = (i, patch) => setGoals(goals.map((g, idx) => idx === i ? { ...g, ...patch } : g));
+
+  const addMetric = () => setMetrics([...metrics, { display_name: "", definition: "", calculation: "" }]);
+  const removeMetric = (i) => setMetrics(metrics.filter((_, idx) => idx !== i));
+  const updateMetric = (i, patch) => setMetrics(metrics.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+
+  const buildGoalsJson = () => {
+    const obj = { goals: { daily: {}, weekly: {}, monthly: {}, date_agnostic: {} } };
+    goals.forEach((g) => {
+      if (g.name.trim() && g.period) {
+        obj.goals[g.period][g.name.trim()] = parseFloat(g.value) || 0;
+      }
+    });
+    return JSON.stringify(obj);
+  };
+
+  const buildMetricsJson = () => {
+    const obj = { metrics_library: {} };
+    metrics.forEach((m, i) => {
+      if (m.display_name.trim()) {
+        obj.metrics_library[`metric_${i + 1}`] = {
+          display_name: m.display_name.trim(),
+          definition: m.definition.trim(),
+          calculation: m.calculation.trim(),
+        };
+      }
+    });
+    return JSON.stringify(obj);
+  };
 
   const handleSubmit = async () => {
-    if (!form.advertiser_data_url.trim() || !form.publisher_data_url.trim()) {
-      alert("Advertiser and Publisher Data Sheet URLs are required"); return;
-    }
-    if (!form.segment_pub.trim() || !form.segment_adv.trim()) {
-      alert("Segment names are required"); return;
-    }
+    if (!advDataUrl.trim() || !pubDataUrl.trim()) { alert("Advertiser and Publisher Data Sheet URLs are required"); return; }
+    if (!segmentPub.trim() || !segmentAdv.trim()) { alert("Segment names are required"); return; }
     setSubmitting(true);
     try {
-      await submitTrackingSetup(campaign.campaign_id, form);
+      await submitTrackingSetup(campaign.campaign_id, {
+        advertiser_data_url: advDataUrl,
+        publisher_data_url: pubDataUrl,
+        segment_pub: segmentPub,
+        segment_adv: segmentAdv,
+        goals_json: buildGoalsJson(),
+        metrics_json: buildMetricsJson(),
+        additional_context: additionalContext,
+      });
       onReload();
     } catch (e) { alert("Submit failed: " + e.message); }
     finally { setSubmitting(false); }
+  };
+
+  const ts = {
+    row: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
+    addBtn: { background: "#E3F6EE", color: c.green, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+    removeBtn: { background: "#FEE2E2", color: c.red, border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" },
+    card: { border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px", marginBottom: 12 },
+    cardTitle: { fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10, display: "flex", justifyContent: "space-between" },
   };
 
   return (
     <div style={s.section}>
       <div style={s.secTitle}>Campaign Tracking Setup</div>
       <div style={{ fontSize: 12, color: c.muted, marginBottom: 14 }}>Fill the remaining fields to set up tracking. On submit, this will be written to the Automation Tracker and the campaign will be marked complete.</div>
+
       <div style={s.grid2}>
         <div style={s.field}>
           <label style={s.label}>Advertiser Data Sheet URL *</label>
-          <input style={s.input} value={form.advertiser_data_url} onChange={(e) => set({ advertiser_data_url: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." />
+          <input style={s.input} value={advDataUrl} onChange={(e) => setAdvDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
         </div>
         <div style={s.field}>
           <label style={s.label}>Publisher Data Sheet URL *</label>
-          <input style={s.input} value={form.publisher_data_url} onChange={(e) => set({ publisher_data_url: e.target.value })} placeholder="https://docs.google.com/spreadsheets/d/..." />
+          <input style={s.input} value={pubDataUrl} onChange={(e) => setPubDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
         </div>
         <div style={s.field}>
           <label style={s.label}>Segment Name (Publisher) *</label>
-          <input style={s.input} value={form.segment_pub} onChange={(e) => set({ segment_pub: e.target.value })} placeholder="e.g. Seg 1A" />
+          <select style={s.input} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)}>
+            <option value="">Select segment…</option>
+            {segments.map((seg) => <option key={seg} value={seg}>{seg}</option>)}
+            <option value="__custom">— Enter custom —</option>
+          </select>
+          {segmentPub === "__custom" && (
+            <input style={{ ...s.input, marginTop: 6 }} value="" onChange={(e) => setSegmentPub(e.target.value)} placeholder="Custom segment name" />
+          )}
         </div>
         <div style={s.field}>
           <label style={s.label}>Segment Name (Advertiser) *</label>
-          <input style={s.input} value={form.segment_adv} onChange={(e) => set({ segment_adv: e.target.value })} placeholder="e.g. Partnership_Razorpay" />
+          <input style={s.input} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" />
         </div>
       </div>
-      <div style={s.field}>
-        <label style={s.label}>Goals JSON</label>
-        <textarea style={{ ...s.textarea, fontFamily: "monospace", fontSize: 12 }} value={form.goals_json} onChange={(e) => set({ goals_json: e.target.value })} placeholder='{"goals": {"daily": {...}, "weekly": {...}}}' />
+
+      {/* Goals — structured UI */}
+      <div style={{ ...s.field, marginTop: 8 }}>
+        <label style={{ ...s.label, fontSize: 13, marginBottom: 10 }}>Goals</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 40px", gap: 8, marginBottom: 6, fontSize: 11, color: c.muted, fontWeight: 700 }}>
+          <span>GOAL NAME</span><span>PERIOD</span><span>VALUE</span><span></span>
+        </div>
+        {goals.map((g, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 40px", gap: 8, marginBottom: 8 }}>
+            <input style={s.input} value={g.name} onChange={(e) => updateGoal(i, { name: e.target.value })} placeholder="e.g. CPL" />
+            <select style={s.input} value={g.period} onChange={(e) => updateGoal(i, { period: e.target.value })}>
+              {GOAL_PERIODS.map((p) => <option key={p} value={p}>{p.replace("_", " ")}</option>)}
+            </select>
+            <input style={s.input} type="number" value={g.value} onChange={(e) => updateGoal(i, { value: e.target.value })} placeholder="0" />
+            <button style={ts.removeBtn} onClick={() => removeGoal(i)}>✕</button>
+          </div>
+        ))}
+        <button style={ts.addBtn} onClick={addGoal}>+ Add Goal</button>
       </div>
-      <div style={s.field}>
-        <label style={s.label}>Metrics JSON</label>
-        <textarea style={{ ...s.textarea, fontFamily: "monospace", fontSize: 12 }} value={form.metrics_json} onChange={(e) => set({ metrics_json: e.target.value })} placeholder='{"metrics_library": {"metric_1": {...}}}' />
+
+      {/* Metrics — structured UI */}
+      <div style={{ ...s.field, marginTop: 16 }}>
+        <label style={{ ...s.label, fontSize: 13, marginBottom: 10 }}>Metrics Library</label>
+        {metrics.map((m, i) => (
+          <div key={i} style={ts.card}>
+            <div style={ts.cardTitle}>
+              <span>Metric {i + 1}</span>
+              <button style={ts.removeBtn} onClick={() => removeMetric(i)}>Remove</button>
+            </div>
+            <div style={s.field}>
+              <label style={{ ...s.label, fontSize: 11 }}>Display Name</label>
+              <input style={s.input} value={m.display_name} onChange={(e) => updateMetric(i, { display_name: e.target.value })} placeholder="e.g. Leads" />
+            </div>
+            <div style={s.field}>
+              <label style={{ ...s.label, fontSize: 11 }}>Definition</label>
+              <input style={s.input} value={m.definition} onChange={(e) => updateMetric(i, { definition: e.target.value })} placeholder="e.g. Leads data from advertiser sheet" />
+            </div>
+            <div style={s.field}>
+              <label style={{ ...s.label, fontSize: 11 }}>Calculation</label>
+              <input style={s.input} value={m.calculation} onChange={(e) => updateMetric(i, { calculation: e.target.value })} placeholder="e.g. Spends/QL" />
+            </div>
+          </div>
+        ))}
+        <button style={ts.addBtn} onClick={addMetric}>+ Add Metric</button>
       </div>
-      <div style={s.field}>
+
+      <div style={{ ...s.field, marginTop: 16 }}>
         <label style={s.label}>Additional Context</label>
-        <textarea style={s.textarea} value={form.additional_context} onChange={(e) => set({ additional_context: e.target.value })} placeholder="Any notes or context..." />
+        <textarea style={s.textarea} value={additionalContext} onChange={(e) => setAdditionalContext(e.target.value)} placeholder="Any notes or context..." />
       </div>
+
       <div style={s.btnRow}>
         <button style={s.btnGreen} onClick={handleSubmit} disabled={submitting}>
           {submitting ? "Submitting…" : "Submit Tracking & Complete Campaign ✓"}
