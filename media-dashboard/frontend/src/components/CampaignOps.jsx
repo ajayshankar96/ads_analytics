@@ -437,7 +437,10 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
 
   useEffect(() => {
     if (showPanel) {
-      getAvailableCombos().then((d) => setCombos(d.combos || [])).catch(() => {});
+      fetch("/api/workflow/available-combos", { credentials: "same-origin" })
+        .then((r) => r.json())
+        .then((d) => setCombos(d.combos || []))
+        .catch((e) => console.error("combos error:", e));
     }
   }, [showPanel]);
 
