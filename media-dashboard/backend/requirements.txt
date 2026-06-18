@@ -13,3 +13,4 @@ asyncpg==0.29.0
 alembic==1.13.2
 itsdangerous==2.2.0
 python-multipart==0.0.9
+pg8000>=1.30.0

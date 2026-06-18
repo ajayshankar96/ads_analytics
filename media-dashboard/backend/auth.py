@@ -40,11 +40,48 @@ SESSION_HOURS = 8
 COOKIE_NAME = "md_session"
 COOKIE_DOMAIN = os.getenv("SESSION_COOKIE_DOMAIN", ".dev.razorpay.in")
 
-ALLOWED_EMAILS = set(
+_ENV_ALLOWED = set(
     e.strip().lower()
     for e in os.getenv("ALLOWED_EMAILS", "ajay.shankar@razorpay.com").split(",")
     if e.strip()
 )
+
+def _get_db_allowed_emails() -> set:
+    """Load allowed emails from rmn_user_roles table (cached 60s)."""
+    import time
+    now = time.time()
+    if now - _get_db_allowed_emails._ts < 60 and _get_db_allowed_emails._cache:
+        return _get_db_allowed_emails._cache
+    try:
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            return set()
+        # Use synchronous psycopg2-style connection via sqlalchemy
+        from sqlalchemy import create_engine, text
+        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql://", "postgresql+psycopg2://")
+        # try psycopg2, fall back to pg8000
+        try:
+            eng = create_engine(sync_url, pool_pre_ping=True)
+        except Exception:
+            sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+pg8000://").replace("postgresql://", "postgresql+pg8000://")
+            eng = create_engine(sync_url, pool_pre_ping=True)
+        with eng.connect() as conn:
+            rows = conn.execute(text("SELECT email FROM rmn_user_roles")).fetchall()
+            emails = {r[0].strip().lower() for r in rows if r[0]}
+        _get_db_allowed_emails._cache = emails
+        _get_db_allowed_emails._ts = now
+        return emails
+    except Exception:
+        return _get_db_allowed_emails._cache or set()
+
+_get_db_allowed_emails._ts = 0
+_get_db_allowed_emails._cache = set()
+
+ALLOWED_EMAILS = _ENV_ALLOWED  # kept for backward compat; actual check uses the function below
+
+def is_email_allowed(email: str) -> bool:
+    e = email.strip().lower()
+    return e in _ENV_ALLOWED or e in _get_db_allowed_emails()
 
 # Admins additionally see the in-app query console.
 ADMIN_EMAILS = set(
@@ -218,7 +255,7 @@ def auth_callback(request: Request, code: str = None, state: str = None, error: 
     email = userinfo.get("email", "").lower().strip()
     name = userinfo.get("name", email)
 
-    if email not in ALLOWED_EMAILS:
+    if not is_email_allowed(email):
         logger.warning(f"[ACCESS_DENIED] {email}")
         return HTMLResponse(
             f"<!doctype html><html><body style='font-family:sans-serif;text-align:center;padding:60px'>"
