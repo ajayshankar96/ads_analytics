@@ -225,6 +225,25 @@ export default function CampaignTracking({ userRole = "VIEWER" }) {
                       <div style={s.doneCard}>
                         <div style={s.doneTitle}>✅ Tracking submitted to Automation Tracker</div>
                       </div>
+                      <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Tracking Details</div>
+                        {[
+                          ["Advertiser Data URL", cam.advertiser_data_url],
+                          ["Publisher Data URL", cam.publisher_data_url],
+                          ["Segment (Publisher)", cam.segment_pub],
+                          ["Segment (Advertiser)", cam.segment_adv],
+                          ["Goals", cam.goals_json],
+                          ["Metrics", cam.metrics_json],
+                          ["Additional Context", cam.additional_context],
+                        ].map(([label, val]) => (
+                          <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 13 }}>
+                            <span style={{ color: c.muted, minWidth: 160 }}>{label}</span>
+                            <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+                              {val ? (val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : val) : "—"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     canEdit ? <TrackingForm campaign={cam} segments={segments} onDone={load} /> :
