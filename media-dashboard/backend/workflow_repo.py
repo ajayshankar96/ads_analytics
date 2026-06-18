@@ -341,6 +341,36 @@ async def next_campaign_id(db: AsyncSession, adv_name: str, pub_name: str) -> st
     return f"{prefix}{maxn + 1:04d}"
 
 
+async def create_new_campaign(db: AsyncSession, advertiser: models.Advertiser,
+                              publisher_id: Optional[str] = None,
+                              publisher_name: Optional[str] = None,
+                              offer_title: Optional[str] = None) -> models.Campaign:
+    """Create a new campaign (always creates, supports multiple per adv+pub)."""
+    camp_id = await next_campaign_id(db, advertiser.name, publisher_name or "")
+    campaign = models.Campaign(
+        id=camp_id,
+        agreement_id="",
+        name=f"{advertiser.name} campaign",
+        current_stage=wf.STAGE_OPS_SETUP,
+        advertiser_ref_id=advertiser.id,
+        advertiser_name=advertiser.name,
+        publisher_id=publisher_id,
+        publisher_name=publisher_name,
+        offer_title=offer_title,
+    )
+    db.add(campaign)
+    for step in wf.OPS_STEPS:
+        db.add(models.OpsTask(id=wf.new_id("ops"), campaign_id=campaign.id, step=step, status="PENDING"))
+    db.add(models.StageTransition(
+        entity_type="CAMPAIGN", entity_id=campaign.id,
+        from_stage="CREATED", to_stage=wf.STAGE_OPS_SETUP,
+        note=f"created for {advertiser.id}" + (f" × {publisher_name}" if publisher_name else "") + (f" — {offer_title}" if offer_title else ""),
+    ))
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
 async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser,
                                        publisher_id: Optional[str] = None,
                                        publisher_name: Optional[str] = None) -> models.Campaign:

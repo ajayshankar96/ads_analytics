@@ -296,7 +296,11 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
                 ) : f.type === "textarea" ? (
                   <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
                 ) : (
-                  <input style={s.input} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
+                  <input style={{ ...s.input, ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
+                    value={assets[f.key]}
+                    onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
+                    disabled={f.key === "offer_title" && !!campaign.offer_title}
+                    placeholder="—" />
                 )}
               </div>
             ))}
@@ -424,48 +428,79 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
   );
 }
 
-function AvailableCombos({ canEdit, onCreated }) {
+function CreateCampaignPanel({ canEdit, onCreated }) {
+  const [showPanel, setShowPanel] = useState(false);
   const [combos, setCombos] = useState([]);
-  const [creating, setCreating] = useState(null);
+  const [selectedCombo, setSelectedCombo] = useState(null);
+  const [offerTitle, setOfferTitle] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    getAvailableCombos().then((d) => setCombos(d.combos || [])).catch(() => {});
-  }, []);
+    if (showPanel) {
+      getAvailableCombos().then((d) => setCombos(d.combos || [])).catch(() => {});
+    }
+  }, [showPanel]);
 
-  if (combos.length === 0) return null;
-
-  const handleCreate = async (combo) => {
-    setCreating(`${combo.advertiser_id}-${combo.publisher_id}`);
+  const handleCreate = async () => {
+    if (!selectedCombo) { alert("Select an Advertiser × Publisher"); return; }
+    if (!offerTitle.trim()) { alert("Enter an Offer Title"); return; }
+    setCreating(true);
     try {
-      await createCampaign({ advertiser_id: combo.advertiser_id, publisher_id: combo.publisher_id });
-      setCombos((prev) => prev.filter((c) => !(c.advertiser_id === combo.advertiser_id && c.publisher_id === combo.publisher_id)));
+      await createCampaign({ advertiser_id: selectedCombo.advertiser_id, publisher_id: selectedCombo.publisher_id, offer_title: offerTitle.trim() });
+      setShowPanel(false);
+      setSelectedCombo(null);
+      setOfferTitle("");
       onCreated();
     } catch (e) { alert("Failed: " + e.message); }
-    finally { setCreating(null); }
+    finally { setCreating(false); }
   };
 
+  if (!canEdit) return null;
+
   return (
-    <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Available Advertiser × Publisher (Budget Allocated)</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {combos.map((combo) => {
-          const key = `${combo.advertiser_id}-${combo.publisher_id}`;
-          const isCreating = creating === key;
-          return (
-            <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#fff", borderRadius: 8, border: `1px solid ${c.line}`, fontSize: 13 }}>
-              <span style={{ fontWeight: 600, color: c.ink }}>{combo.advertiser_name}</span>
-              <span style={{ color: c.muted }}>→</span>
-              <span style={{ color: c.blue, fontWeight: 600 }}>{combo.publisher_name}</span>
-              {canEdit && (
-                <button onClick={() => handleCreate(combo)} disabled={isCreating}
-                  style={{ background: c.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", marginLeft: 6 }}>
-                  {isCreating ? "…" : "+ Create"}
-                </button>
-              )}
+    <div style={{ marginBottom: 16 }}>
+      {!showPanel ? (
+        <button onClick={() => setShowPanel(true)} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          + Create Campaign
+        </button>
+      ) : (
+        <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Create New Campaign</div>
+            <button onClick={() => setShowPanel(false)} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 16 }}>✕</button>
+          </div>
+          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>Select Advertiser × Publisher combo and enter the offer title.</div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {combos.map((combo) => {
+              const key = `${combo.advertiser_id}-${combo.publisher_id}`;
+              const isSelected = selectedCombo && selectedCombo.advertiser_id === combo.advertiser_id && selectedCombo.publisher_id === combo.publisher_id;
+              return (
+                <div key={key} onClick={() => setSelectedCombo(combo)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: isSelected ? "#E3F6EE" : "#fff", borderRadius: 8, border: `1.5px solid ${isSelected ? c.green : c.line}`, fontSize: 13, cursor: "pointer" }}>
+                  <span style={{ fontWeight: 600, color: c.ink }}>{combo.advertiser_name}</span>
+                  <span style={{ color: c.muted }}>→</span>
+                  <span style={{ color: c.blue, fontWeight: 600 }}>{combo.publisher_name}</span>
+                </div>
+              );
+            })}
+            {combos.length === 0 && <div style={{ fontSize: 12, color: c.muted }}>No budget allocated yet. Allocate budget in the Budget Allocation tab first.</div>}
+          </div>
+
+          {selectedCombo && (
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Offer Title *</label>
+                <input style={s.input} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="e.g. Get Flat ₹250 Discount + ₹250 Cashback" />
+              </div>
+              <button onClick={handleCreate} disabled={creating}
+                style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                {creating ? "Creating…" : "Create Campaign"}
+              </button>
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -508,7 +543,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
 
   return (
     <div>
-      <AvailableCombos canEdit={canEdit} onCreated={load} />
+      <CreateCampaignPanel canEdit={canEdit} onCreated={load} />
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: c.muted }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</div>

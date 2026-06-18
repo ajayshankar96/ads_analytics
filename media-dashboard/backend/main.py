@@ -1071,13 +1071,12 @@ async def available_combos(db: AsyncSession = Depends(get_db)):
 
     combos = []
     for adv_id, pub_id in allocs:
-        if (adv_id, pub_id) not in existing:
-            combos.append({
-                "advertiser_id": adv_id,
-                "advertiser_name": adv_map.get(adv_id, adv_id),
-                "publisher_id": pub_id,
-                "publisher_name": pub_map.get(pub_id, pub_id),
-            })
+        combos.append({
+            "advertiser_id": adv_id,
+            "advertiser_name": adv_map.get(adv_id, adv_id),
+            "publisher_id": pub_id,
+            "publisher_name": pub_map.get(pub_id, pub_id),
+        })
 
     return {"combos": combos}
 
@@ -1085,6 +1084,7 @@ async def available_combos(db: AsyncSession = Depends(get_db)):
 class CreateCampaignRequest(BaseModel):
     advertiser_id: str
     publisher_id: Optional[str] = None
+    offer_title: Optional[str] = None
 
 
 @app.post("/api/workflow/campaigns")
@@ -1099,7 +1099,7 @@ async def create_campaign(req: CreateCampaignRequest, db: AsyncSession = Depends
         if not pub:
             raise HTTPException(status_code=404, detail=f"publisher {req.publisher_id} not found")
         pub_name = pub["name"]
-    campaign = await repo.open_campaign_for_advertiser(db, adv, publisher_id=req.publisher_id, publisher_name=pub_name)
+    campaign = await repo.create_new_campaign(db, adv, publisher_id=req.publisher_id, publisher_name=pub_name, offer_title=req.offer_title)
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
