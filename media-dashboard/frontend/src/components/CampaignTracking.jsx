@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", bg: "#F7F8FA" };
 
@@ -38,6 +38,23 @@ const GOAL_PERIODS = ["daily", "weekly", "monthly", "date_agnostic"];
 
 const CAMPAIGN_TYPES = ["Single Campaign Sheet", "Two different Sheets"];
 
+const COMPUTED_PRESETS = [
+  { name: "CPL", formula: "Spends / Leads", needs: ["Leads"] },
+  { name: "CPQL", formula: "Spends / QL", needs: ["QL"] },
+  { name: "CPA", formula: "Spends / Orders", needs: ["Orders"] },
+  { name: "ROAS", formula: "Revenue / Spends", needs: ["Revenue"] },
+  { name: "CAC", formula: "Spends / Customers", needs: ["Customers"] },
+  { name: "CPR", formula: "Spends / Registrations", needs: ["Registrations"] },
+  { name: "CPQQG", formula: "Spends / QQG", needs: ["QQG"] },
+];
+
+const INDUSTRY_PRESETS = {
+  "BPC": ["Orders", "Revenue", "Leads", "QL"],
+  "BFSI": ["Leads", "QL", "Applications", "Disbursements"],
+  "Non BPC": ["Orders", "Revenue", "Leads"],
+  "E-commerce": ["Orders", "Revenue", "Leads", "QL", "QQG"],
+};
+
 function TrackingForm({ campaign, segments, onDone }) {
   const [campaignType, setCampaignType] = useState("Single Campaign Sheet");
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
@@ -45,17 +62,52 @@ function TrackingForm({ campaign, segments, onDone }) {
   const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
   const [segmentAdv, setSegmentAdv] = useState(campaign.segment_adv || "");
   const [goals, setGoals] = useState([{ name: "", period: "daily", value: "" }]);
-  const [metrics, setMetrics] = useState([{ display_name: "", definition: "", calculation: "" }]);
   const [additionalContext, setAdditionalContext] = useState(campaign.additional_context || "");
   const [submitting, setSubmitting] = useState(false);
+
+  // Metrics auto-detection
+  const [sheetHeaders, setSheetHeaders] = useState([]);
+  const [loadingHeaders, setLoadingHeaders] = useState(false);
+  const [selectedMetrics, setSelectedMetrics] = useState([]);
+  const [computedMetrics, setComputedMetrics] = useState([]);
+  const [customMetrics, setCustomMetrics] = useState([]);
+
+  const handleDetectHeaders = async () => {
+    if (!advDataUrl.trim()) { alert("Enter Advertiser Data Sheet URL first"); return; }
+    setLoadingHeaders(true);
+    try {
+      const res = await getSheetHeaders(advDataUrl);
+      setSheetHeaders(res.headers || []);
+    } catch (e) { alert("Failed to read sheet: " + e.message); }
+    finally { setLoadingHeaders(false); }
+  };
+
+  const toggleMetric = (header) => {
+    setSelectedMetrics((prev) =>
+      prev.includes(header) ? prev.filter((h) => h !== header) : [...prev, header]
+    );
+  };
+
+  const toggleComputed = (preset) => {
+    setComputedMetrics((prev) =>
+      prev.find((p) => p.name === preset.name)
+        ? prev.filter((p) => p.name !== preset.name)
+        : [...prev, preset]
+    );
+  };
+
+  const addCustomMetric = () => setCustomMetrics([...customMetrics, { display_name: "", definition: "", calculation: "" }]);
+  const removeCustomMetric = (i) => setCustomMetrics(customMetrics.filter((_, idx) => idx !== i));
+  const updateCustomMetric = (i, patch) => setCustomMetrics(customMetrics.map((m, idx) => idx === i ? { ...m, ...patch } : m));
+
+  // Suggest computed metrics based on selected direct metrics
+  const suggestedComputed = COMPUTED_PRESETS.filter((p) =>
+    p.needs.some((n) => selectedMetrics.some((m) => m.toLowerCase().includes(n.toLowerCase())))
+  );
 
   const addGoal = () => setGoals([...goals, { name: "", period: "daily", value: "" }]);
   const removeGoal = (i) => setGoals(goals.filter((_, idx) => idx !== i));
   const updateGoal = (i, patch) => setGoals(goals.map((g, idx) => idx === i ? { ...g, ...patch } : g));
-
-  const addMetric = () => setMetrics([...metrics, { display_name: "", definition: "", calculation: "" }]);
-  const removeMetric = (i) => setMetrics(metrics.filter((_, idx) => idx !== i));
-  const updateMetric = (i, patch) => setMetrics(metrics.map((m, idx) => idx === i ? { ...m, ...patch } : m));
 
   const buildGoalsJson = () => {
     const obj = { goals: { daily: {}, weekly: {}, monthly: {}, date_agnostic: {} } };
@@ -67,9 +119,22 @@ function TrackingForm({ campaign, segments, onDone }) {
 
   const buildMetricsJson = () => {
     const obj = { metrics_library: {} };
-    metrics.forEach((m, i) => {
+    let idx = 1;
+    // Direct metrics (from sheet headers)
+    selectedMetrics.forEach((m) => {
+      obj.metrics_library[`metric_${idx}`] = { display_name: m, definition: `${m} data from advertiser sheet`, calculation: "" };
+      idx++;
+    });
+    // Computed metrics (from presets)
+    computedMetrics.forEach((p) => {
+      obj.metrics_library[`metric_${idx}`] = { display_name: p.name, definition: `Computed: ${p.formula}`, calculation: p.formula };
+      idx++;
+    });
+    // Custom metrics (manually added)
+    customMetrics.forEach((m) => {
       if (m.display_name.trim()) {
-        obj.metrics_library[`metric_${i + 1}`] = { display_name: m.display_name.trim(), definition: m.definition.trim(), calculation: m.calculation.trim() };
+        obj.metrics_library[`metric_${idx}`] = { display_name: m.display_name.trim(), definition: m.definition.trim(), calculation: m.calculation.trim() };
+        idx++;
       }
     });
     return JSON.stringify(obj);
@@ -78,6 +143,7 @@ function TrackingForm({ campaign, segments, onDone }) {
   const handleSubmit = async () => {
     if (!advDataUrl.trim() || !pubDataUrl.trim()) { alert("Advertiser and Publisher Data Sheet URLs are required"); return; }
     if (!segmentPub.trim() || !segmentAdv.trim()) { alert("Segment names are required"); return; }
+    if (selectedMetrics.length === 0 && customMetrics.length === 0) { alert("Select at least one metric to track"); return; }
     setSubmitting(true);
     try {
       await submitTrackingSetup(campaign.campaign_id, {
@@ -143,18 +209,89 @@ function TrackingForm({ campaign, segments, onDone }) {
         <button style={s.addBtn} onClick={addGoal}>+ Add Goal</button>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics Library — Auto-detect */}
       <div style={{ ...s.field, marginTop: 16 }}>
-        <label style={{ ...s.label, fontSize: 13, marginBottom: 10 }}>Metrics Library</label>
-        {metrics.map((m, i) => (
+        <label style={{ ...s.label, fontSize: 13, marginBottom: 6 }}>Metrics Library</label>
+        <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>
+          Click "Detect Columns" to read your advertiser sheet headers and select which metrics to track.
+        </div>
+
+        <button style={{ ...s.addBtn, marginBottom: 12 }} onClick={handleDetectHeaders} disabled={loadingHeaders}>
+          {loadingHeaders ? "Reading sheet…" : "Detect Columns from Advertiser Sheet"}
+        </button>
+
+        {/* Industry preset buttons */}
+        {sheetHeaders.length === 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, color: c.muted, marginBottom: 6, fontWeight: 700 }}>Or use a preset:</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {Object.entries(INDUSTRY_PRESETS).map(([industry, presetMetrics]) => (
+                <button key={industry} style={{ ...s.removeBtn, background: "#EAF0FF", color: c.blue }} onClick={() => setSelectedMetrics(presetMetrics)}>
+                  {industry}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Detected headers as checkboxes */}
+        {sheetHeaders.length > 0 && (
+          <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 8 }}>
+              Select metrics to track ({selectedMetrics.length} selected)
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {sheetHeaders.map((h) => {
+                const isSelected = selectedMetrics.includes(h);
+                return (
+                  <label key={h} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", background: isSelected ? "#E3F6EE" : "#F7F8FA", border: `1px solid ${isSelected ? c.green : c.line}`, fontWeight: isSelected ? 600 : 400 }}>
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleMetric(h)} style={{ width: 14, height: 14 }} />
+                    {h}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Suggested computed metrics */}
+        {selectedMetrics.length > 0 && suggestedComputed.length > 0 && (
+          <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FEFCE8" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#92400E", marginBottom: 8 }}>
+              Suggested computed metrics (based on your selection)
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {suggestedComputed.map((p) => {
+                const isSelected = computedMetrics.find((cp) => cp.name === p.name);
+                return (
+                  <label key={p.name} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", background: isSelected ? "#E3F6EE" : "#fff", border: `1px solid ${isSelected ? c.green : c.line}` }}>
+                    <input type="checkbox" checked={!!isSelected} onChange={() => toggleComputed(p)} style={{ width: 14, height: 14 }} />
+                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                    <span style={{ color: c.muted, fontSize: 11 }}>= {p.formula}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Selected summary */}
+        {(selectedMetrics.length > 0 || computedMetrics.length > 0) && (
+          <div style={{ fontSize: 12, color: c.green, fontWeight: 600, marginBottom: 10 }}>
+            Direct: {selectedMetrics.join(", ") || "none"} | Computed: {computedMetrics.map((p) => p.name).join(", ") || "none"}
+          </div>
+        )}
+
+        {/* Custom metrics (manual add) */}
+        <div style={{ fontSize: 11, color: c.muted, fontWeight: 700, marginTop: 12, marginBottom: 8 }}>Custom metrics (optional)</div>
+        {customMetrics.map((m, i) => (
           <div key={i} style={s.metricCard}>
-            <div style={s.metricTitle}><span>Metric {i + 1}</span><button style={s.removeBtn} onClick={() => removeMetric(i)}>Remove</button></div>
-            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Display Name</label><input style={s.input} value={m.display_name} onChange={(e) => updateMetric(i, { display_name: e.target.value })} placeholder="e.g. Leads" /></div>
-            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Definition</label><input style={s.input} value={m.definition} onChange={(e) => updateMetric(i, { definition: e.target.value })} placeholder="e.g. Leads data from advertiser sheet" /></div>
-            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Calculation</label><input style={s.input} value={m.calculation} onChange={(e) => updateMetric(i, { calculation: e.target.value })} placeholder="e.g. Spends/QL" /></div>
+            <div style={s.metricTitle}><span>Custom {i + 1}</span><button style={s.removeBtn} onClick={() => removeCustomMetric(i)}>Remove</button></div>
+            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Display Name</label><input style={s.input} value={m.display_name} onChange={(e) => updateCustomMetric(i, { display_name: e.target.value })} placeholder="e.g. Leads" /></div>
+            <div style={s.field}><label style={{ ...s.label, fontSize: 11 }}>Calculation (optional)</label><input style={s.input} value={m.calculation} onChange={(e) => updateCustomMetric(i, { calculation: e.target.value })} placeholder="e.g. Spends/QL" /></div>
           </div>
         ))}
-        <button style={s.addBtn} onClick={addMetric}>+ Add Metric</button>
+        <button style={{ ...s.addBtn, background: "#F7F8FA", color: c.sub, border: `1px solid ${c.line}` }} onClick={addCustomMetric}>+ Add custom metric</button>
       </div>
 
       <div style={{ ...s.field, marginTop: 16 }}>

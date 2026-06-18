@@ -1267,6 +1267,14 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+@app.get("/api/sheet-headers")
+async def get_sheet_headers(url: str = Query(...)):
+    """Read column headers from a Google Sheet URL for metric auto-detection."""
+    from sheets_client import read_sheet_headers
+    headers = read_sheet_headers(url)
+    return {"headers": headers}
+
+
 class TrackingSetupRequest(BaseModel):
     campaign_type: str = "Single Campaign Sheet"
     advertiser_data_url: str = ""

@@ -226,6 +226,9 @@ export const submitTrackingSetup = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const getSheetHeaders = (url) =>
+  apiFetch(`/api/sheet-headers${buildQuery({ url })}`);
+
 export const markNotLive = (campaignId, reason) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/not-live`, {
     method: "POST",

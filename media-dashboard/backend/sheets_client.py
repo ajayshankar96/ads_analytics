@@ -240,6 +240,31 @@ def upload_campaign_asset(file_bytes: bytes, filename: str, mime_type: str) -> d
     return {"id": created["id"], "url": view_url, "name": filename, "web_view_link": created.get("webViewLink", "")}
 
 
+def read_sheet_headers(sheet_url: str) -> list:
+    """Read header row from a Google Sheet URL. Returns list of column names."""
+    import re
+    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
+    if not match:
+        return []
+    sheet_id = match.group(1)
+    try:
+        service = _get_sheets()
+        # Try to read first few rows to find the header (often row 1 or row 3)
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="A1:ZZ5"
+        ).execute()
+        rows = result.get("values", [])
+        if not rows:
+            return []
+        # Find the row with the most non-empty cells (likely the header)
+        best_row = max(rows, key=lambda r: len([c for c in r if c.strip()]))
+        headers = [c.strip() for c in best_row if c.strip()]
+        return headers
+    except Exception as e:
+        logger.warning(f"Failed to read sheet headers from {sheet_url}: {e}")
+        return []
+
+
 def set_app_properties(file_id: str, props: dict) -> None:
     """Set/merge appProperties (app-private metadata) on a Drive file."""
     drive = _get_drive()
