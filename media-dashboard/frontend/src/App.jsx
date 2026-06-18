@@ -316,7 +316,7 @@ export default function App() {
   const [showCache, setShowCache]         = useState(false);
   const [dataSource, setDataSource]       = useState(() => {
     const saved = localStorage.getItem("dataSource");
-    return saved === "postgres" ? "postgres" : "sheet";
+    return saved === "sheet" ? "sheet" : "postgres";
   });
 
   useEffect(() => {
