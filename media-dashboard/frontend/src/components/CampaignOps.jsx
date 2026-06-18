@@ -494,7 +494,8 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
       {campaigns.map((cam) => {
         const curIdx = stages.indexOf(cam.current_stage);
         const isSelected = selected === cam.campaign_id;
-        const isTerminal = ["COMPLETED", "CANCELLED"].includes(cam.current_stage);
+        const isLive = cam.current_stage === "LIVE";
+        const isNotLive = cam.current_stage === "NOT_LIVE";
         return (
           <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }}>
             <div style={{ ...s.head, cursor: "pointer" }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
@@ -505,7 +506,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
                 </div>
                 <div style={s.advRef}>{cam.campaign_id}{cam.advertiser_ref_id ? ` · ${cam.advertiser_ref_id}` : ""}</div>
               </div>
-              <span style={{ ...s.badge, ...(isTerminal ? s.badgeDone : s.badgeActive) }}>
+              <span style={{ ...s.badge, ...(isLive ? s.badgeDone : isNotLive ? { background: "#FEE2E2", color: c.red } : s.badgeActive) }}>
                 {meta.labels?.[cam.current_stage] || cam.current_stage}
               </span>
             </div>
