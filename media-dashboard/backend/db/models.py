@@ -211,7 +211,6 @@ class BudgetAllocation(Base):
 
 class CampaignMetric(Base):
     __tablename__ = "rmn_campaign_metrics"
-    __table_args__ = (Index("ix_rmn_metrics_camp_date", "campaign_id", "date", unique=True),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     campaign_id: Mapped[str] = mapped_column(String(32), index=True)

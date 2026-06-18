@@ -40,7 +40,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_rmn_metrics_campaign_id", "rmn_campaign_metrics", ["campaign_id"])
     op.create_index("ix_rmn_metrics_date", "rmn_campaign_metrics", ["date"])
-    op.create_index("ix_rmn_metrics_camp_date", "rmn_campaign_metrics", ["campaign_id", "date"], unique=True)
+    op.create_index("ix_rmn_metrics_camp_date", "rmn_campaign_metrics", ["campaign_id", "date"])
 
 
 def downgrade() -> None:
