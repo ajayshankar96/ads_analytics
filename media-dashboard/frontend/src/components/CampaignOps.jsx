@@ -106,7 +106,7 @@ function buildEmailDraft(campaign) {
   return lines.join("\n");
 }
 
-function CampaignDetail({ campaign, meta, tasks, onReload }) {
+function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
   const [emailTo, setEmailTo] = useState(campaign.publisher_email_to || "");
@@ -446,7 +446,8 @@ function NewCampaignModal({ onClose, onCreated }) {
   );
 }
 
-export default function CampaignOps() {
+export default function CampaignOps({ userRole = "VIEWER" }) {
+  const canEdit = userRole === "ADMIN" || userRole === "OPS";
   const [campaigns, setCampaigns] = useState([]);
   const [meta, setMeta] = useState({ stages: [], labels: {}, transitions: {}, handoff_on: {} });
   const [tasksByCampaign, setTasksByCampaign] = useState({});
@@ -525,6 +526,7 @@ export default function CampaignOps() {
                 campaign={cam}
                 meta={meta}
                 tasks={tasksByCampaign[cam.campaign_id] || []}
+                canEdit={canEdit}
                 onReload={load}
               />
             )}

@@ -159,7 +159,8 @@ function TrackingForm({ campaign, segments, onDone }) {
   );
 }
 
-export default function CampaignTracking() {
+export default function CampaignTracking({ userRole = "VIEWER" }) {
+  const canEdit = userRole === "ADMIN" || userRole === "OPS";
   const [campaigns, setCampaigns] = useState([]);
   const [segments, setSegments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -216,7 +217,8 @@ export default function CampaignTracking() {
                       </div>
                     </div>
                   ) : (
-                    <TrackingForm campaign={cam} segments={segments} onDone={load} />
+                    canEdit ? <TrackingForm campaign={cam} segments={segments} onDone={load} /> :
+                    <div style={{ ...s.doneCard, background: "#FEF3E2" }}><div style={{ fontSize: 13, fontWeight: 700, color: "#B7791F" }}>View only — you don't have permission to edit tracking setup</div></div>
                   )
                 )}
               </div>

@@ -464,6 +464,42 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
     return campaign
 
 
+# ── user roles ────────────────────────────────────────────────────────────────
+
+VALID_ROLES = {"ADMIN", "SALES", "OPS", "VIEWER"}
+
+
+async def get_user_role(db: AsyncSession, email: str) -> Optional[models.UserRole]:
+    return (await db.execute(select(models.UserRole).where(models.UserRole.email == email))).scalar_one_or_none()
+
+
+async def list_user_roles(db: AsyncSession) -> List[Dict[str, Any]]:
+    result = await db.execute(select(models.UserRole).order_by(models.UserRole.email))
+    return [{"email": r.email, "role": r.role, "name": r.name} for r in result.scalars().all()]
+
+
+async def set_user_role(db: AsyncSession, email: str, role: str, name: str = None) -> Dict[str, Any]:
+    existing = await get_user_role(db, email)
+    if existing:
+        existing.role = role
+        if name is not None:
+            existing.name = name
+        await db.commit()
+        await db.refresh(existing)
+        return {"email": existing.email, "role": existing.role, "name": existing.name}
+    else:
+        user = models.UserRole(email=email, role=role, name=name)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return {"email": user.email, "role": user.role, "name": user.name}
+
+
+async def delete_user_role(db: AsyncSession, email: str) -> None:
+    await db.execute(delete(models.UserRole).where(models.UserRole.email == email))
+    await db.commit()
+
+
 # ── publishers & budget allocation ────────────────────────────────────────────
 
 async def list_publishers(db: AsyncSession) -> List[Dict[str, Any]]:

@@ -209,6 +209,15 @@ class BudgetAllocation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class UserRole(Base):
+    __tablename__ = "rmn_user_roles"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="VIEWER")  # ADMIN/SALES/OPS/VIEWER
+    name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class StageTransition(Base):
     """Audit log; each insert is also what triggers a hand-off notification."""
 

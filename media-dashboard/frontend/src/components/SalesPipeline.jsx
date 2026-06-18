@@ -80,7 +80,8 @@ const EyeIcon = ({ color = "#52606D" }) => (
   </svg>
 );
 
-export default function SalesPipeline() {
+export default function SalesPipeline({ userRole = "VIEWER" }) {
+  const canEdit = userRole === "ADMIN" || userRole === "SALES";
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState(null);
@@ -99,7 +100,7 @@ export default function SalesPipeline() {
 
   return (
     <div>
-      <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>
+      {canEdit && <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>}
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} />}
       {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => setViewAdv(null)} />}
 

@@ -90,7 +90,8 @@ function AddPublisherModal({ onClose, onSave }) {
   );
 }
 
-export default function BudgetAllocation() {
+export default function BudgetAllocation({ userRole = "VIEWER" }) {
+  const canEdit = userRole === "ADMIN" || userRole === "SALES";
   const [month, setMonth] = useState(currentMonth());
   const [advertisers, setAdvertisers] = useState([]);
   const [publishers, setPublishers] = useState([]);
@@ -222,7 +223,7 @@ export default function BudgetAllocation() {
           <input type="month" style={s.monthPicker} value={month} onChange={(e) => setMonth(e.target.value)} />
         </div>
         <div style={s.btnRow}>
-          <button style={s.addBtn} onClick={() => setShowAddPub(true)}>+ New Publisher</button>
+          {canEdit && <button style={s.addBtn} onClick={() => setShowAddPub(true)}>+ New Publisher</button>}
         </div>
       </div>
 
@@ -285,7 +286,7 @@ export default function BudgetAllocation() {
                     </td>
                     <td style={{ ...s.td, textAlign: "center" }}>
                       {isDirty && (
-                        <button style={s.saveRow} onClick={() => handleSaveRow(a.id)} disabled={savingAdv === a.id}>
+                        <button style={s.saveRow} onClick={() => handleSaveRow(a.id)} disabled={savingAdv === a.id || !canEdit}>
                           {savingAdv === a.id ? "…" : "Save"}
                         </button>
                       )}

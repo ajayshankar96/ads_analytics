@@ -1076,6 +1076,46 @@ async def record_welcome_email(adv_id: str, req: WelcomeEmailRequest, db: AsyncS
     return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 
 
+# ── User Roles ────────────────────────────────────────────────────────────────
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
+    """Returns the current user's role based on their signed-in email."""
+    email = getattr(request.state, "user_email", None)
+    if not email:
+        return {"email": None, "role": "VIEWER", "name": None}
+    user = await repo.get_user_role(db, email)
+    if user:
+        return {"email": email, "role": user.role, "name": user.name}
+    return {"email": email, "role": "VIEWER", "name": None}
+
+
+@app.get("/api/roles")
+async def list_roles(db: AsyncSession = Depends(get_db)):
+    roles = await repo.list_user_roles(db)
+    return {"roles": roles}
+
+
+class SetRoleRequest(BaseModel):
+    email: str
+    role: str
+    name: Optional[str] = None
+
+
+@app.post("/api/roles")
+async def set_role(req: SetRoleRequest, db: AsyncSession = Depends(get_db)):
+    if req.role not in repo.VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(repo.VALID_ROLES)}")
+    result = await repo.set_user_role(db, email=req.email, role=req.role, name=req.name)
+    return {"success": True, "user": result}
+
+
+@app.delete("/api/roles/{email}")
+async def delete_role(email: str, db: AsyncSession = Depends(get_db)):
+    await repo.delete_user_role(db, email)
+    return {"success": True}
+
+
 # ── Publishers & Budget Allocation ────────────────────────────────────────────
 
 @app.get("/api/publishers")

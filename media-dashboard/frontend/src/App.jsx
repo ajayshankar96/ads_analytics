@@ -16,8 +16,9 @@ import SalesPipeline from "./components/SalesPipeline";
 import CampaignOps from "./components/CampaignOps";
 import BudgetAllocation from "./components/BudgetAllocation";
 import CampaignTracking from "./components/CampaignTracking";
-import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess } from "./api";
+import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess, getMyRole } from "./api";
 import QueryConsole from "./components/QueryConsole";
+import RoleManager from "./components/RoleManager";
 
 // ── Tab groups (Option C layout) ──────────────────────────────────────────────
 const TAB_GROUPS = [
@@ -61,6 +62,7 @@ const TAB_GROUPS = [
     tabs: [
       { id: "kpis",       label: "Global KPIs",         icon: "🎯" },
       { id: "onboarding", label: "Campaign Onboarding", icon: "📋" },
+      { id: "roles",      label: "User Roles",          icon: "🔑" },
     ],
   },
   {
@@ -86,7 +88,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking",
+  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -308,12 +310,14 @@ export default function App() {
   const [viewStats, setViewStats]         = useState(null);
   const [isAdmin, setIsAdmin]             = useState(false);
   const [showConsole, setShowConsole]     = useState(false);
+  const [userRole, setUserRole]           = useState("VIEWER");
 
   useEffect(() => {
     getHealth()
       .then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); })
       .catch(() => setApiStatus("error"));
     getConsoleAccess().then((d) => setIsAdmin(!!d.is_admin)).catch(() => {});
+    getMyRole().then((d) => setUserRole(d.role || "VIEWER")).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -373,10 +377,11 @@ export default function App() {
       case "monthly":        return <MonthlySpend />;
       case "kpis":           return <GlobalKPIs />;
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
-      case "sales":          return <SalesPipeline />;
-      case "ops":            return <CampaignOps />;
-      case "pub-allocation": return <BudgetAllocation />;
-      case "tracking":       return <CampaignTracking />;
+      case "sales":          return <SalesPipeline userRole={userRole} />;
+      case "ops":            return <CampaignOps userRole={userRole} />;
+      case "pub-allocation": return <BudgetAllocation userRole={userRole} />;
+      case "tracking":       return <CampaignTracking userRole={userRole} />;
+      case "roles":          return <RoleManager />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
       case "performance":    return <AdvertiserPerformance {...props} />;

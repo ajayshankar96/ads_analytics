@@ -232,6 +232,17 @@ export const markNotLive = (campaignId, reason) =>
     body: JSON.stringify({ reason }),
   });
 
+// ── User Roles ────────────────────────────────────────────────────────────────
+export const getMyRole = () => apiFetch("/api/auth/me");
+
+export const listRoles = () => apiFetch("/api/roles");
+
+export const setUserRole = (email, role, name) =>
+  apiFetch("/api/roles", { method: "POST", body: JSON.stringify({ email, role, name }) });
+
+export const deleteUserRole = (email) =>
+  apiFetch(`/api/roles/${encodeURIComponent(email)}`, { method: "DELETE" });
+
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 
