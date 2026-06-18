@@ -111,7 +111,13 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
   }, [series, rangeKey]);
 
   if (loading) return <div style={s.loading}>Loading dashboard…</div>;
-  if (!aggs) return <div style={s.loading}>No data</div>;
+  if (!aggs || (dataSource === "postgres" && aggs.days === 0)) return (
+    <div style={s.loading}>
+      {dataSource === "postgres"
+        ? "No data in Postgres yet. Sync campaigns in Campaign Success & Tracking first, or switch to Google Sheet source."
+        : "No data"}
+    </div>
+  );
 
   const METRICS = [
     { key: "impressions", label: "Impressions" },

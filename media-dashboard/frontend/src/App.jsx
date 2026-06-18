@@ -314,7 +314,10 @@ export default function App() {
   const [userEmail, setUserEmail]         = useState("");
   const [showProfile, setShowProfile]     = useState(false);
   const [showCache, setShowCache]         = useState(false);
-  const [dataSource, setDataSource]       = useState(localStorage.getItem("dataSource") || "sheet");
+  const [dataSource, setDataSource]       = useState(() => {
+    const saved = localStorage.getItem("dataSource");
+    return saved === "postgres" ? "postgres" : "sheet";
+  });
 
   useEffect(() => {
     getHealth()
