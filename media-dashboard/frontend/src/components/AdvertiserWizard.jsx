@@ -230,23 +230,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
   };
 
   const validate = () => {
-    if (step === 1 && (!data.name.trim() || !data.category)) return "Advertiser name and Industry / Category are required.";
-    if (step === 2) {
-      if (data.buy_type === "ROAS" && !String(data.roas_multiplier).trim()) return "Committed ROAS multiplier is required.";
-      if (data.buy_type === "CPC" && !String(data.cpc_rate).trim()) return "CPC rate is required.";
-      if (!data.gst.trim() || !data.pan.trim()) return "GST number and PAN number are required.";
-      if (data.gst.trim().length !== 15) return "GST number must be a 15-character GSTIN.";
-      if (data.pan.trim().length !== 10) return "PAN number must be 10 characters.";
-    }
-    if (step === 3) {
-      if (data.goal_type === "ROAS" && !String(data.target_roas).trim()) return "Target ROAS is required.";
-      if (data.goal_type === "CAC" && !String(data.target_cac).trim()) return "Target CAC is required.";
-    }
-    if (step === 4) {
-      if (!data.poc_name.trim() || !data.poc_email.trim() || !data.poc_phone.trim()) return "POC name, email and phone are required.";
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.poc_email.trim())) return "Enter a valid POC email.";
-    }
-    if (step === 5 && !agreementFile) return "A signed legal agreement is required.";
+    if (step === 1 && !data.name.trim()) return "Advertiser name is required.";
     return "";
   };
 
