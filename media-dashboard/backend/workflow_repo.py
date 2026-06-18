@@ -298,7 +298,7 @@ async def get_campaign(db: AsyncSession, campaign_id: str) -> Optional[models.Ca
 
 _ASSET_FIELDS = [
     "landing_link", "offer_title", "details_tc", "how_to_redeem",
-    "promo_codes", "code_validity", "creative_url", "logo_url",
+    "promo_codes", "creative_url", "logo_url",
     "targeting", "daily_budget", "cpc_cpd",
 ]
 
