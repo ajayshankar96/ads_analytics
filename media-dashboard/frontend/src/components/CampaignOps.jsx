@@ -9,57 +9,14 @@ import {
   recordPublisherEmail,
   uploadCampaignAsset,
   createCampaign,
-  getAvailableCombos,
   getAdvertisers,
   getPublishers,
   markNotLive,
+  getAllAllocationsForMonth,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
-
-const s = {
-  loading: { textAlign: "center", padding: 40, color: "#888" },
-  empty: { textAlign: "center", padding: 30, color: "#94a3b8", fontSize: 14 },
-  list: { display: "flex", flexDirection: "column", gap: 10 },
-  card: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
-  cardActive: { borderColor: c.blue, boxShadow: "0 2px 12px rgba(46,91,255,0.12)" },
-  head: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  title: { fontSize: 15, fontWeight: 700, color: c.ink },
-  advRef: { fontSize: 12, color: c.muted, marginTop: 2 },
-  badge: { fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 14, display: "inline-block" },
-  badgeActive: { background: "#EAF0FF", color: c.blue },
-  badgeDone: { background: "#E3F6EE", color: c.green },
-  stepper: { display: "flex", alignItems: "center", margin: "14px 0 10px", flexWrap: "wrap", gap: 4 },
-  step: { fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 12 },
-  stepDone: { background: "#E3F6EE", color: c.green },
-  stepCurrent: { background: c.blue, color: "#fff" },
-  stepFuture: { background: "#F1F5F9", color: "#94a3b8" },
-  connector: { width: 18, height: 2, background: c.line },
-  // Detail panel
-  panel: { marginTop: 16, borderTop: `1px solid ${c.line}`, paddingTop: 16 },
-  section: { marginBottom: 20 },
-  secTitle: { fontSize: 14, fontWeight: 800, color: c.ink, marginBottom: 12 },
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
-  field: { display: "flex", flexDirection: "column", marginBottom: 12 },
-  label: { fontSize: 12, fontWeight: 600, color: c.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".03em" },
-  input: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%" },
-  textarea: { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, color: c.ink, outline: "none", fontFamily: "inherit", width: "100%", minHeight: 80, resize: "vertical" },
-  assetStatus: { display: "flex", alignItems: "center", gap: 8, marginBottom: 14 },
-  assetCount: { fontSize: 13, fontWeight: 700, color: c.ink },
-  assetBar: { flex: 1, height: 6, borderRadius: 3, background: "#EEF2F9", overflow: "hidden" },
-  assetFill: (pct) => ({ height: "100%", borderRadius: 3, width: `${pct}%`, background: pct >= 100 ? c.green : c.amber, transition: "width .2s" }),
-  btnRow: { display: "flex", gap: 10, marginTop: 14 },
-  btnPrimary: { background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  btnGhost: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
-  btnGreen: { background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  emailSent: { background: "#E3F6EE", borderRadius: 10, padding: "14px 16px", marginTop: 10 },
-  emailSentTitle: { fontSize: 13, fontWeight: 700, color: c.green, marginBottom: 4 },
-  emailSentDetail: { fontSize: 12, color: c.sub },
-  tasks: { display: "flex", flexDirection: "column", gap: 6, marginTop: 10 },
-  task: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "6px 0" },
-  taskBtn: { background: "#fff", border: `1px solid ${c.line}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 },
-};
 
 const ASSET_FIELDS = [
   { key: "landing_link", label: "Landing Link (UTM)", type: "input" },
@@ -76,122 +33,73 @@ const ASSET_FIELDS = [
 ];
 
 function buildEmailDraft(campaign) {
-  const lines = [
-    "Hi,",
-    "",
-    "Please find below the campaign details for your reference.",
-    "",
-    `Landing Link: ${campaign.landing_link || "—"}`,
-    `Offer Title: ${campaign.offer_title || "—"}`,
-    "",
-    "Terms & Conditions:",
-    campaign.details_tc || "—",
-    "",
-    "How to Redeem:",
-    campaign.how_to_redeem || "—",
-    "",
-    `Promo Code(s): ${campaign.promo_codes || "—"}`,
-    `Code Validity: ${campaign.code_validity || "—"}`,
-    "",
-    `Creative: ${campaign.creative_url || "—"}`,
-    `Logo: ${campaign.logo_url || "—"}`,
-    "",
-    `Targeting: ${campaign.targeting || "—"}`,
-    "",
-    `Daily Budget: ${campaign.daily_budget || "—"}`,
-    `CPC/CPD: ${campaign.cpc_cpd || "—"}`,
-    "",
-    "Regards,",
-    "AdOps Team | Razorpay",
-  ];
+  const lines = ["Hi,", "", "Please find below the campaign details for your reference.", "",
+    `Landing Link: ${campaign.landing_link || "—"}`, `Offer Title: ${campaign.offer_title || "—"}`, "",
+    "Terms & Conditions:", campaign.details_tc || "—", "", "How to Redeem:", campaign.how_to_redeem || "—", "",
+    `Promo Code(s): ${campaign.promo_codes || "—"}`, `Code Validity: ${campaign.code_validity || "—"}`, "",
+    `Creative: ${campaign.creative_url || "—"}`, `Logo: ${campaign.logo_url || "—"}`, "",
+    `Targeting: ${campaign.targeting || "—"}`, "", `Daily Budget: ${campaign.daily_budget || "—"}`,
+    `CPC/CPD: ${campaign.cpc_cpd || "—"}`, "", "Regards,", "AdOps Team | Razorpay"];
   return lines.join("\n");
 }
 
-function CodesSection({ assets, setAssets }) {
-  const codeData = (() => {
-    try { return JSON.parse(assets.promo_codes || '{}'); } catch { return {}; }
-  })();
-  const codeType = codeData.type || "static";
-  const codes = codeData.codes || "";
-  const sheetsLinks = codeData.sheets_links || [""];
-  const utmUrl = codeData.utm_url || "";
-  const startDate = codeData.start_date || "";
-  const endDate = codeData.end_date || "";
+function fmtBudget(n) {
+  if (!n) return "—";
+  const v = parseFloat(String(n).replace(/[^\d.]/g, ""));
+  if (isNaN(v) || v === 0) return "—";
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(2)} L`;
+  return `₹${v.toLocaleString("en-IN")}`;
+}
 
-  const update = (patch) => {
-    const merged = { ...codeData, ...patch };
-    setAssets((prev) => ({ ...prev, promo_codes: JSON.stringify(merged), code_validity: merged.end_date || "" }));
-  };
-
-  const tabStyle = (active) => ({
-    padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", borderRadius: 6, border: "none",
-    background: active ? c.blue : "#F1F5F9", color: active ? "#fff" : c.sub,
-  });
+// ── Kanban Card ──────────────────────────────────────────────────────────────
+function CampaignCard({ campaign, onClick }) {
+  const avatarColor = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2"][
+    (campaign.advertiser_name || "").charCodeAt(0) % 6
+  ];
+  const stage = campaign.current_stage;
+  const badgeColor = stage === "LIVE" ? c.green : stage === "SHARED_TO_PUBLISHER" ? c.blue : c.muted;
+  const badgeLabel = stage === "LIVE" ? "Live" : stage === "SHARED_TO_PUBLISHER" ? "Publisher Emailed" : "Draft";
 
   return (
-    <div>
-      <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Code Type *</label>
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        <button style={tabStyle(codeType === "static")} onClick={() => update({ type: "static" })}>Static Codes</button>
-        <button style={tabStyle(codeType === "dynamic")} onClick={() => update({ type: "dynamic" })}>Dynamic Codes</button>
-        <button style={tabStyle(codeType === "none")} onClick={() => update({ type: "none" })}>No Code</button>
+    <div onClick={onClick} style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, color: c.muted }}>{campaign.campaign_id}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${badgeColor}15`, color: badgeColor }}>{badgeLabel}</span>
       </div>
-
-      {codeType === "static" && (
-        <>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (comma-separated)</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-              value={codes} onChange={(e) => update({ codes: e.target.value })} placeholder="CODE1, CODE2, CODE3" />
-            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Enter multiple codes separated by commas</div>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-              value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
-            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
-          </div>
-        </>
-      )}
-
-      {codeType === "dynamic" && (
-        <div style={{ background: "#EAF0FF", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#274DB0", marginBottom: 10 }}>
-          ℹ <strong>Dynamic Codes</strong> — Revenue attribution will be available in the <strong>Campaign Success & Tracking</strong> tab once the campaign is live.
-        </div>
-      )}
-
-      {codeType === "none" && (
-        <div style={{ background: "#FEF3E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#92400E", marginBottom: 10 }}>
-          ⚠ <strong>No Code</strong> — This campaign does not use coupon codes for attribution.
-        </div>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity Start Date</label>
-          <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-            value={startDate} onChange={(e) => update({ start_date: e.target.value })} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: avatarColor, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 14, fontWeight: 800 }}>
+          {(campaign.advertiser_name || "?").charAt(0).toUpperCase()}
         </div>
         <div>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity End Date</label>
-          <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-            value={endDate} onChange={(e) => update({ end_date: e.target.value })} />
+          <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>{campaign.advertiser_name}</div>
+          <div style={{ fontSize: 12, color: c.muted }}>→ {campaign.publisher_name}</div>
         </div>
       </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+        <span style={{ color: c.muted }}>Budget</span>
+        <span style={{ fontWeight: 600, color: c.ink }}>{fmtBudget(campaign.daily_budget)}</span>
+      </div>
+      {campaign.targeting && (
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 2 }}>
+          <span style={{ color: c.muted }}>Audience</span>
+          <span style={{ fontWeight: 600, color: c.ink }}>{campaign.targeting.substring(0, 20)}{campaign.targeting.length > 20 ? "…" : ""}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
+// ── Detail View (shown when a card is clicked) ───────────────────────────────
+function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
-  const [emailTo, setEmailTo] = useState(campaign.publisher_email_to || "");
-  const [emailSubject, setEmailSubject] = useState(campaign.publisher_email_subject || "");
-  const [emailBody, setEmailBody] = useState(campaign.publisher_email_body || "");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
   const [sending, setSending] = useState(false);
-  const [emailDrafted, setEmailDrafted] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const gisReady = useGisLoaded();
-
   const stage = campaign.current_stage;
   const emailSent = !!campaign.publisher_email_sent_at;
 
@@ -199,305 +107,157 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
     const a = {};
     ASSET_FIELDS.forEach((f) => { a[f.key] = campaign[f.key] || ""; });
     setAssets(a);
-  }, [campaign.campaign_id, campaign.current_stage, campaign.creative_url, campaign.logo_url]);
+  }, [campaign.campaign_id, campaign.current_stage]);
 
-  const visibleFields = ASSET_FIELDS.filter((f) => f.type !== "hidden");
-  const filledCount = visibleFields.filter((f) => {
-    if (f.type === "codes") {
-      try { const d = JSON.parse(assets[f.key] || '{}'); return !!d.type; } catch { return false; }
-    }
-    return assets[f.key]?.trim();
-  }).length;
-  const totalFields = visibleFields.length;
-  const allFilled = filledCount === totalFields;
-  const pct = (filledCount / totalFields) * 100;
-
-  const [assetsSaved, setAssetsSaved] = useState(false);
-
-  const handleSaveAssets = async () => {
+  const handleSave = async () => {
     setSaving(true);
-    try {
-      await updateCampaignAssets(campaign.campaign_id, assets);
-      setAssetsSaved(true);
-      setTimeout(() => setAssetsSaved(false), 2000);
-    } catch (e) { alert("Save failed: " + e.message); }
+    try { await updateCampaignAssets(campaign.campaign_id, assets); }
+    catch (e) { alert("Save failed: " + e.message); }
     finally { setSaving(false); }
   };
 
-  const handleFileUpload = async (field, file) => {
+  const handleMarkAssetsReceived = async () => {
+    await handleSave();
     try {
-      const result = await uploadCampaignAsset(campaign.campaign_id, field, file);
-      setAssets((prev) => ({ ...prev, [field]: result.url }));
+      await transitionCampaign(campaign.campaign_id, { to_stage: "ASSETS_RECEIVED" });
+      setShowEmail(true);
+      setEmailSubject(`Campaign Details: ${campaign.advertiser_name} — ${assets.offer_title || "RMN"}`);
+      setEmailBody(buildEmailDraft({ ...campaign, ...assets }));
       onReload();
-    } catch (e) { alert("Upload failed: " + e.message); }
-  };
-
-  const handleDraftEmail = () => {
-    const subject = `Campaign Details: ${campaign.name} — ${campaign.offer_title || "RMN"}`;
-    setEmailSubject(subject);
-    setEmailBody(buildEmailDraft({ ...campaign, ...assets }));
-    setEmailDrafted(true);
+    } catch (e) { alert("Transition failed: " + e.message); }
   };
 
   const handleSendEmail = async () => {
     if (!emailTo.trim()) { alert("Enter recipient email(s)"); return; }
-    if (!emailBody.trim()) { alert("Email body cannot be empty"); return; }
     setSending(true);
     try {
-      // 1. Save assets first so they persist
-      await updateCampaignAssets(campaign.campaign_id, assets);
-      // 2. Send email
+      await handleSave();
       const token = await getGmailAccessToken();
       await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), subject: emailSubject, html: textToHtml(emailBody) });
       await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
-      // 3. Transition to SHARED_TO_PUBLISHER (should be at CREATIVE_REVIEW already)
-      try { await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }); } catch (e) { /* already past */ }
+      await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
+      await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }).catch(() => {});
       onReload();
     } catch (e) { alert("Send failed: " + e.message); }
     finally { setSending(false); }
   };
 
-  const STAGE_ORDER = ["OPS_SETUP", "ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER", "LIVE"];
-  const [notLiveReason, setNotLiveReason] = useState("");
-
-  const handleTransition = async (toStage) => {
+  const handleMarkLive = async () => {
     try {
-      // Step through intermediate stages to reach the target
-      const curIdx = STAGE_ORDER.indexOf(stage);
-      const targetIdx = STAGE_ORDER.indexOf(toStage);
-      if (targetIdx > curIdx) {
-        for (let i = curIdx + 1; i <= targetIdx; i++) {
-          await transitionCampaign(campaign.campaign_id, { to_stage: STAGE_ORDER[i] });
-        }
-      } else {
-        await transitionCampaign(campaign.campaign_id, { to_stage: toStage });
-      }
+      await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
+      await transitionCampaign(campaign.campaign_id, { to_stage: "LIVE" }).catch(() => {});
       onReload();
-    } catch (e) { alert("Transition failed: " + e.message); }
+    } catch (e) { alert("Failed: " + e.message); }
   };
 
-  const toggleTask = async (task) => {
-    const next = task.status === "DONE" ? "PENDING" : "DONE";
-    try {
-      await updateOpsTask(task.task_id, { status: next });
-      onReload();
-    } catch (e) { alert("Error: " + e.message); }
-  };
-
-  const showAssetForm = stage === "OPS_SETUP" && !emailSent;
-  const showCreativeReview = stage === "ASSETS_RECEIVED" || stage === "CREATIVE_REVIEW";
-  const showEmailCompose = stage === "CREATIVE_REVIEW" && !emailSent;
-  const showLiveChoice = stage === "SHARED_TO_PUBLISHER";
+  const isAssetStage = stage === "OPS_SETUP";
+  const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
+  const isLive = stage === "LIVE";
 
   return (
-    <div style={s.panel}>
-      {/* Ops Tasks */}
-      {tasks.length > 0 && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Ops Checklist</div>
-          <div style={s.tasks}>
-            {tasks.map((t) => {
-              const isReceiveAssets = t.step === "RECEIVE_ASSETS";
-              const blocked = isReceiveAssets && t.status !== "DONE" && !allFilled;
-              return (
-                <div key={t.task_id} style={s.task}>
-                  <span>{t.status === "DONE" ? "✅" : "⬜"}</span>
-                  <span style={{ flex: 1 }}>{t.step.replace(/_/g, " ")}</span>
-                  {blocked ? (
-                    <span style={{ fontSize: 11, color: c.muted }}>Fill all assets first</span>
-                  ) : (
-                    <button style={s.taskBtn} onClick={() => toggleTask(t)}>{t.status === "DONE" ? "Undo" : "Mark done"}</button>
-                  )}
-                </div>
-              );
-            })}
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <button onClick={onBack} style={{ background: "none", border: "none", color: c.blue, cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>← Back to queue</button>
+          <div style={{ fontSize: 18, fontWeight: 800, color: c.ink }}>
+            {campaign.advertiser_name} → {campaign.publisher_name}
+            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 10, background: isLive ? "#E3F6EE" : "#EAF0FF", color: isLive ? c.green : c.blue }}>
+              {isLive ? "Live" : isEmailedStage ? "Publisher Emailed" : "Draft"}
+            </span>
           </div>
+          <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{campaign.campaign_id} · {campaign.offer_title || ""}</div>
         </div>
-      )}
+        {isEmailedStage && canEdit && (
+          <button onClick={handleMarkLive} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            ⊙ Mark Live
+          </button>
+        )}
+      </div>
 
-      {/* Read-only asset summary for completed stages */}
-      {!showAssetForm && stage !== "OPS_SETUP" && campaign.landing_link && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Assets Received</div>
-          <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
-            {ASSET_FIELDS.map((f) => {
-              const val = campaign[f.key];
-              if (!val) return null;
-              const isUrl = val.startsWith && val.startsWith("http");
-              const isImage = f.key === "creative_url" || f.key === "logo_url";
-              return (
-                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, padding: "7px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 13 }}>
-                  <span style={{ color: c.muted, minWidth: 140, flexShrink: 0 }}>{f.label}</span>
-                  <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>
-                    {isImage ? (
-                      <a href={val} target="_blank" rel="noopener noreferrer">
-                        <img src={val} alt={f.label} style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", border: `1px solid ${c.line}` }} />
-                      </a>
-                    ) : isUrl ? (
-                      <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a>
-                    ) : val}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Step 1: Asset Form (OPS_SETUP) */}
-      {showAssetForm && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Campaign Assets</div>
-          <div style={s.assetStatus}>
-            <span style={s.assetCount}>{filledCount}/{totalFields} received</span>
-            <div style={s.assetBar}><div style={s.assetFill(pct)} /></div>
-          </div>
-          <div style={s.grid2}>
-            {ASSET_FIELDS.filter((f) => f.type !== "hidden").map((f) => (
-              <div key={f.key} style={f.type === "codes" ? { ...s.field, gridColumn: "1 / -1" } : s.field}>
-                {f.type === "codes" ? (
-                  <CodesSection assets={assets} setAssets={setAssets} />
-                ) : f.type === "textarea" ? (
-                  <>
-                    <label style={s.label}>{f.label}</label>
-                    <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
-                  </>
+      {/* Assets list */}
+      <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 10 }}>
+        Assets {isAssetStage ? "· Fill all fields" : "· Received"}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+        {ASSET_FIELDS.filter((f) => f.type !== "hidden" && f.type !== "codes").map((f) => {
+          const val = assets[f.key] || "";
+          const filled = !!val.trim();
+          return (
+            <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
+              <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? "#E3F6EE" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {filled ? <span style={{ color: c.green, fontSize: 13 }}>✓</span> : <span style={{ color: c.muted, fontSize: 13 }}>○</span>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>{f.label}</div>
+                {filled && <div style={{ fontSize: 12, color: c.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 400 }}>{val}</div>}
+              </div>
+              {isAssetStage && canEdit && (
+                f.type === "textarea" ? (
+                  <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 300, minHeight: 40, resize: "vertical", outline: "none" }}
+                    value={val} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
                 ) : (
-                  <>
-                    <label style={s.label}>{f.label}</label>
-                    <input style={{ ...s.input, ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
-                      value={assets[f.key]}
-                      onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
-                      disabled={f.key === "offer_title" && !!campaign.offer_title}
-                      placeholder="—" />
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={s.btnRow}>
-            <button style={s.btnPrimary} onClick={handleSaveAssets} disabled={saving}>{saving ? "Saving…" : assetsSaved ? "Saved ✓" : "Save Assets"}</button>
-            {allFilled && (
-              <button style={s.btnGreen} onClick={async () => { await updateCampaignAssets(campaign.campaign_id, assets); await handleTransition("ASSETS_RECEIVED"); }}>
-                Mark Assets Received →
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: Creative Review (ASSETS_RECEIVED / CREATIVE_REVIEW) */}
-      {showCreativeReview && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Creative Review</div>
-          <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
-            {campaign.creative_url && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Creative</div>
-                <a href={campaign.creative_url} target="_blank" rel="noopener noreferrer">
-                  <img src={campaign.creative_url} alt="Creative" style={{ width: 150, height: 150, borderRadius: 10, objectFit: "cover", border: `1px solid ${c.line}`, cursor: "pointer" }} />
-                </a>
-              </div>
-            )}
-            {campaign.logo_url && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, marginBottom: 6, textTransform: "uppercase" }}>Logo</div>
-                <a href={campaign.logo_url} target="_blank" rel="noopener noreferrer">
-                  <img src={campaign.logo_url} alt="Logo" style={{ width: 100, height: 100, borderRadius: 10, objectFit: "contain", border: `1px solid ${c.line}`, cursor: "pointer" }} />
-                </a>
-              </div>
-            )}
-          </div>
-          {stage === "ASSETS_RECEIVED" && (
-            <div style={s.btnRow}>
-              <button style={s.btnPrimary} onClick={() => handleTransition("CREATIVE_REVIEW")}>Approve Creatives ✓</button>
+                  <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 250, outline: "none",
+                    ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
+                    value={val} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
+                    disabled={f.key === "offer_title" && !!campaign.offer_title} placeholder="—" />
+                )
+              )}
             </div>
-          )}
+          );
+        })}
+      </div>
+
+      {/* Action buttons */}
+      {isAssetStage && canEdit && !showEmail && (
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={handleSave} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {saving ? "Saving…" : "Save Assets"}
+          </button>
+          <button onClick={handleMarkAssetsReceived} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            Mark Assets Received & Draft Email →
+          </button>
         </div>
       )}
 
-      {/* Step 3: Email to Publisher (CREATIVE_REVIEW stage) */}
-      {showEmailCompose && !emailDrafted && (
-        <div style={s.btnRow}>
-          <button style={s.btnGreen} onClick={handleDraftEmail}>Draft email to publisher →</button>
-        </div>
-      )}
-      {showEmailCompose && emailDrafted && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Share to Publisher — Review & Send</div>
-          <div style={s.field}>
-            <label style={s.label}>To (comma-separated)</label>
-            <input style={s.input} value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="publisher@example.com" />
+      {/* Email compose */}
+      {(showEmail || (isAssetStage && emailSent)) && !isEmailedStage && (
+        <div style={{ background: "#F0F4FF", borderRadius: 10, padding: "16px", marginTop: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: c.ink, marginBottom: 12 }}>Send to Publisher</div>
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 3 }}>To</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 10px", fontSize: 13, width: "100%", outline: "none" }}
+              value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="publisher@example.com" />
           </div>
-          <div style={s.field}>
-            <label style={s.label}>Subject</label>
-            <input style={s.input} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 3 }}>Subject</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 10px", fontSize: 13, width: "100%", outline: "none" }}
+              value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
           </div>
-          <div style={s.field}>
-            <label style={s.label}>Body</label>
-            <textarea style={{ ...s.textarea, minHeight: 200 }} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 3 }}>Body</label>
+            <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 10px", fontSize: 12, width: "100%", minHeight: 150, outline: "none", resize: "vertical" }}
+              value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
           </div>
-          <div style={s.btnRow}>
-            <button style={s.btnGreen} onClick={handleSendEmail} disabled={sending || !gisReady}>
-              {sending ? "Sending…" : "Send email & mark shared ✉️"}
-            </button>
-            <button style={s.btnGhost} onClick={() => handleTransition("SHARED_TO_PUBLISHER")}>Skip (mark shared without email)</button>
-          </div>
+          <button onClick={handleSendEmail} disabled={sending || !gisReady}
+            style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {sending ? "Sending…" : "Send Email & Move to Publisher Emailed ✉️"}
+          </button>
         </div>
       )}
 
-      {/* Post-send email info */}
+      {/* Email sent info */}
       {emailSent && (
-        <div style={s.section}>
-          <div style={s.emailSent}>
-            <div style={s.emailSentTitle}>✉️ Email sent to publisher</div>
-            <div style={s.emailSentDetail}>
-              <strong>To:</strong> {campaign.publisher_email_to}<br/>
-              <strong>Subject:</strong> {campaign.publisher_email_subject}<br/>
-              <strong>Sent:</strong> {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Live or Not Live (SHARED_TO_PUBLISHER) */}
-      {showLiveChoice && (
-        <div style={s.section}>
-          <div style={s.secTitle}>Campaign Status</div>
-          <div style={{ fontSize: 13, color: c.sub, marginBottom: 14 }}>Is this campaign live on the publisher?</div>
-          <div style={s.btnRow}>
-            <button style={s.btnGreen} onClick={() => handleTransition("LIVE")}>Yes, Mark Live 🚀</button>
-          </div>
-          <div style={{ marginTop: 16, padding: "14px 16px", background: "#FEF3E2", borderRadius: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#B7791F", marginBottom: 8 }}>Not going live?</div>
-            <textarea style={{ ...s.textarea, minHeight: 60 }} value={notLiveReason} onChange={(e) => setNotLiveReason(e.target.value)} placeholder="Enter reason why this campaign is not going live..." />
-            <button style={{ ...s.btnGhost, marginTop: 8, color: c.red, borderColor: c.red }} onClick={async () => {
-              if (!notLiveReason.trim()) { alert("Please enter a reason"); return; }
-              try { await markNotLive(campaign.campaign_id, notLiveReason); onReload(); } catch (e) { alert(e.message); }
-            }}>Mark Not Live</button>
-          </div>
-        </div>
-      )}
-
-      {/* Terminal: Live */}
-      {stage === "LIVE" && (
-        <div style={s.emailSent}>
-          <div style={s.emailSentTitle}>🚀 Campaign is Live</div>
-          <div style={s.emailSentDetail}>Head to the <strong>Campaign Success & Tracking</strong> tab to set up tracking.</div>
-        </div>
-      )}
-
-      {/* Terminal: Not Live */}
-      {stage === "NOT_LIVE" && (
-        <div style={{ background: "#FEE2E2", borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: c.red }}>Campaign Not Live</div>
-          <div style={{ fontSize: 12, color: c.sub, marginTop: 4 }}>Reason: {campaign.not_live_reason || "—"}</div>
+        <div style={{ background: "#E3F6EE", borderRadius: 8, padding: "12px 14px", marginTop: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: c.green }}>✉️ Email sent to publisher</div>
+          <div style={{ fontSize: 12, color: c.sub, marginTop: 3 }}>To: {campaign.publisher_email_to} · {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}</div>
         </div>
       )}
     </div>
   );
 }
 
+// ── Create Campaign Panel ────────────────────────────────────────────────────
 function CreateCampaignPanel({ canEdit, onCreated }) {
   const [showPanel, setShowPanel] = useState(false);
   const [advertisers, setAdvertisers] = useState([]);
@@ -514,69 +274,51 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
         setAdvertisers((a.advertisers || []).filter((x) => x.status === "ONBOARDED"));
         setAllPublishers(p.publishers || []);
       });
-      // Fetch all allocations to know which publishers are allocated per advertiser
       fetch("/api/allocations?month=" + new Date().toISOString().slice(0, 7), { credentials: "same-origin" })
-        .then((r) => r.json())
-        .then((d) => setAllocations(d.allocations || []))
-        .catch(() => {});
+        .then((r) => r.json()).then((d) => setAllocations(d.allocations || [])).catch(() => {});
     }
   }, [showPanel]);
 
-  // Filter publishers based on selected advertiser's allocations
   const availablePublishers = advId
     ? allPublishers.filter((p) => allocations.some((a) => a.advertiser_id === advId && a.publisher_id === p.id && a.amount > 0))
     : [];
 
   const handleCreate = async () => {
-    if (!advId || !pubId) { alert("Select both Advertiser and Publisher"); return; }
-    if (!offerTitle.trim()) { alert("Enter an Offer Title"); return; }
+    if (!advId || !pubId || !offerTitle.trim()) return;
     setCreating(true);
     try {
       await createCampaign({ advertiser_id: advId, publisher_id: pubId, offer_title: offerTitle.trim() });
-      setShowPanel(false);
-      setAdvId(""); setPubId(""); setOfferTitle("");
+      setShowPanel(false); setAdvId(""); setPubId(""); setOfferTitle("");
       onCreated();
     } catch (e) { alert("Failed: " + e.message); }
     finally { setCreating(false); }
   };
 
   if (!canEdit) return null;
-
   return (
     <div style={{ marginBottom: 16 }}>
       {!showPanel ? (
-        <button onClick={() => setShowPanel(true)} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-          + Create Campaign
-        </button>
+        <button onClick={() => setShowPanel(true)} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Create Campaign</button>
       ) : (
-        <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Create New Campaign</div>
-            <button onClick={() => setShowPanel(false)} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 16 }}>✕</button>
+        <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>New Campaign</span>
+            <button onClick={() => setShowPanel(false)} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer" }}>✕</button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Advertiser</label>
-              <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => { setAdvId(e.target.value); setPubId(""); }}>
-                <option value="">Select advertiser…</option>
-                {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Publisher</label>
-              <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)} disabled={!advId}>
-                <option value="">{advId ? "Select publisher…" : "Select advertiser first"}</option>
-                {availablePublishers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Offer Title</label>
-              <input style={{ ...s.input, width: "100%" }} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="e.g. Flat ₹250 Off" />
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px", fontSize: 12 }} value={advId} onChange={(e) => { setAdvId(e.target.value); setPubId(""); }}>
+              <option value="">Advertiser…</option>
+              {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px", fontSize: 12 }} value={pubId} onChange={(e) => setPubId(e.target.value)} disabled={!advId}>
+              <option value="">{advId ? "Publisher…" : "Select adv first"}</option>
+              {availablePublishers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px", fontSize: 12 }} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="Offer title" />
           </div>
           <button onClick={handleCreate} disabled={creating || !advId || !pubId || !offerTitle.trim()}
-            style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!advId || !pubId || !offerTitle.trim()) ? 0.5 : 1 }}>
-            {creating ? "Creating…" : "Create Campaign"}
+            style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: (!advId || !pubId || !offerTitle.trim()) ? 0.5 : 1 }}>
+            {creating ? "…" : "Create"}
           </button>
         </div>
       )}
@@ -584,98 +326,90 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
   );
 }
 
+// ── Main: Kanban Board ───────────────────────────────────────────────────────
 export default function CampaignOps({ userRole = "VIEWER" }) {
   const canEdit = userRole === "ADMIN" || userRole === "OPS";
   const [campaigns, setCampaigns] = useState([]);
-  const [meta, setMeta] = useState({ stages: [], labels: {}, transitions: {}, handoff_on: {} });
-  const [tasksByCampaign, setTasksByCampaign] = useState({});
-  const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [pubFilter, setPubFilter] = useState("all");
+  const [publishers, setPublishers] = useState([]);
 
   const load = () => {
     setLoading(true);
-    Promise.all([getWorkflowCampaigns(), getWorkflowStages()])
-      .then(([cRes, m]) => {
-        const camps = cRes.campaigns || [];
-        setCampaigns(camps);
-        setMeta(m);
-        campaignsRef.current = camps;
-        return Promise.all(camps.map((cp) => getOpsTasks(cp.campaign_id)));
-      })
-      .then((taskLists) => {
-        const map = {};
-        (taskLists || []).forEach((tl, i) => {
-          if (campaignsRef.current[i]) map[campaignsRef.current[i].campaign_id] = tl.ops_tasks || [];
-        });
-        setTasksByCampaign(map);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    Promise.all([getWorkflowCampaigns(), getPublishers()]).then(([cRes, pRes]) => {
+      setCampaigns(cRes.campaigns || []);
+      setPublishers(pRes.publishers || []);
+    }).catch(console.error).finally(() => setLoading(false));
   };
-
-  const campaignsRef = React.useRef([]);
   useEffect(load, []);
 
-  if (loading) return <div style={s.loading}>Loading campaigns…</div>;
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#888" }}>Loading…</div>;
 
-  const stages = meta.stages || [];
+  // If a campaign is selected, show detail view
+  if (selected) {
+    const cam = campaigns.find((c) => c.campaign_id === selected);
+    if (cam) return <CampaignDetailView campaign={cam} onBack={() => setSelected(null)} onReload={() => { load(); setSelected(null); }} canEdit={canEdit} />;
+  }
+
+  // Filter by publisher
+  const filtered = pubFilter === "all" ? campaigns : campaigns.filter((c) => c.publisher_name === pubFilter);
+
+  // Group into columns
+  const draft = filtered.filter((c) => c.current_stage === "OPS_SETUP");
+  const emailed = filtered.filter((c) => ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(c.current_stage));
+  const live = filtered.filter((c) => c.current_stage === "LIVE");
+
+  const colStyle = { flex: 1, minWidth: 280, background: c.bg, borderRadius: 12, padding: "14px" };
+  const colTitle = { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 };
 
   return (
     <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: c.ink }}>Campaign Queue</div>
+          <div style={{ fontSize: 12, color: c.muted }}>Click a card to view details and advance stages</div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setPubFilter("all")} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, border: `1px solid ${pubFilter === "all" ? c.blue : c.line}`, background: pubFilter === "all" ? "#EAF0FF" : "#fff", color: pubFilter === "all" ? c.blue : c.sub, cursor: "pointer" }}>All publishers</button>
+          {publishers.map((p) => (
+            <button key={p.id} onClick={() => setPubFilter(p.name)} style={{ padding: "5px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, border: `1px solid ${pubFilter === p.name ? c.blue : c.line}`, background: pubFilter === p.name ? "#EAF0FF" : "#fff", color: pubFilter === p.name ? c.blue : c.sub, cursor: "pointer" }}>{p.name}</button>
+          ))}
+        </div>
+      </div>
+
       <CreateCampaignPanel canEdit={canEdit} onCreated={load} />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: c.muted }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</div>
-      </div>
-      {campaigns.length === 0 ? (
-        <div style={s.empty}>No campaigns yet. Select an Advertiser × Publisher combo above to create one.</div>
-      ) : (
-      <div style={s.list}>
-      {campaigns.map((cam) => {
-        const curIdx = stages.indexOf(cam.current_stage);
-        const isSelected = selected === cam.campaign_id;
-        const isLive = cam.current_stage === "LIVE";
-        const isNotLive = cam.current_stage === "NOT_LIVE";
-        return (
-          <div key={cam.campaign_id} style={{ ...s.card, ...(isSelected ? s.cardActive : {}) }}>
-            <div style={{ ...s.head, cursor: "pointer" }} onClick={() => setSelected(isSelected ? null : cam.campaign_id)}>
-              <div>
-                <div style={s.title}>
-                  {cam.advertiser_name || cam.name}
-                  {cam.publisher_name && <span style={{ fontWeight: 400, color: c.muted }}> → {cam.publisher_name}</span>}
-                </div>
-                <div style={s.advRef}>{cam.campaign_id}{cam.advertiser_ref_id ? ` · ${cam.advertiser_ref_id}` : ""}</div>
-              </div>
-              <span style={{ ...s.badge, ...(isLive ? s.badgeDone : isNotLive ? { background: "#FEE2E2", color: c.red } : s.badgeActive) }}>
-                {meta.labels?.[cam.current_stage] || cam.current_stage}
-              </span>
-            </div>
-
-            <div style={s.stepper}>
-              {stages.map((st, i) => (
-                <React.Fragment key={st}>
-                  {i > 0 && <div style={s.connector} />}
-                  <span style={{ ...s.step, ...(i < curIdx ? s.stepDone : i === curIdx ? s.stepCurrent : s.stepFuture) }}>
-                    {i < curIdx ? "✓ " : ""}{meta.labels?.[st] || st}
-                  </span>
-                </React.Fragment>
-              ))}
-            </div>
-
-            {isSelected && (
-              <CampaignDetail
-                campaign={cam}
-                meta={meta}
-                tasks={tasksByCampaign[cam.campaign_id] || []}
-                canEdit={canEdit}
-                onReload={load}
-              />
-            )}
+      {/* Kanban columns */}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <div style={colStyle}>
+          <div style={colTitle}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Draft</span>
+            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{draft.length}</span>
           </div>
-        );
-      })}
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Ops fills assets here</div>
+          {draft.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} />)}
+        </div>
+
+        <div style={colStyle}>
+          <div style={colTitle}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Publisher Emailed</span>
+            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{emailed.length}</span>
+          </div>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Awaiting confirmation</div>
+          {emailed.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} />)}
+        </div>
+
+        <div style={colStyle}>
+          <div style={colTitle}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Live</span>
+            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{live.length}</span>
+          </div>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Activated in Campaign Mgmt</div>
+          {live.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} />)}
+        </div>
       </div>
-      )}
     </div>
   );
 }
