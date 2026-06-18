@@ -430,29 +430,30 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
 
 function CreateCampaignPanel({ canEdit, onCreated }) {
   const [showPanel, setShowPanel] = useState(false);
-  const [combos, setCombos] = useState([]);
-  const [selectedCombo, setSelectedCombo] = useState(null);
+  const [advertisers, setAdvertisers] = useState([]);
+  const [publishers, setPublishers] = useState([]);
+  const [advId, setAdvId] = useState("");
+  const [pubId, setPubId] = useState("");
   const [offerTitle, setOfferTitle] = useState("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (showPanel) {
-      fetch("/api/workflow/available-combos", { credentials: "same-origin" })
-        .then((r) => r.json())
-        .then((d) => setCombos(d.combos || []))
-        .catch((e) => console.error("combos error:", e));
+      Promise.all([getAdvertisers(), getPublishers()]).then(([a, p]) => {
+        setAdvertisers((a.advertisers || []).filter((x) => x.status === "ONBOARDED"));
+        setPublishers(p.publishers || []);
+      });
     }
   }, [showPanel]);
 
   const handleCreate = async () => {
-    if (!selectedCombo) { alert("Select an Advertiser × Publisher"); return; }
+    if (!advId || !pubId) { alert("Select both Advertiser and Publisher"); return; }
     if (!offerTitle.trim()) { alert("Enter an Offer Title"); return; }
     setCreating(true);
     try {
-      await createCampaign({ advertiser_id: selectedCombo.advertiser_id, publisher_id: selectedCombo.publisher_id, offer_title: offerTitle.trim() });
+      await createCampaign({ advertiser_id: advId, publisher_id: pubId, offer_title: offerTitle.trim() });
       setShowPanel(false);
-      setSelectedCombo(null);
-      setOfferTitle("");
+      setAdvId(""); setPubId(""); setOfferTitle("");
       onCreated();
     } catch (e) { alert("Failed: " + e.message); }
     finally { setCreating(false); }
@@ -468,40 +469,34 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
         </button>
       ) : (
         <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Create New Campaign</div>
             <button onClick={() => setShowPanel(false)} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
-          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>Select Advertiser × Publisher combo and enter the offer title.</div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-            {combos.map((combo) => {
-              const key = `${combo.advertiser_id}-${combo.publisher_id}`;
-              const isSelected = selectedCombo && selectedCombo.advertiser_id === combo.advertiser_id && selectedCombo.publisher_id === combo.publisher_id;
-              return (
-                <div key={key} onClick={() => setSelectedCombo(combo)}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: isSelected ? "#E3F6EE" : "#fff", borderRadius: 8, border: `1.5px solid ${isSelected ? c.green : c.line}`, fontSize: 13, cursor: "pointer" }}>
-                  <span style={{ fontWeight: 600, color: c.ink }}>{combo.advertiser_name}</span>
-                  <span style={{ color: c.muted }}>→</span>
-                  <span style={{ color: c.blue, fontWeight: 600 }}>{combo.publisher_name}</span>
-                </div>
-              );
-            })}
-            {combos.length === 0 && <div style={{ fontSize: 12, color: c.muted }}>No budget allocated yet. Allocate budget in the Budget Allocation tab first.</div>}
-          </div>
-
-          {selectedCombo && (
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Offer Title *</label>
-                <input style={s.input} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="e.g. Get Flat ₹250 Discount + ₹250 Cashback" />
-              </div>
-              <button onClick={handleCreate} disabled={creating}
-                style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                {creating ? "Creating…" : "Create Campaign"}
-              </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Advertiser</label>
+              <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => setAdvId(e.target.value)}>
+                <option value="">Select…</option>
+                {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
             </div>
-          )}
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Publisher</label>
+              <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)}>
+                <option value="">Select…</option>
+                {publishers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Offer Title</label>
+              <input style={{ ...s.input, width: "100%" }} value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} placeholder="e.g. Flat ₹250 Off" />
+            </div>
+          </div>
+          <button onClick={handleCreate} disabled={creating || !advId || !pubId || !offerTitle.trim()}
+            style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!advId || !pubId || !offerTitle.trim()) ? 0.5 : 1 }}>
+            {creating ? "Creating…" : "Create Campaign"}
+          </button>
         </div>
       )}
     </div>
