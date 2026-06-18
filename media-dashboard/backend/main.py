@@ -79,7 +79,7 @@ import workflow_logic as wf
 import workflow_repo as repo
 from db.database import get_db, engine
 from auth import AuthMiddleware, auth_enabled, is_admin, router as auth_router
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1043,25 +1043,31 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
 @app.get("/api/workflow/available-combos")
 async def available_combos(db: AsyncSession = Depends(get_db)):
     """Get advertiser+publisher combos that have budget allocated."""
-    try:
-        result = await db.execute(
-            text("""
-                SELECT DISTINCT a.advertiser_id, adv.name as adv_name, a.publisher_id, p.name as pub_name
-                FROM rmn_budget_allocations a
-                JOIN rmn_advertisers adv ON adv.id = a.advertiser_id
-                JOIN rmn_publishers p ON p.id = a.publisher_id
-                WHERE a.amount > 0
-                ORDER BY adv.name, p.name
-            """)
-        )
-        rows = result.fetchall()
-        combos = [
-            {"advertiser_id": r[0], "advertiser_name": r[1], "publisher_id": r[2], "publisher_name": r[3]}
-            for r in rows
-        ]
-        return {"combos": combos}
-    except Exception as e:
-        return {"combos": [], "error": str(e)}
+    alloc_result = await db.execute(
+        select(
+            models.BudgetAllocation.advertiser_id,
+            models.BudgetAllocation.publisher_id,
+        ).where(models.BudgetAllocation.amount > 0).distinct()
+    )
+    allocs = alloc_result.all()
+
+    advs = await repo.list_advertisers(db)
+    adv_map = {a.id: a.name for a in advs}
+
+    pubs = await repo.list_publishers(db)
+    pub_map = {p["id"]: p["name"] for p in pubs}
+
+    combos = []
+    for row in allocs:
+        adv_id, pub_id = row[0], row[1]
+        combos.append({
+            "advertiser_id": adv_id,
+            "advertiser_name": adv_map.get(adv_id, adv_id),
+            "publisher_id": pub_id,
+            "publisher_name": pub_map.get(pub_id, pub_id),
+        })
+
+    return {"combos": combos}
 
 
 class CreateCampaignRequest(BaseModel):
@@ -1304,7 +1310,6 @@ async def pg_aggregates(
     db: AsyncSession = Depends(get_db),
 ):
     """Dashboard aggregates from Postgres rmn_campaign_metrics."""
-    from sqlalchemy import select, func
     q = select(
         func.sum(models.CampaignMetric.impressions).label("impressions"),
         func.sum(models.CampaignMetric.clicks).label("clicks"),
@@ -1352,7 +1357,6 @@ async def pg_timeseries(
     db: AsyncSession = Depends(get_db),
 ):
     """Daily timeseries from Postgres."""
-    from sqlalchemy import select, func
     q = select(
         models.CampaignMetric.date,
         func.sum(models.CampaignMetric.impressions).label("impressions"),
@@ -1391,7 +1395,6 @@ async def pg_breakdowns(
     db: AsyncSession = Depends(get_db),
 ):
     """Breakdowns by advertiser and publisher from Postgres."""
-    from sqlalchemy import select, func
     base = select(models.CampaignMetric)
     if advertiser:
         base = base.where(models.CampaignMetric.advertiser.in_(advertiser))
@@ -1458,7 +1461,6 @@ async def pg_table(
     db: AsyncSession = Depends(get_db),
 ):
     """Raw data table from Postgres."""
-    from sqlalchemy import select, func
     q = select(models.CampaignMetric).order_by(models.CampaignMetric.date.desc())
     if advertiser:
         q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
@@ -1515,7 +1517,6 @@ async def sync_all_endpoint(db: AsyncSession = Depends(get_db)):
 @app.get("/api/workflow/campaigns/{campaign_id}/metrics")
 async def get_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_db)):
     """Get synced metrics for a campaign."""
-    from sqlalchemy import select
     result = await db.execute(
         select(models.CampaignMetric).where(models.CampaignMetric.campaign_id == campaign_id).order_by(models.CampaignMetric.date.desc())
     )
