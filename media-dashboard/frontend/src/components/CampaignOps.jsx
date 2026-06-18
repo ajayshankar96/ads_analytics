@@ -66,10 +66,10 @@ const ASSET_FIELDS = [
   { key: "offer_title", label: "Offer Title", type: "input" },
   { key: "details_tc", label: "Details / T&C", type: "textarea" },
   { key: "how_to_redeem", label: "How to Redeem", type: "textarea" },
-  { key: "promo_codes", label: "Promo Code(s)", type: "input" },
-  { key: "code_validity", label: "Code Validity", type: "input" },
-  { key: "creative_url", label: "Creative (600×600 JPG/PNG)", type: "upload" },
-  { key: "logo_url", label: "Logo (300×300 JPG/PNG)", type: "upload" },
+  { key: "promo_codes", label: "Promo Code(s)", type: "codes" },
+  { key: "code_validity", label: "Code Validity", type: "hidden" },
+  { key: "creative_url", label: "Creative URL (600×600)", type: "input" },
+  { key: "logo_url", label: "Logo URL (300×300)", type: "input" },
   { key: "targeting", label: "Targeting / Persona", type: "textarea" },
   { key: "daily_budget", label: "Daily Budget (₹)", type: "input" },
   { key: "cpc_cpd", label: "CPC / CPD", type: "input" },
@@ -107,6 +107,99 @@ function buildEmailDraft(campaign) {
   return lines.join("\n");
 }
 
+function CodesSection({ assets, setAssets }) {
+  const codeData = (() => {
+    try { return JSON.parse(assets.promo_codes || '{}'); } catch { return {}; }
+  })();
+  const codeType = codeData.type || "static";
+  const codes = codeData.codes || "";
+  const sheetsLinks = codeData.sheets_links || [""];
+  const utmUrl = codeData.utm_url || "";
+  const startDate = codeData.start_date || "";
+  const endDate = codeData.end_date || "";
+
+  const update = (patch) => {
+    const merged = { ...codeData, ...patch };
+    setAssets((prev) => ({ ...prev, promo_codes: JSON.stringify(merged), code_validity: merged.end_date || "" }));
+  };
+
+  const tabStyle = (active) => ({
+    padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", borderRadius: 6, border: "none",
+    background: active ? c.blue : "#F1F5F9", color: active ? "#fff" : c.sub,
+  });
+
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Code Type *</label>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <button style={tabStyle(codeType === "static")} onClick={() => update({ type: "static" })}>Static Codes</button>
+        <button style={tabStyle(codeType === "dynamic")} onClick={() => update({ type: "dynamic" })}>Dynamic Codes</button>
+        <button style={tabStyle(codeType === "none")} onClick={() => update({ type: "none" })}>No Code</button>
+      </div>
+
+      {codeType === "static" && (
+        <>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (comma-separated)</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+              value={codes} onChange={(e) => update({ codes: e.target.value })} placeholder="CODE1, CODE2, CODE3" />
+            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Enter multiple codes separated by commas</div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+              value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
+            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
+          </div>
+        </>
+      )}
+
+      {codeType === "dynamic" && (
+        <>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (Google Sheets Links) *</label>
+            {sheetsLinks.map((link, i) => (
+              <input key={i} style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", marginBottom: 6 }}
+                value={link} onChange={(e) => { const updated = [...sheetsLinks]; updated[i] = e.target.value; update({ sheets_links: updated }); }}
+                placeholder="https://docs.google.com/spreadsheets/d/..." />
+            ))}
+            <button onClick={() => update({ sheets_links: [...sheetsLinks, ""] })}
+              style={{ border: `1.5px dashed ${c.blue}`, background: "none", color: c.blue, borderRadius: 7, padding: "8px", width: "100%", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              ⊕ Add another sheet
+            </button>
+            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One sheet per Advertiser × Publisher × Segment × Offer combination. Each sheet: single header column, codes in rows.</div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+              value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
+            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
+          </div>
+        </>
+      )}
+
+      {codeType === "none" && (
+        <div style={{ background: "#FEF3E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#92400E", marginBottom: 10 }}>
+          ⚠ <strong>No Code</strong> — This campaign does not use coupon codes for attribution.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity Start Date</label>
+          <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+            value={startDate} onChange={(e) => update({ start_date: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity End Date</label>
+          <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+            value={endDate} onChange={(e) => update({ end_date: e.target.value })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
@@ -126,8 +219,14 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
     setAssets(a);
   }, [campaign.campaign_id, campaign.current_stage, campaign.creative_url, campaign.logo_url]);
 
-  const filledCount = ASSET_FIELDS.filter((f) => assets[f.key]?.trim()).length;
-  const totalFields = ASSET_FIELDS.length;
+  const visibleFields = ASSET_FIELDS.filter((f) => f.type !== "hidden");
+  const filledCount = visibleFields.filter((f) => {
+    if (f.type === "codes") {
+      try { const d = JSON.parse(assets[f.key] || '{}'); return !!d.type; } catch { return false; }
+    }
+    return assets[f.key]?.trim();
+  }).length;
+  const totalFields = visibleFields.length;
   const allFilled = filledCount === totalFields;
   const pct = (filledCount / totalFields) * 100;
 
@@ -272,35 +371,24 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
             <div style={s.assetBar}><div style={s.assetFill(pct)} /></div>
           </div>
           <div style={s.grid2}>
-            {ASSET_FIELDS.map((f) => (
-              <div key={f.key} style={s.field}>
-                <label style={s.label}>{f.label}</label>
-                {f.type === "upload" ? (
-                  <div>
-                    {assets[f.key] ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <img src={assets[f.key]} alt={f.label} style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: `1px solid ${c.line}` }} />
-                        <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Uploaded ✓</span>
-                        <label style={{ ...s.taskBtn, cursor: "pointer" }}>
-                          Replace
-                          <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(f.key, file); }} />
-                        </label>
-                      </div>
-                    ) : (
-                      <label style={{ ...s.input, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, color: c.muted }}>
-                        📎 Click to upload JPG/PNG
-                        <input type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(f.key, file); }} />
-                      </label>
-                    )}
-                  </div>
+            {ASSET_FIELDS.filter((f) => f.type !== "hidden").map((f) => (
+              <div key={f.key} style={f.type === "codes" ? { ...s.field, gridColumn: "1 / -1" } : s.field}>
+                {f.type === "codes" ? (
+                  <CodesSection assets={assets} setAssets={setAssets} />
                 ) : f.type === "textarea" ? (
-                  <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
+                  <>
+                    <label style={s.label}>{f.label}</label>
+                    <textarea style={s.textarea} value={assets[f.key]} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
+                  </>
                 ) : (
-                  <input style={{ ...s.input, ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
-                    value={assets[f.key]}
-                    onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
-                    disabled={f.key === "offer_title" && !!campaign.offer_title}
-                    placeholder="—" />
+                  <>
+                    <label style={s.label}>{f.label}</label>
+                    <input style={{ ...s.input, ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
+                      value={assets[f.key]}
+                      onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
+                      disabled={f.key === "offer_title" && !!campaign.offer_title}
+                      placeholder="—" />
+                  </>
                 )}
               </div>
             ))}
