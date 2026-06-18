@@ -311,13 +311,16 @@ export default function App() {
   const [isAdmin, setIsAdmin]             = useState(false);
   const [showConsole, setShowConsole]     = useState(false);
   const [userRole, setUserRole]           = useState("VIEWER");
+  const [userEmail, setUserEmail]         = useState("");
+  const [showProfile, setShowProfile]     = useState(false);
+  const [showCache, setShowCache]         = useState(false);
 
   useEffect(() => {
     getHealth()
       .then((h) => { setApiStatus(h.cache); setCacheAge(h.cacheAgeSecs); })
       .catch(() => setApiStatus("error"));
     getConsoleAccess().then((d) => setIsAdmin(!!d.is_admin)).catch(() => {});
-    getMyRole().then((d) => setUserRole(d.role || "VIEWER")).catch(() => {});
+    getMyRole().then((d) => { setUserRole(d.role || "VIEWER"); setUserEmail(d.email || ""); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -399,30 +402,49 @@ export default function App() {
           <div style={S.headerSub}>Advertising Analytics Platform</div>
         </div>
 
-        <div style={S.statsStrip}>
-          <div style={S.statsLabel}><span>📊</span> STATS</div>
-          {STAT_ITEMS.map((item, idx) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Cache icon with dropdown */}
+          <div style={{ position: "relative" }}>
             <div
-              key={item.key}
-              style={{ ...S.statItem, ...(idx === STAT_ITEMS.length - 1 ? { borderRight: "none" } : {}) }}
+              onClick={() => { setShowProfile(false); setShowCache(!showCache); }}
+              style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1.5px solid rgba(255,255,255,0.3)" }}
+              title="Cache status"
             >
-              <div style={S.statLabel}>{item.label}</div>
-              <div style={S.statValue}>
-                {viewStats === null ? "—" : (viewStats[item.key] ?? 0).toLocaleString()}
-              </div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+              </svg>
             </div>
-          ))}
-        </div>
+            {showCache && (
+              <div style={{ position: "absolute", top: 42, right: 0, background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "14px 18px", minWidth: 200, zIndex: 9999 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Cache Status</div>
+                <div style={{ fontSize: 13, color: "#334155", marginBottom: 6 }}>
+                  {apiStatus === "error" ? <span style={{ color: "#dc2626" }}>⚠ Backend unreachable</span>
+                    : <>{apiStatus === "warm" ? "🟢" : "🟡"} {apiStatus}{cacheAge !== null && ` · ${cacheAge}s ago`}</>}
+                </div>
+                <button style={{ ...S.refreshBtn, background: "#2563eb", color: "#fff", border: "none", width: "100%", borderRadius: 6, padding: "8px", marginTop: 4 }} onClick={() => { handleRefreshCache(); setShowCache(false); }} disabled={refreshing}>
+                  {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
+                </button>
+              </div>
+            )}
+          </div>
 
-        <div style={S.cacheInfo}>
-          {apiStatus === "error"
-            ? <span style={{ color: "#fca5a5" }}>⚠ Backend unreachable</span>
-            : <>{apiStatus === "warm" ? "🟢" : "🟡"} Cache {apiStatus}
-                {cacheAge !== null && ` · ${cacheAge}s ago`}</>}
-          <br />
-          <button style={S.refreshBtn} onClick={handleRefreshCache} disabled={refreshing}>
-            {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
-          </button>
+          {/* Profile icon with dropdown */}
+          <div style={{ position: "relative" }}>
+            <div
+              onClick={() => { setShowCache(false); setShowProfile(!showProfile); }}
+              style={{ width: 34, height: 34, borderRadius: "50%", background: "#2E5BFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#fff", border: "2px solid rgba(255,255,255,0.5)" }}
+            >
+              {(userEmail || "?").substring(0, 2).toUpperCase()}
+            </div>
+            {showProfile && (
+              <div style={{ position: "absolute", top: 42, right: 0, background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "14px 18px", minWidth: 220, zIndex: 9999 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{userEmail || "Not signed in"}</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                  Role: <span style={{ background: "#EAF0FF", color: "#2E5BFF", padding: "2px 8px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>{userRole}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
