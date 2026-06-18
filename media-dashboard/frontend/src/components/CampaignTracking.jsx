@@ -213,43 +213,42 @@ function TrackingForm({ campaign, segments, onDone }) {
       <div style={{ ...s.field, marginTop: 16 }}>
         <label style={{ ...s.label, fontSize: 13, marginBottom: 6 }}>Metrics Library</label>
         <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>
-          Click "Detect Columns" to read your advertiser sheet headers and select which metrics to track.
+          Select a category preset to pick the direct metrics to track, then choose computed metrics.
         </div>
 
-        <button style={{ ...s.addBtn, marginBottom: 12 }} onClick={handleDetectHeaders} disabled={loadingHeaders}>
-          {loadingHeaders ? "Reading sheet…" : "Detect Columns from Advertiser Sheet"}
-        </button>
-
         {/* Industry preset buttons */}
-        {sheetHeaders.length === 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: c.muted, marginBottom: 6, fontWeight: 700 }}>Or use a preset:</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {Object.entries(INDUSTRY_PRESETS).map(([industry, presetMetrics]) => (
-                <button key={industry} style={{ ...s.removeBtn, background: "#EAF0FF", color: c.blue }} onClick={() => setSelectedMetrics(presetMetrics)}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 6, fontWeight: 700 }}>Select category:</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {Object.entries(INDUSTRY_PRESETS).map(([industry, presetMetrics]) => {
+              const isActive = JSON.stringify(selectedMetrics) === JSON.stringify(presetMetrics);
+              return (
+                <button key={industry} style={{ ...s.removeBtn, background: isActive ? "#E3F6EE" : "#EAF0FF", color: isActive ? c.green : c.blue, border: `1px solid ${isActive ? c.green : "transparent"}` }} onClick={() => setSelectedMetrics(presetMetrics)}>
                   {industry}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
 
-        {/* Detected headers as checkboxes */}
-        {sheetHeaders.length > 0 && (
+        {/* Selected direct metrics as editable chips */}
+        {selectedMetrics.length > 0 && (
           <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 8 }}>
-              Select metrics to track ({selectedMetrics.length} selected)
+              Direct metrics to extract ({selectedMetrics.length})
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {sheetHeaders.map((h) => {
-                const isSelected = selectedMetrics.includes(h);
-                return (
-                  <label key={h} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", background: isSelected ? "#E3F6EE" : "#F7F8FA", border: `1px solid ${isSelected ? c.green : c.line}`, fontWeight: isSelected ? 600 : 400 }}>
-                    <input type="checkbox" checked={isSelected} onChange={() => toggleMetric(h)} style={{ width: 14, height: 14 }} />
-                    {h}
-                  </label>
-                );
-              })}
+              {selectedMetrics.map((m) => (
+                <span key={m} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, fontSize: 12, background: "#E3F6EE", border: `1px solid ${c.green}`, fontWeight: 600 }}>
+                  {m}
+                  <span style={{ cursor: "pointer", color: c.red, fontWeight: 800 }} onClick={() => toggleMetric(m)}>×</span>
+                </span>
+              ))}
+              <input
+                style={{ border: `1px dashed ${c.line}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, outline: "none", width: 120 }}
+                placeholder="+ Add more"
+                onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setSelectedMetrics([...selectedMetrics, e.target.value.trim()]); e.target.value = ""; } }}
+              />
             </div>
           </div>
         )}
