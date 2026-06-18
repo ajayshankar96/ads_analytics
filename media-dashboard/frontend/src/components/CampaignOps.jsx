@@ -233,6 +233,35 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
         </div>
       )}
 
+      {/* Read-only asset summary for completed stages */}
+      {!showAssetForm && stage !== "OPS_SETUP" && campaign.landing_link && (
+        <div style={s.section}>
+          <div style={s.secTitle}>Assets Received</div>
+          <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+            {ASSET_FIELDS.map((f) => {
+              const val = campaign[f.key];
+              if (!val) return null;
+              const isUrl = val.startsWith && val.startsWith("http");
+              const isImage = f.key === "creative_url" || f.key === "logo_url";
+              return (
+                <div key={f.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, padding: "7px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 13 }}>
+                  <span style={{ color: c.muted, minWidth: 140, flexShrink: 0 }}>{f.label}</span>
+                  <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>
+                    {isImage ? (
+                      <a href={val} target="_blank" rel="noopener noreferrer">
+                        <img src={val} alt={f.label} style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", border: `1px solid ${c.line}` }} />
+                      </a>
+                    ) : isUrl ? (
+                      <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a>
+                    ) : val}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Step 1: Asset Form (OPS_SETUP) */}
       {showAssetForm && (
         <div style={s.section}>
