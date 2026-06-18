@@ -155,27 +155,9 @@ function CodesSection({ assets, setAssets }) {
       )}
 
       {codeType === "dynamic" && (
-        <>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (Google Sheets Links) *</label>
-            {sheetsLinks.map((link, i) => (
-              <input key={i} style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", marginBottom: 6 }}
-                value={link} onChange={(e) => { const updated = [...sheetsLinks]; updated[i] = e.target.value; update({ sheets_links: updated }); }}
-                placeholder="https://docs.google.com/spreadsheets/d/..." />
-            ))}
-            <button onClick={() => update({ sheets_links: [...sheetsLinks, ""] })}
-              style={{ border: `1.5px dashed ${c.blue}`, background: "none", color: c.blue, borderRadius: 7, padding: "8px", width: "100%", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              ⊕ Add another sheet
-            </button>
-            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One sheet per Advertiser × Publisher × Segment × Offer combination. Each sheet: single header column, codes in rows.</div>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-              value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
-            <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
-          </div>
-        </>
+        <div style={{ background: "#EAF0FF", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#274DB0", marginBottom: 10 }}>
+          ℹ <strong>Dynamic Codes</strong> — Revenue attribution will be available in the <strong>Campaign Success & Tracking</strong> tab once the campaign is live.
+        </div>
       )}
 
       {codeType === "none" && (

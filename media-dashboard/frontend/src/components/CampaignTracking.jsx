@@ -375,8 +375,9 @@ function TrackingDoneView({ campaign, canEdit }) {
   );
 }
 
+const DRIVE_CODES_FOLDER = "https://drive.google.com/drive/folders/1QCcZtxs_KekuBYVB5Z2OzsYkgitpANhO";
+
 function AttributionSection({ campaign }) {
-  const [driveFolderUrl, setDriveFolderUrl] = useState("");
   const [file, setFile] = useState(null);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -390,11 +391,10 @@ function AttributionSection({ campaign }) {
 
   const handleRun = async () => {
     if (!file) { alert("Upload a redemption file"); return; }
-    if (!driveFolderUrl.trim()) { alert("Enter the Drive folder URL"); return; }
     setRunning(true);
     setResult(null);
     try {
-      const r = await runAttribution(campaign.campaign_id, file, driveFolderUrl);
+      const r = await runAttribution(campaign.campaign_id, file, DRIVE_CODES_FOLDER);
       setResult(r);
     } catch (e) { alert("Attribution failed: " + e.message); }
     finally { setRunning(false); }
@@ -407,23 +407,15 @@ function AttributionSection({ campaign }) {
       {!result ? (
         <>
           <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>
-            Upload the redemption/revenue file and provide the Drive folder containing publisher code CSVs.
+            Upload the redemption/revenue file to attribute orders to publishers.
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Redemption File (CSV/Excel)</label>
-              <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)}
-                style={{ fontSize: 12 }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Drive Folder URL</label>
-              <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-                value={driveFolderUrl} onChange={(e) => setDriveFolderUrl(e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/..." />
-            </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Redemption File (CSV/Excel)</label>
+            <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)}
+              style={{ fontSize: 12 }} />
           </div>
-          <button onClick={handleRun} disabled={running || !file || !driveFolderUrl.trim()}
-            style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!file || !driveFolderUrl.trim()) ? 0.5 : 1 }}>
+          <button onClick={handleRun} disabled={running || !file}
+            style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: !file ? 0.5 : 1 }}>
             {running ? "Running attribution…" : "Run Revenue Attribution"}
           </button>
         </>
