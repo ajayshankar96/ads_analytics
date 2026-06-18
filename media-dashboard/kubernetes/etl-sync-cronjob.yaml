@@ -1,0 +1,78 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: media-dashboard-etl-sync
+  namespace: analytics-tools
+  labels:
+    app: media-dashboard-etl-sync
+    bu: ads
+  annotations:
+    janitor/ttl: forever
+spec:
+  schedule: "0 */6 * * *"            # every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600     # 1 hour max
+      template:
+        metadata:
+          labels:
+            app: media-dashboard-etl-sync
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: etl
+            image: c.rzp.io/proxy_dockerhub/python:3.11-slim
+            env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@media-dashboard-postgres.analytics-tools.svc.cluster.local:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_PASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_DB } }
+            - name: OAUTH_TOKEN_JSON_CONTENT
+              valueFrom: { secretKeyRef: { name: media-dashboard-secrets, key: OAUTH_TOKEN_JSON_CONTENT } }
+            - name: GIT_TOKEN
+              valueFrom: { secretKeyRef: { name: media-dashboard-git, key: GITHUB_TOKEN } }
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              echo "[1/4] Installing git..."
+              apt-get update -qq && apt-get install -y -qq git >/dev/null
+
+              echo "[2/4] Cloning repo..."
+              git clone --depth 1 https://x-access-token:${GIT_TOKEN}@github.com/ajayshankar96/ads_analytics.git /app
+
+              echo "[3/4] Installing dependencies..."
+              cd /app/media-dashboard/backend
+              pip install --no-cache-dir -q -r requirements.txt
+
+              echo "[4/4] Running ETL sync..."
+              python3 -c "
+              import asyncio, logging
+              logging.basicConfig(level=logging.INFO)
+              from db.database import async_session
+              import etl_worker
+
+              async def run():
+                  async with async_session() as db:
+                      results = await etl_worker.sync_all_campaigns(db)
+                      total_rows = sum(r.get('rows', 0) for r in results)
+                      errors = [r for r in results if 'error' in r]
+                      print(f'ETL sync complete: {len(results)} campaigns, {total_rows} total rows, {len(errors)} errors')
+                      for e in errors:
+                          print(f'  ERROR: {e}')
+
+              asyncio.run(run())
+              "
+              echo "ETL sync job finished."
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits: { memory: 1Gi }
