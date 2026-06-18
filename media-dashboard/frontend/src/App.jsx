@@ -469,7 +469,7 @@ export default function App() {
 
             {/* Tab pills */}
             <div style={S.groupTabs}>
-              {group.tabs.map((tab) => (
+              {group.tabs.filter((tab) => tab.id !== "roles" || userRole === "ADMIN").map((tab) => (
                 <TabPill
                   key={tab.id}
                   tab={tab}
