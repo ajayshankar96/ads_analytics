@@ -248,7 +248,7 @@ def read_sheet_headers(sheet_url: str) -> list:
         return []
     sheet_id = match.group(1)
     try:
-        service = _get_sheets()
+        service = _get_service()
         # Try to read first few rows to find the header (often row 1 or row 3)
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range="A1:ZZ5"
