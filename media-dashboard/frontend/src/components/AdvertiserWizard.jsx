@@ -175,6 +175,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
   // Step 7 — welcome email
   useGisLoaded();
   const [emailTo, setEmailTo] = useState(a.poc_email || "");
+  const [emailCc, setEmailCc] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -188,7 +189,8 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
     setSendingEmail(true); setEmailStatus(null);
     try {
       const token = await getGmailAccessToken();   // consent popup (first time)
-      await sendViaGmail(token, { to, subject: emailSubject, html: textToHtml(emailBody) });
+      const cc = (emailCc || "").split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+      await sendViaGmail(token, { to, cc: cc.length ? cc : undefined, subject: emailSubject, html: textToHtml(emailBody) });
       // Record the send so the Sales list can show a green mail icon + details.
       if (advId) {
         try { await recordWelcomeEmail(advId, { to: to.join(", "), subject: emailSubject, body: emailBody }); }
@@ -549,6 +551,14 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
             <input style={s.affixInput} type="text" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="poc@brand.com" />
           </div>
           <div style={s.help}>Pre-filled from the POC email · comma-separate for multiple recipients.</div>
+        </div>
+        <div style={{ ...s.field, marginBottom: 18 }}>
+          <label style={s.label}>CC</label>
+          <div style={s.suffixWrap}>
+            <div style={s.prefixBox}>Cc</div>
+            <input style={s.affixInput} type="text" value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="manager@brand.com, finance@brand.com" />
+          </div>
+          <div style={s.help}>Optional · comma-separate for multiple CC recipients.</div>
         </div>
         <div style={{ ...s.field, marginBottom: 18 }}>
           <label style={s.label}>Subject</label>
