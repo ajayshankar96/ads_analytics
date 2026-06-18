@@ -1289,7 +1289,24 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
-# ── Postgres-backed Dashboard (Phase 4) ───────────────────────────────────────
+# ── Postgres-backed Dashboard (Phase 4) — raw SQL for reliability ──────────────
+
+def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
+    clauses = []
+    if advertiser:
+        placeholders = ",".join(f":adv_{i}" for i in range(len(advertiser)))
+        clauses.append(f"advertiser IN ({placeholders})")
+        for i, a in enumerate(advertiser): params[f"adv_{i}"] = a
+    if publisher:
+        placeholders = ",".join(f":pub_{i}" for i in range(len(publisher)))
+        clauses.append(f"publisher IN ({placeholders})")
+        for i, p in enumerate(publisher): params[f"pub_{i}"] = p
+    if dateFrom:
+        clauses.append("date >= :dateFrom"); params["dateFrom"] = dateFrom
+    if dateTo:
+        clauses.append("date <= :dateTo"); params["dateTo"] = dateTo
+    return (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
 
 @app.get("/api/dashboard/pg/aggregates")
 async def pg_aggregates(
@@ -1299,42 +1316,19 @@ async def pg_aggregates(
     dateTo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Dashboard aggregates from Postgres rmn_campaign_metrics."""
-    q = select(
-        func.sum(models.CampaignMetric.impressions).label("impressions"),
-        func.sum(models.CampaignMetric.clicks).label("clicks"),
-        func.sum(models.CampaignMetric.spends).label("spends"),
-        func.sum(models.CampaignMetric.orders_pub).label("orders"),
-        func.sum(models.CampaignMetric.publisher_spends).label("publisher_spends"),
-        func.sum(models.CampaignMetric.advertiser_spends).label("advertiser_spends"),
-        func.count(func.distinct(models.CampaignMetric.date)).label("days"),
-    )
-    if advertiser:
-        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        q = q.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        q = q.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        q = q.where(models.CampaignMetric.date <= dateTo)
-
-    row = (await db.execute(q)).one()
-    impressions = int(row.impressions or 0)
-    clicks = int(row.clicks or 0)
-    spends = float(row.spends or 0)
-    orders = int(row.orders or 0)
+    params = {}
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM(advertiser_spends),0) as adv_spends, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    row = (await db.execute(text(sql), params)).one()
+    imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
     return {
-        "impressions": impressions,
-        "clicks": clicks,
-        "spends": round(spends, 2),
-        "orders": orders,
-        "ctr": round((clicks / impressions * 100) if impressions > 0 else 0, 2),
-        "cpm": round((spends / impressions * 1000) if impressions > 0 else 0, 2),
+        "impressions": imp, "clicks": clicks, "spends": round(spends, 2), "orders": orders,
+        "ctr": round((clicks / imp * 100) if imp > 0 else 0, 2),
+        "cpm": round((spends / imp * 1000) if imp > 0 else 0, 2),
         "cpc": round((spends / clicks) if clicks > 0 else 0, 2),
-        "publisher_spends": round(float(row.publisher_spends or 0), 2),
-        "advertiser_spends": round(float(row.advertiser_spends or 0), 2),
-        "days": int(row.days or 0),
-        "source": "postgres",
+        "publisher_spends": round(float(row.pub_spends), 2),
+        "advertiser_spends": round(float(row.adv_spends), 2),
+        "days": int(row.days), "source": "postgres",
     }
 
 
@@ -1346,32 +1340,12 @@ async def pg_timeseries(
     dateTo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Daily timeseries from Postgres."""
-    q = select(
-        models.CampaignMetric.date,
-        func.sum(models.CampaignMetric.impressions).label("impressions"),
-        func.sum(models.CampaignMetric.clicks).label("clicks"),
-        func.sum(models.CampaignMetric.spends).label("spends"),
-        func.sum(models.CampaignMetric.orders_pub).label("orders"),
-    ).group_by(models.CampaignMetric.date).order_by(models.CampaignMetric.date)
-
-    if advertiser:
-        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        q = q.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        q = q.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        q = q.where(models.CampaignMetric.date <= dateTo)
-
-    rows = (await db.execute(q)).all()
+    params = {}
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
+    sql = f"SELECT date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY date ORDER BY date"
+    rows = (await db.execute(text(sql), params)).all()
     return {
-        "timeSeries": [
-            {"date": r.date.isoformat(), "impressions": int(r.impressions or 0),
-             "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2),
-             "orders": int(r.orders or 0)}
-            for r in rows
-        ],
+        "timeSeries": [{"date": r.date.isoformat(), "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2), "orders": int(r.orders or 0)} for r in rows],
         "source": "postgres",
     }
 
@@ -1384,57 +1358,20 @@ async def pg_breakdowns(
     dateTo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Breakdowns by advertiser and publisher from Postgres."""
-    base = select(models.CampaignMetric)
-    if advertiser:
-        base = base.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        base = base.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        base = base.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        base = base.where(models.CampaignMetric.date <= dateTo)
+    params_adv = {}
+    where_adv = _pg_where(params_adv, advertiser, publisher, dateFrom, dateTo)
+    sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
+    adv_rows = (await db.execute(text(sql_adv), params_adv)).all()
 
-    # By advertiser
-    q_adv = select(
-        models.CampaignMetric.advertiser,
-        func.sum(models.CampaignMetric.impressions).label("impressions"),
-        func.sum(models.CampaignMetric.clicks).label("clicks"),
-        func.sum(models.CampaignMetric.spends).label("spends"),
-    ).group_by(models.CampaignMetric.advertiser)
-    if advertiser:
-        q_adv = q_adv.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        q_adv = q_adv.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        q_adv = q_adv.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        q_adv = q_adv.where(models.CampaignMetric.date <= dateTo)
-
-    adv_rows = (await db.execute(q_adv)).all()
-
-    # By publisher
-    q_pub = select(
-        models.CampaignMetric.publisher,
-        func.sum(models.CampaignMetric.impressions).label("impressions"),
-        func.sum(models.CampaignMetric.clicks).label("clicks"),
-        func.sum(models.CampaignMetric.spends).label("spends"),
-    ).group_by(models.CampaignMetric.publisher)
-    if advertiser:
-        q_pub = q_pub.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        q_pub = q_pub.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        q_pub = q_pub.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        q_pub = q_pub.where(models.CampaignMetric.date <= dateTo)
-
-    pub_rows = (await db.execute(q_pub)).all()
+    params_pub = {}
+    where_pub = _pg_where(params_pub, advertiser, publisher, dateFrom, dateTo)
+    sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
+    pub_rows = (await db.execute(text(sql_pub), params_pub)).all()
 
     return {
         "breakdowns": {
-            "by_advertiser": [{"name": r.advertiser, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in adv_rows],
-            "by_publisher": [{"name": r.publisher, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in pub_rows],
+            "by_advertiser": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in adv_rows],
+            "by_publisher": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in pub_rows],
         },
         "source": "postgres",
     }
@@ -1450,32 +1387,19 @@ async def pg_table(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    """Raw data table from Postgres."""
-    q = select(models.CampaignMetric).order_by(models.CampaignMetric.date.desc())
-    if advertiser:
-        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
-    if publisher:
-        q = q.where(models.CampaignMetric.publisher.in_(publisher))
-    if dateFrom:
-        q = q.where(models.CampaignMetric.date >= dateFrom)
-    if dateTo:
-        q = q.where(models.CampaignMetric.date <= dateTo)
+    params = {}
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
+    count_sql = f"SELECT COUNT(*) as cnt FROM rmn_campaign_metrics{where}"
+    total = (await db.execute(text(count_sql), params)).scalar() or 0
 
-    total_q = select(func.count()).select_from(q.subquery())
-    total = (await db.execute(total_q)).scalar() or 0
-
-    rows = (await db.execute(q.offset(offset).limit(limit))).scalars().all()
+    params2 = dict(params)
+    params2["lim"] = limit
+    params2["off"] = offset
+    sql = f"SELECT date, advertiser, publisher, segment, impressions, clicks, spends, orders_pub, publisher_spends, advertiser_spends, advertiser_metrics FROM rmn_campaign_metrics{where} ORDER BY date DESC LIMIT :lim OFFSET :off"
+    rows = (await db.execute(text(sql), params2)).all()
     return {
-        "rows": [
-            {"date": r.date.isoformat(), "advertiser": r.advertiser, "publisher": r.publisher,
-             "segment": r.segment, "impressions": r.impressions, "clicks": r.clicks,
-             "spends": r.spends, "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends,
-             "advertiser_spends": r.advertiser_spends,
-             "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {}}
-            for r in rows
-        ],
-        "total": total,
-        "source": "postgres",
+        "rows": [{"date": r.date.isoformat(), "advertiser": r.advertiser, "publisher": r.publisher, "segment": r.segment, "impressions": r.impressions, "clicks": r.clicks, "spends": r.spends, "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends, "advertiser_spends": r.advertiser_spends, "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {}} for r in rows],
+        "total": total, "source": "postgres",
     }
 
 
