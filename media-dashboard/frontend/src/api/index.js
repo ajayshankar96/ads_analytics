@@ -229,6 +229,19 @@ export const submitTrackingSetup = (campaignId, payload) =>
 export const getSheetHeaders = (url) =>
   apiFetch(`/api/sheet-headers${buildQuery({ url })}`);
 
+// ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
+export const getPgAggregates = (filters = {}) =>
+  apiFetch(`/api/dashboard/pg/aggregates${buildQuery(filters)}`);
+
+export const getPgTimeseries = (filters = {}) =>
+  apiFetch(`/api/dashboard/pg/timeseries${buildQuery(filters)}`);
+
+export const getPgBreakdowns = (filters = {}) =>
+  apiFetch(`/api/dashboard/pg/breakdowns${buildQuery(filters)}`);
+
+export const getPgTable = (filters = {}) =>
+  apiFetch(`/api/dashboard/pg/table${buildQuery(filters)}`);
+
 export const syncCampaign = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/sync`, { method: "POST" });
 

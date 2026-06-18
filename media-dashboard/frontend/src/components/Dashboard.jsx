@@ -7,6 +7,9 @@ import {
   getDashboardAggregates,
   getDashboardTimeSeries,
   getDashboardBreakdowns,
+  getPgAggregates,
+  getPgTimeseries,
+  getPgBreakdowns,
 } from "../api";
 
 const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
@@ -63,7 +66,7 @@ function KPICard({ label, value, sub }) {
   );
 }
 
-export default function Dashboard({ filters }) {
+export default function Dashboard({ filters, dataSource = "sheet" }) {
   const [aggs, setAggs] = useState(null);
   const [series, setSeries] = useState(null);
   const [breakdowns, setBreakdowns] = useState(null);
@@ -81,10 +84,11 @@ export default function Dashboard({ filters }) {
 
   useEffect(() => {
     setLoading(true);
+    const usePg = dataSource === "postgres";
     Promise.all([
-      getDashboardAggregates(filters),
-      getDashboardTimeSeries({ ...filters, groupBy }),
-      getDashboardBreakdowns(filters),
+      usePg ? getPgAggregates(filters) : getDashboardAggregates(filters),
+      usePg ? getPgTimeseries({ ...filters, groupBy }) : getDashboardTimeSeries({ ...filters, groupBy }),
+      usePg ? getPgBreakdowns(filters) : getDashboardBreakdowns(filters),
     ])
       .then(([a, ts, bd]) => {
         setAggs(a);
@@ -93,7 +97,7 @@ export default function Dashboard({ filters }) {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [filters, groupBy]);
+  }, [filters, groupBy, dataSource]);
 
   // Filter series to selected date range
   const filteredSeries = useMemo(() => {

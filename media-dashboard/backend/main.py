@@ -1268,6 +1268,200 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+# ── Postgres-backed Dashboard (Phase 4) ───────────────────────────────────────
+
+@app.get("/api/dashboard/pg/aggregates")
+async def pg_aggregates(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Dashboard aggregates from Postgres rmn_campaign_metrics."""
+    from sqlalchemy import select, func
+    q = select(
+        func.sum(models.CampaignMetric.impressions).label("impressions"),
+        func.sum(models.CampaignMetric.clicks).label("clicks"),
+        func.sum(models.CampaignMetric.spends).label("spends"),
+        func.sum(models.CampaignMetric.orders_pub).label("orders"),
+        func.sum(models.CampaignMetric.publisher_spends).label("publisher_spends"),
+        func.sum(models.CampaignMetric.advertiser_spends).label("advertiser_spends"),
+        func.count(func.distinct(models.CampaignMetric.date)).label("days"),
+    )
+    if advertiser:
+        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        q = q.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        q = q.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        q = q.where(models.CampaignMetric.date <= dateTo)
+
+    row = (await db.execute(q)).one()
+    impressions = int(row.impressions or 0)
+    clicks = int(row.clicks or 0)
+    spends = float(row.spends or 0)
+    orders = int(row.orders or 0)
+    return {
+        "impressions": impressions,
+        "clicks": clicks,
+        "spends": round(spends, 2),
+        "orders": orders,
+        "ctr": round((clicks / impressions * 100) if impressions > 0 else 0, 2),
+        "cpm": round((spends / impressions * 1000) if impressions > 0 else 0, 2),
+        "cpc": round((spends / clicks) if clicks > 0 else 0, 2),
+        "publisher_spends": round(float(row.publisher_spends or 0), 2),
+        "advertiser_spends": round(float(row.advertiser_spends or 0), 2),
+        "days": int(row.days or 0),
+        "source": "postgres",
+    }
+
+
+@app.get("/api/dashboard/pg/timeseries")
+async def pg_timeseries(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily timeseries from Postgres."""
+    from sqlalchemy import select, func
+    q = select(
+        models.CampaignMetric.date,
+        func.sum(models.CampaignMetric.impressions).label("impressions"),
+        func.sum(models.CampaignMetric.clicks).label("clicks"),
+        func.sum(models.CampaignMetric.spends).label("spends"),
+        func.sum(models.CampaignMetric.orders_pub).label("orders"),
+    ).group_by(models.CampaignMetric.date).order_by(models.CampaignMetric.date)
+
+    if advertiser:
+        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        q = q.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        q = q.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        q = q.where(models.CampaignMetric.date <= dateTo)
+
+    rows = (await db.execute(q)).all()
+    return {
+        "timeSeries": [
+            {"date": r.date.isoformat(), "impressions": int(r.impressions or 0),
+             "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2),
+             "orders": int(r.orders or 0)}
+            for r in rows
+        ],
+        "source": "postgres",
+    }
+
+
+@app.get("/api/dashboard/pg/breakdowns")
+async def pg_breakdowns(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Breakdowns by advertiser and publisher from Postgres."""
+    from sqlalchemy import select, func
+    base = select(models.CampaignMetric)
+    if advertiser:
+        base = base.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        base = base.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        base = base.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        base = base.where(models.CampaignMetric.date <= dateTo)
+
+    # By advertiser
+    q_adv = select(
+        models.CampaignMetric.advertiser,
+        func.sum(models.CampaignMetric.impressions).label("impressions"),
+        func.sum(models.CampaignMetric.clicks).label("clicks"),
+        func.sum(models.CampaignMetric.spends).label("spends"),
+    ).group_by(models.CampaignMetric.advertiser)
+    if advertiser:
+        q_adv = q_adv.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        q_adv = q_adv.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        q_adv = q_adv.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        q_adv = q_adv.where(models.CampaignMetric.date <= dateTo)
+
+    adv_rows = (await db.execute(q_adv)).all()
+
+    # By publisher
+    q_pub = select(
+        models.CampaignMetric.publisher,
+        func.sum(models.CampaignMetric.impressions).label("impressions"),
+        func.sum(models.CampaignMetric.clicks).label("clicks"),
+        func.sum(models.CampaignMetric.spends).label("spends"),
+    ).group_by(models.CampaignMetric.publisher)
+    if advertiser:
+        q_pub = q_pub.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        q_pub = q_pub.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        q_pub = q_pub.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        q_pub = q_pub.where(models.CampaignMetric.date <= dateTo)
+
+    pub_rows = (await db.execute(q_pub)).all()
+
+    return {
+        "breakdowns": {
+            "by_advertiser": [{"name": r.advertiser, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in adv_rows],
+            "by_publisher": [{"name": r.publisher, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in pub_rows],
+        },
+        "source": "postgres",
+    }
+
+
+@app.get("/api/dashboard/pg/table")
+async def pg_table(
+    advertiser: Optional[List[str]] = Query(None),
+    publisher: Optional[List[str]] = Query(None),
+    dateFrom: Optional[str] = None,
+    dateTo: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Raw data table from Postgres."""
+    from sqlalchemy import select, func
+    q = select(models.CampaignMetric).order_by(models.CampaignMetric.date.desc())
+    if advertiser:
+        q = q.where(models.CampaignMetric.advertiser.in_(advertiser))
+    if publisher:
+        q = q.where(models.CampaignMetric.publisher.in_(publisher))
+    if dateFrom:
+        q = q.where(models.CampaignMetric.date >= dateFrom)
+    if dateTo:
+        q = q.where(models.CampaignMetric.date <= dateTo)
+
+    total_q = select(func.count()).select_from(q.subquery())
+    total = (await db.execute(total_q)).scalar() or 0
+
+    rows = (await db.execute(q.offset(offset).limit(limit))).scalars().all()
+    return {
+        "rows": [
+            {"date": r.date.isoformat(), "advertiser": r.advertiser, "publisher": r.publisher,
+             "segment": r.segment, "impressions": r.impressions, "clicks": r.clicks,
+             "spends": r.spends, "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends,
+             "advertiser_spends": r.advertiser_spends,
+             "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {}}
+            for r in rows
+        ],
+        "total": total,
+        "source": "postgres",
+    }
+
+
 # ── ETL Sync ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/workflow/campaigns/{campaign_id}/sync")

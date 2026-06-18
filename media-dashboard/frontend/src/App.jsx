@@ -314,6 +314,7 @@ export default function App() {
   const [userEmail, setUserEmail]         = useState("");
   const [showProfile, setShowProfile]     = useState(false);
   const [showCache, setShowCache]         = useState(false);
+  const [dataSource, setDataSource]       = useState(localStorage.getItem("dataSource") || "sheet");
 
   useEffect(() => {
     getHealth()
@@ -369,7 +370,7 @@ export default function App() {
   }
 
   const renderContent = () => {
-    const props = { filters };
+    const props = { filters, dataSource };
     switch (effectiveTab) {
       case "dashboard":      return <Dashboard {...props} />;
       case "adv-perf":       return <AdvertiserPerformance {...props} />;
@@ -415,15 +416,33 @@ export default function App() {
               </svg>
             </div>
             {showCache && (
-              <div style={{ position: "absolute", top: 42, right: 0, background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "14px 18px", minWidth: 200, zIndex: 9999 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Cache Status</div>
-                <div style={{ fontSize: 13, color: "#334155", marginBottom: 6 }}>
-                  {apiStatus === "error" ? <span style={{ color: "#dc2626" }}>⚠ Backend unreachable</span>
-                    : <>{apiStatus === "warm" ? "🟢" : "🟡"} {apiStatus}{cacheAge !== null && ` · ${cacheAge}s ago`}</>}
+              <div style={{ position: "absolute", top: 42, right: 0, background: "#fff", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", padding: "14px 18px", minWidth: 220, zIndex: 9999 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Data Source</div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  {[["sheet", "Google Sheet"], ["postgres", "Postgres"]].map(([val, label]) => (
+                    <button key={val} onClick={() => { setDataSource(val); localStorage.setItem("dataSource", val); }}
+                      style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: dataSource === val ? "2px solid #2563eb" : "1px solid #e5e7eb", background: dataSource === val ? "#EAF0FF" : "#fff", color: dataSource === val ? "#2563eb" : "#64748b" }}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <button style={{ ...S.refreshBtn, background: "#2563eb", color: "#fff", border: "none", width: "100%", borderRadius: 6, padding: "8px", marginTop: 4 }} onClick={() => { handleRefreshCache(); setShowCache(false); }} disabled={refreshing}>
-                  {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
-                </button>
+                {dataSource === "sheet" && (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>Sheet Cache</div>
+                    <div style={{ fontSize: 13, color: "#334155", marginBottom: 6 }}>
+                      {apiStatus === "error" ? <span style={{ color: "#dc2626" }}>⚠ Backend unreachable</span>
+                        : <>{apiStatus === "warm" ? "🟢" : "🟡"} {apiStatus}{cacheAge !== null && ` · ${cacheAge}s ago`}</>}
+                    </div>
+                    <button style={{ ...S.refreshBtn, background: "#2563eb", color: "#fff", border: "none", width: "100%", borderRadius: 6, padding: "8px" }} onClick={() => { handleRefreshCache(); setShowCache(false); }} disabled={refreshing}>
+                      {refreshing ? "Refreshing…" : "⟳ Refresh Cache"}
+                    </button>
+                  </>
+                )}
+                {dataSource === "postgres" && (
+                  <div style={{ fontSize: 12, color: "#334155" }}>
+                    🟢 Reading from Postgres (rmn_campaign_metrics)
+                  </div>
+                )}
               </div>
             )}
           </div>
