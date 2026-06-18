@@ -458,7 +458,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
     setLoading(true);
     Promise.all([getWorkflowCampaigns(), getWorkflowStages()])
       .then(([cRes, m]) => {
-        const camps = cRes.campaigns || [];
+        const camps = (cRes.campaigns || []).filter((c) => !["LIVE", "COMPLETED", "NOT_LIVE", "CANCELLED"].includes(c.current_stage));
         setCampaigns(camps);
         setMeta(m);
         campaignsRef.current = camps;
