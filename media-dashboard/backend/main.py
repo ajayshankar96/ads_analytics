@@ -1268,6 +1268,7 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
 
 
 class TrackingSetupRequest(BaseModel):
+    campaign_type: str = "Single Campaign Sheet"
     advertiser_data_url: str = ""
     publisher_data_url: str = ""
     segment_pub: str = ""
@@ -1318,7 +1319,7 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
     from sheets_client import append_rows
     KPI_SPREADSHEET_ID = os.environ.get("KPI_SPREADSHEET_ID", "1VDr2ewZw2Xl43PuYBoKt8PgepItHZs-icD49YnILBss")
     row = [
-        "Single Campaign Sheet",                  # A: Campaign type
+        req.campaign_type,                         # A: Campaign type
         campaign.advertiser_name or "",            # B: Advertiser
         campaign.publisher_name or "",             # C: Publisher
         "",                                        # D: Advertiser Industry

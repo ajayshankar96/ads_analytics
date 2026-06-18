@@ -36,7 +36,10 @@ const s = {
 
 const GOAL_PERIODS = ["daily", "weekly", "monthly", "date_agnostic"];
 
+const CAMPAIGN_TYPES = ["Single Campaign Sheet", "Two different Sheets"];
+
 function TrackingForm({ campaign, segments, onDone }) {
+  const [campaignType, setCampaignType] = useState("Single Campaign Sheet");
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
   const [pubDataUrl, setPubDataUrl] = useState(campaign.publisher_data_url || "");
   const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
@@ -78,6 +81,7 @@ function TrackingForm({ campaign, segments, onDone }) {
     setSubmitting(true);
     try {
       await submitTrackingSetup(campaign.campaign_id, {
+        campaign_type: campaignType,
         advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl,
         segment_pub: segmentPub, segment_adv: segmentAdv,
         goals_json: buildGoalsJson(), metrics_json: buildMetricsJson(),
@@ -90,6 +94,12 @@ function TrackingForm({ campaign, segments, onDone }) {
 
   return (
     <div style={s.panel}>
+      <div style={{ ...s.field, marginBottom: 14 }}>
+        <label style={s.label}>Campaign Type *</label>
+        <select style={s.input} value={campaignType} onChange={(e) => setCampaignType(e.target.value)}>
+          {CAMPAIGN_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
       <div style={s.grid2}>
         <div style={s.field}>
           <label style={s.label}>Advertiser Data Sheet URL *</label>
