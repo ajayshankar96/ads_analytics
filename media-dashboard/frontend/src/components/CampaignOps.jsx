@@ -62,7 +62,7 @@ function CampaignCard({ campaign, onClick }) {
   const badgeLabel = stage === "LIVE" ? "Live" : stage === "SHARED_TO_PUBLISHER" ? "Publisher Emailed" : "Draft";
 
   return (
-    <div onClick={onClick} style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 10 }}>
+    <div onClick={onClick} style={{ background: c.bg, border: `1.5px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 10, boxShadow: "0 1px 4px rgba(15,23,36,0.06)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <span style={{ fontSize: 11, color: c.muted }}>{campaign.campaign_id}</span>
         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: `${badgeColor}15`, color: badgeColor }}>{badgeLabel}</span>
@@ -360,7 +360,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
   const emailed = filtered.filter((c) => ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(c.current_stage));
   const live = filtered.filter((c) => c.current_stage === "LIVE");
 
-  const colStyle = { flex: 1, minWidth: 280, background: c.bg, borderRadius: 12, padding: "14px" };
+  const colStyle = { flex: 1, minWidth: 280, background: "#fff", border: `1.5px solid ${c.line}`, borderRadius: 12, padding: "14px" };
   const colTitle = { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 };
 
   return (
