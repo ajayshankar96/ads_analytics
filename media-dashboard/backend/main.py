@@ -1043,31 +1043,21 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
 @app.get("/api/workflow/available-combos")
 async def available_combos(db: AsyncSession = Depends(get_db)):
     """Get advertiser+publisher combos that have budget allocated."""
-    alloc_result = await db.execute(
-        select(
-            models.BudgetAllocation.advertiser_id,
-            models.BudgetAllocation.publisher_id,
-        ).where(models.BudgetAllocation.amount > 0).distinct()
+    result = await db.execute(
+        text("""
+            SELECT DISTINCT a.advertiser_id, adv.name, a.publisher_id, p.name
+            FROM rmn_budget_allocations a
+            JOIN rmn_advertisers adv ON adv.id = a.advertiser_id
+            JOIN rmn_publishers p ON p.id = a.publisher_id
+            WHERE a.amount > 0
+            ORDER BY adv.name, p.name
+        """)
     )
-    allocs = alloc_result.all()
-
-    advs = await repo.list_advertisers(db)
-    adv_map = {a.id: a.name for a in advs}
-
-    pubs = await repo.list_publishers(db)
-    pub_map = {p["id"]: p["name"] for p in pubs}
-
-    combos = []
-    for row in allocs:
-        adv_id, pub_id = row[0], row[1]
-        combos.append({
-            "advertiser_id": adv_id,
-            "advertiser_name": adv_map.get(adv_id, adv_id),
-            "publisher_id": pub_id,
-            "publisher_name": pub_map.get(pub_id, pub_id),
-        })
-
-    return {"combos": combos}
+    rows = result.fetchall()
+    return {"combos": [
+        {"advertiser_id": r[0], "advertiser_name": r[1], "publisher_id": r[2], "publisher_name": r[3]}
+        for r in rows
+    ]}
 
 
 class CreateCampaignRequest(BaseModel):
