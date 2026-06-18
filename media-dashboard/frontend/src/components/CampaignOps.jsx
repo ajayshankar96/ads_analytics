@@ -9,6 +9,7 @@ import {
   recordPublisherEmail,
   uploadCampaignAsset,
   createCampaign,
+  getAvailableCombos,
   getAdvertisers,
   getPublishers,
   markNotLive,
@@ -423,53 +424,47 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
   );
 }
 
-function NewCampaignModal({ onClose, onCreated }) {
-  const [advertisers, setAdvertisers] = useState([]);
-  const [publishers, setPublishers] = useState([]);
-  const [advId, setAdvId] = useState("");
-  const [pubId, setPubId] = useState("");
-  const [creating, setCreating] = useState(false);
+function AvailableCombos({ canEdit, onCreated }) {
+  const [combos, setCombos] = useState([]);
+  const [creating, setCreating] = useState(null);
 
   useEffect(() => {
-    Promise.all([getAdvertisers(), getPublishers()]).then(([a, p]) => {
-      setAdvertisers((a.advertisers || []).filter((x) => x.status === "ONBOARDED"));
-      setPublishers(p.publishers || []);
-    });
+    getAvailableCombos().then((d) => setCombos(d.combos || [])).catch(() => {});
   }, []);
 
-  const handleCreate = async () => {
-    if (!advId || !pubId) { alert("Select both advertiser and publisher"); return; }
-    setCreating(true);
+  if (combos.length === 0) return null;
+
+  const handleCreate = async (combo) => {
+    setCreating(`${combo.advertiser_id}-${combo.publisher_id}`);
     try {
-      await createCampaign({ advertiser_id: advId, publisher_id: pubId });
+      await createCampaign({ advertiser_id: combo.advertiser_id, publisher_id: combo.publisher_id });
+      setCombos((prev) => prev.filter((c) => !(c.advertiser_id === combo.advertiser_id && c.publisher_id === combo.publisher_id)));
       onCreated();
-      onClose();
     } catch (e) { alert("Failed: " + e.message); }
-    finally { setCreating(false); }
+    finally { setCreating(null); }
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,36,0.45)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 14, padding: "28px 32px", width: 420, boxShadow: "0 20px 60px rgba(15,23,36,0.25)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: c.ink, marginBottom: 18 }}>New Campaign</div>
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser</label>
-          <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => setAdvId(e.target.value)}>
-            <option value="">Select advertiser…</option>
-            {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.id})</option>)}
-          </select>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Publisher</label>
-          <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)}>
-            <option value="">Select publisher…</option>
-            {publishers.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-          </select>
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
-          <button style={s.btnGhost} onClick={onClose}>Cancel</button>
-          <button style={s.btnPrimary} onClick={handleCreate} disabled={creating}>{creating ? "Creating…" : "Create Campaign"}</button>
-        </div>
+    <div style={{ background: "#F0F4FF", border: `1px solid ${c.line}`, borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Available Advertiser × Publisher (Budget Allocated)</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {combos.map((combo) => {
+          const key = `${combo.advertiser_id}-${combo.publisher_id}`;
+          const isCreating = creating === key;
+          return (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#fff", borderRadius: 8, border: `1px solid ${c.line}`, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: c.ink }}>{combo.advertiser_name}</span>
+              <span style={{ color: c.muted }}>→</span>
+              <span style={{ color: c.blue, fontWeight: 600 }}>{combo.publisher_name}</span>
+              {canEdit && (
+                <button onClick={() => handleCreate(combo)} disabled={isCreating}
+                  style={{ background: c.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", marginLeft: 6 }}>
+                  {isCreating ? "…" : "+ Create"}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -513,11 +508,13 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
 
   return (
     <div>
+      <AvailableCombos canEdit={canEdit} onCreated={load} />
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: c.muted }}>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</div>
       </div>
       {campaigns.length === 0 ? (
-        <div style={s.empty}>No campaigns yet. Click "+ New Campaign" or onboard an advertiser to create one.</div>
+        <div style={s.empty}>No campaigns yet. Select an Advertiser × Publisher combo above to create one.</div>
       ) : (
       <div style={s.list}>
       {campaigns.map((cam) => {

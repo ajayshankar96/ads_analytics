@@ -191,6 +191,8 @@ export const transitionCampaign = (campaignId, payload) =>
     body: JSON.stringify(payload),
   });
 
+export const getAvailableCombos = () => apiFetch("/api/workflow/available-combos");
+
 export const createCampaign = (payload) =>
   apiFetch("/api/workflow/campaigns", { method: "POST", body: JSON.stringify(payload) });
 

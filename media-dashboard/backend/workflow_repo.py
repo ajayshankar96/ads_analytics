@@ -562,18 +562,3 @@ async def upsert_allocations(db: AsyncSession, advertiser_id: str, month: str, a
             updated_at=now,
         ))
     await db.commit()
-
-    # Auto-create campaigns for allocations with amount > 0
-    advertiser = await get_advertiser(db, advertiser_id)
-    if not advertiser:
-        return
-    pub_rows = (await db.execute(select(models.Publisher))).scalars().all()
-    pub_map = {p.id: p.name for p in pub_rows}
-
-    for alloc in allocations:
-        amount = alloc.get("amount")
-        if not amount or amount <= 0:
-            continue
-        pub_id = alloc["publisher_id"]
-        pub_name = pub_map.get(pub_id, "")
-        await open_campaign_for_advertiser(db, advertiser, publisher_id=pub_id, publisher_name=pub_name)

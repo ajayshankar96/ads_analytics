@@ -1040,6 +1040,48 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
             "campaign": repo.campaign_dict(campaign)}
 
 
+@app.get("/api/workflow/available-combos")
+async def available_combos(db: AsyncSession = Depends(get_db)):
+    """Get advertiser+publisher combos that have budget allocated but no campaign yet."""
+    from sqlalchemy import select, distinct
+    # Get all allocations with amount > 0
+    alloc_result = await db.execute(
+        select(
+            models.BudgetAllocation.advertiser_id,
+            models.BudgetAllocation.publisher_id,
+        ).where(models.BudgetAllocation.amount > 0).distinct()
+    )
+    allocs = alloc_result.all()
+
+    # Get existing campaign combos
+    camp_result = await db.execute(
+        select(models.Campaign.advertiser_ref_id, models.Campaign.publisher_id).where(
+            models.Campaign.is_deleted.is_(False)
+        )
+    )
+    existing = set((r[0], r[1]) for r in camp_result.all())
+
+    # Get advertiser names
+    advs = await repo.list_advertisers(db)
+    adv_map = {a.id: a.name for a in advs}
+
+    # Get publisher names
+    pubs = await repo.list_publishers(db)
+    pub_map = {p["id"]: p["name"] for p in pubs}
+
+    combos = []
+    for adv_id, pub_id in allocs:
+        if (adv_id, pub_id) not in existing:
+            combos.append({
+                "advertiser_id": adv_id,
+                "advertiser_name": adv_map.get(adv_id, adv_id),
+                "publisher_id": pub_id,
+                "publisher_name": pub_map.get(pub_id, pub_id),
+            })
+
+    return {"combos": combos}
+
+
 class CreateCampaignRequest(BaseModel):
     advertiser_id: str
     publisher_id: Optional[str] = None
