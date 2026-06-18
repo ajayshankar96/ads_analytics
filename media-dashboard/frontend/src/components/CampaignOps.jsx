@@ -431,7 +431,8 @@ function CampaignDetail({ campaign, meta, tasks, canEdit = false, onReload }) {
 function CreateCampaignPanel({ canEdit, onCreated }) {
   const [showPanel, setShowPanel] = useState(false);
   const [advertisers, setAdvertisers] = useState([]);
-  const [publishers, setPublishers] = useState([]);
+  const [allPublishers, setAllPublishers] = useState([]);
+  const [allocations, setAllocations] = useState([]);
   const [advId, setAdvId] = useState("");
   const [pubId, setPubId] = useState("");
   const [offerTitle, setOfferTitle] = useState("");
@@ -441,10 +442,20 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
     if (showPanel) {
       Promise.all([getAdvertisers(), getPublishers()]).then(([a, p]) => {
         setAdvertisers((a.advertisers || []).filter((x) => x.status === "ONBOARDED"));
-        setPublishers(p.publishers || []);
+        setAllPublishers(p.publishers || []);
       });
+      // Fetch all allocations to know which publishers are allocated per advertiser
+      fetch("/api/allocations?month=" + new Date().toISOString().slice(0, 7), { credentials: "same-origin" })
+        .then((r) => r.json())
+        .then((d) => setAllocations(d.allocations || []))
+        .catch(() => {});
     }
   }, [showPanel]);
+
+  // Filter publishers based on selected advertiser's allocations
+  const availablePublishers = advId
+    ? allPublishers.filter((p) => allocations.some((a) => a.advertiser_id === advId && a.publisher_id === p.id && a.amount > 0))
+    : [];
 
   const handleCreate = async () => {
     if (!advId || !pubId) { alert("Select both Advertiser and Publisher"); return; }
@@ -476,16 +487,16 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Advertiser</label>
-              <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => setAdvId(e.target.value)}>
-                <option value="">Select…</option>
+              <select style={{ ...s.input, width: "100%" }} value={advId} onChange={(e) => { setAdvId(e.target.value); setPubId(""); }}>
+                <option value="">Select advertiser…</option>
                 {advertisers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Publisher</label>
-              <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)}>
-                <option value="">Select…</option>
-                {publishers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <select style={{ ...s.input, width: "100%" }} value={pubId} onChange={(e) => setPubId(e.target.value)} disabled={!advId}>
+                <option value="">{advId ? "Select publisher…" : "Select advertiser first"}</option>
+                {availablePublishers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div>
