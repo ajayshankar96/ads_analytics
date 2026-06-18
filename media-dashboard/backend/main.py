@@ -1042,43 +1042,26 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
 
 @app.get("/api/workflow/available-combos")
 async def available_combos(db: AsyncSession = Depends(get_db)):
-    """Get advertiser+publisher combos that have budget allocated but no campaign yet."""
-    from sqlalchemy import select, distinct
-    # Get all allocations with amount > 0
-    alloc_result = await db.execute(
-        select(
-            models.BudgetAllocation.advertiser_id,
-            models.BudgetAllocation.publisher_id,
-        ).where(models.BudgetAllocation.amount > 0).distinct()
-    )
-    allocs = alloc_result.all()
-
-    # Get existing campaign combos
-    camp_result = await db.execute(
-        select(models.Campaign.advertiser_ref_id, models.Campaign.publisher_id).where(
-            models.Campaign.is_deleted.is_(False)
+    """Get advertiser+publisher combos that have budget allocated."""
+    try:
+        result = await db.execute(
+            text("""
+                SELECT DISTINCT a.advertiser_id, adv.name as adv_name, a.publisher_id, p.name as pub_name
+                FROM rmn_budget_allocations a
+                JOIN rmn_advertisers adv ON adv.id = a.advertiser_id
+                JOIN rmn_publishers p ON p.id = a.publisher_id
+                WHERE a.amount > 0
+                ORDER BY adv.name, p.name
+            """)
         )
-    )
-    existing = set((r[0], r[1]) for r in camp_result.all())
-
-    # Get advertiser names
-    advs = await repo.list_advertisers(db)
-    adv_map = {a.id: a.name for a in advs}
-
-    # Get publisher names
-    pubs = await repo.list_publishers(db)
-    pub_map = {p["id"]: p["name"] for p in pubs}
-
-    combos = []
-    for adv_id, pub_id in allocs:
-        combos.append({
-            "advertiser_id": adv_id,
-            "advertiser_name": adv_map.get(adv_id, adv_id),
-            "publisher_id": pub_id,
-            "publisher_name": pub_map.get(pub_id, pub_id),
-        })
-
-    return {"combos": combos}
+        rows = result.fetchall()
+        combos = [
+            {"advertiser_id": r[0], "advertiser_name": r[1], "publisher_id": r[2], "publisher_name": r[3]}
+            for r in rows
+        ]
+        return {"combos": combos}
+    except Exception as e:
+        return {"combos": [], "error": str(e)}
 
 
 class CreateCampaignRequest(BaseModel):
