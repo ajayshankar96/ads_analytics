@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", bg: "#F7F8FA" };
 
@@ -305,6 +305,73 @@ function TrackingForm({ campaign, segments, onDone }) {
   );
 }
 
+function TrackingDoneView({ campaign, canEdit }) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+  const [metrics, setMetrics] = useState(null);
+
+  useEffect(() => {
+    getCampaignMetrics(campaign.campaign_id).then(setMetrics).catch(() => {});
+  }, [campaign.campaign_id]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const r = await syncCampaign(campaign.campaign_id);
+      setSyncResult(r);
+      getCampaignMetrics(campaign.campaign_id).then(setMetrics).catch(() => {});
+    } catch (e) { setSyncResult({ error: e.message }); }
+    finally { setSyncing(false); }
+  };
+
+  return (
+    <div style={s.panel}>
+      <div style={s.doneCard}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={s.doneTitle}>✅ Tracking submitted</div>
+          {canEdit && (
+            <button onClick={handleSync} disabled={syncing} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {syncing ? "Syncing…" : "⟳ Sync Data"}
+            </button>
+          )}
+        </div>
+        {syncResult && (
+          <div style={{ marginTop: 8, fontSize: 12, color: syncResult.error ? c.red : c.green }}>
+            {syncResult.error ? `Error: ${syncResult.error}` : `✓ Synced ${syncResult.rows} rows`}
+          </div>
+        )}
+        {metrics && metrics.rows > 0 && (
+          <div style={{ marginTop: 6, fontSize: 12, color: c.muted }}>
+            {metrics.rows} data points · Last synced: {metrics.last_synced ? new Date(metrics.last_synced).toLocaleString("en-IN") : "—"}
+          </div>
+        )}
+      </div>
+
+      {/* Tracking details */}
+      <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Tracking Details</div>
+        {[
+          ["Advertiser Data URL", campaign.advertiser_data_url],
+          ["Publisher Data URL", campaign.publisher_data_url],
+          ["Segment (Publisher)", campaign.segment_pub],
+          ["Segment (Advertiser)", campaign.segment_adv],
+          ["Goals", campaign.goals_json],
+          ["Metrics", campaign.metrics_json],
+          ["Additional Context", campaign.additional_context],
+        ].map(([label, val]) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 13 }}>
+            <span style={{ color: c.muted, minWidth: 160 }}>{label}</span>
+            <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+              {val ? (val.startsWith && val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : val) : "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignTracking({ userRole = "VIEWER" }) {
   const canEdit = userRole === "ADMIN" || userRole === "OPS";
   const [campaigns, setCampaigns] = useState([]);
@@ -357,30 +424,7 @@ export default function CampaignTracking({ userRole = "VIEWER" }) {
 
                 {isSelected && (
                   isDone ? (
-                    <div style={{ ...s.panel }}>
-                      <div style={s.doneCard}>
-                        <div style={s.doneTitle}>✅ Tracking submitted to Automation Tracker</div>
-                      </div>
-                      <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Tracking Details</div>
-                        {[
-                          ["Advertiser Data URL", cam.advertiser_data_url],
-                          ["Publisher Data URL", cam.publisher_data_url],
-                          ["Segment (Publisher)", cam.segment_pub],
-                          ["Segment (Advertiser)", cam.segment_adv],
-                          ["Goals", cam.goals_json],
-                          ["Metrics", cam.metrics_json],
-                          ["Additional Context", cam.additional_context],
-                        ].map(([label, val]) => (
-                          <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 13 }}>
-                            <span style={{ color: c.muted, minWidth: 160 }}>{label}</span>
-                            <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
-                              {val ? (val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : val) : "—"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <TrackingDoneView campaign={cam} canEdit={canEdit} />
                   ) : (
                     canEdit ? <TrackingForm campaign={cam} segments={segments} onDone={load} /> :
                     <div style={{ ...s.doneCard, background: "#FEF3E2" }}><div style={{ fontSize: 13, fontWeight: 700, color: "#B7791F" }}>View only — you don't have permission to edit tracking setup</div></div>

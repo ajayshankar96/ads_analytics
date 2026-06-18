@@ -209,6 +209,34 @@ class BudgetAllocation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class CampaignMetric(Base):
+    __tablename__ = "rmn_campaign_metrics"
+    __table_args__ = (Index("ix_rmn_metrics_camp_date", "campaign_id", "date", unique=True),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(String(32), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    advertiser: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    publisher: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    segment: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    # Standard publisher metrics
+    impressions: Mapped[int] = mapped_column(BigInteger, default=0)
+    distribution: Mapped[int] = mapped_column(BigInteger, default=0)
+    clicks: Mapped[int] = mapped_column(BigInteger, default=0)
+    orders_pub: Mapped[int] = mapped_column(BigInteger, default=0)
+    scratches: Mapped[int] = mapped_column(BigInteger, default=0)
+    coins_burned: Mapped[int] = mapped_column(BigInteger, default=0)
+    redirections: Mapped[int] = mapped_column(BigInteger, default=0)
+    spends: Mapped[float] = mapped_column(Float, default=0)
+    # Computed
+    publisher_spends: Mapped[float] = mapped_column(Float, default=0)
+    advertiser_spends: Mapped[float] = mapped_column(Float, default=0)
+    # Dynamic advertiser metrics
+    advertiser_metrics: Mapped[Optional[str]] = mapped_column(Text, default=None)  # JSON
+    # Sync tracking
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UserRole(Base):
     __tablename__ = "rmn_user_roles"
 

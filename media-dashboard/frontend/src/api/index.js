@@ -229,6 +229,15 @@ export const submitTrackingSetup = (campaignId, payload) =>
 export const getSheetHeaders = (url) =>
   apiFetch(`/api/sheet-headers${buildQuery({ url })}`);
 
+export const syncCampaign = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/sync`, { method: "POST" });
+
+export const syncAllCampaigns = () =>
+  apiFetch("/api/sync/all", { method: "POST" });
+
+export const getCampaignMetrics = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/metrics`);
+
 export const markNotLive = (campaignId, reason) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/not-live`, {
     method: "POST",

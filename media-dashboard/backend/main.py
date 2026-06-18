@@ -6,6 +6,7 @@ Run locally:
     uvicorn main:app --reload --port 8000
 """
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -1265,6 +1266,56 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
+
+
+# ── ETL Sync ──────────────────────────────────────────────────────────────────
+
+@app.post("/api/workflow/campaigns/{campaign_id}/sync")
+async def sync_campaign_endpoint(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    """Trigger ETL sync for one campaign."""
+    import etl_worker
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    if not campaign.tracking_submitted:
+        raise HTTPException(status_code=400, detail="Tracking setup not submitted yet")
+    result = await etl_worker.sync_campaign(db, campaign)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return {"success": True, **result}
+
+
+@app.post("/api/sync/all")
+async def sync_all_endpoint(db: AsyncSession = Depends(get_db)):
+    """Trigger ETL sync for all campaigns with tracking submitted."""
+    import etl_worker
+    results = await etl_worker.sync_all_campaigns(db)
+    return {"success": True, "results": results, "total": len(results)}
+
+
+@app.get("/api/workflow/campaigns/{campaign_id}/metrics")
+async def get_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    """Get synced metrics for a campaign."""
+    from sqlalchemy import select
+    result = await db.execute(
+        select(models.CampaignMetric).where(models.CampaignMetric.campaign_id == campaign_id).order_by(models.CampaignMetric.date.desc())
+    )
+    rows = result.scalars().all()
+    return {
+        "campaign_id": campaign_id,
+        "rows": len(rows),
+        "last_synced": rows[0].synced_at.isoformat() if rows else None,
+        "metrics": [
+            {
+                "date": r.date.isoformat(),
+                "impressions": r.impressions, "clicks": r.clicks, "spends": r.spends,
+                "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends,
+                "advertiser_spends": r.advertiser_spends,
+                "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {},
+            }
+            for r in rows[:60]  # last 60 days
+        ],
+    }
 
 
 @app.get("/api/sheet-headers")
