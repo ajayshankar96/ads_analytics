@@ -275,7 +275,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
               <div style={s.help}>Legal entity name as on registration</div>
             </div>
             <div style={s.field}>
-              <label style={s.label}>Industry / Category<span style={s.req}>*</span></label>
+              <label style={s.label}>Industry / Category</label>
               <select style={s.input} value={data.category} onChange={(e) => set({ category: e.target.value })}>
                 <option value="">Select a category…</option>
                 {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
@@ -307,7 +307,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
         <>
           <div style={s.secTitle}>Commercial terms</div>
           <div style={s.secSub}>Buy type and rate carry through to every campaign created for this advertiser. GST and PAN are required for invoicing.</div>
-          <div style={s.secLabel}>Buy type <span style={s.req}>*</span></div>
+          <div style={s.secLabel}>Buy type </div>
           <div style={s.radioGrid}>
             {BUY_TYPES.map((bt) => {
               const sel = data.buy_type === bt.id;
@@ -323,7 +323,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={s.grid2}>
             {isRoas ? (
               <div style={s.field}>
-                <label style={s.label}>Committed ROAS multiplier<span style={s.req}>*</span></label>
+                <label style={s.label}>Committed ROAS multiplier</label>
                 <div style={s.suffixWrap}>
                   <input style={s.affixInput} type="number" placeholder="4.5" value={data.roas_multiplier} onChange={(e) => set({ roas_multiplier: e.target.value })} />
                   <div style={s.suffixBox}>x</div>
@@ -332,7 +332,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
               </div>
             ) : (
               <div style={s.field}>
-                <label style={s.label}>CPC rate (₹)<span style={s.req}>*</span></label>
+                <label style={s.label}>CPC rate (₹)</label>
                 <input style={s.input} type="number" placeholder="e.g. 12" value={data.cpc_rate} onChange={(e) => set({ cpc_rate: e.target.value })} />
                 <div style={s.help}>Fixed rate charged per click delivered</div>
               </div>
@@ -346,12 +346,12 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={s.secLabel}>Tax & registration</div>
           <div style={s.grid2}>
             <div style={s.field}>
-              <label style={s.label}>GST number<span style={s.req}>*</span></label>
+              <label style={s.label}>GST number</label>
               <input style={s.input} placeholder="29AABCU9603R1ZL" maxLength={15} value={data.gst} onChange={(e) => set({ gst: e.target.value.toUpperCase() })} />
               <div style={s.help}>15-character GSTIN · validated on save</div>
             </div>
             <div style={s.field}>
-              <label style={s.label}>PAN number<span style={s.req}>*</span></label>
+              <label style={s.label}>PAN number</label>
               <input style={s.input} placeholder="AABCU9603R" maxLength={10} value={data.pan} onChange={(e) => set({ pan: e.target.value.toUpperCase() })} />
               <div style={s.help}>10-character PAN</div>
             </div>
@@ -366,7 +366,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
         <>
           <div style={s.secTitle}>Brand-level performance goal</div>
           <div style={s.secSub}>Set at the brand level here and inherited at the campaign level. Can be duplicated and adjusted whenever a new campaign is created — avoiding re-entry from scratch.</div>
-          <div style={s.secLabel}>Goal type <span style={s.req}>*</span></div>
+          <div style={s.secLabel}>Goal type </div>
           <div style={s.radioGrid}>
             {GOAL_TYPES.map((gt) => {
               const sel = data.goal_type === gt.id;
@@ -382,7 +382,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={{ ...s.field, marginBottom: 6 }}>
             {isRoas ? (
               <>
-                <label style={s.label}>Target ROAS<span style={s.req}>*</span></label>
+                <label style={s.label}>Target ROAS</label>
                 <div style={{ ...s.suffixWrap, maxWidth: 430 }}>
                   <input style={s.affixInput} type="number" placeholder="4.5" value={data.target_roas} onChange={(e) => set({ target_roas: e.target.value })} />
                   <div style={s.suffixBox}>x</div>
@@ -391,7 +391,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
               </>
             ) : (
               <>
-                <label style={s.label}>Target CAC (₹)<span style={s.req}>*</span></label>
+                <label style={s.label}>Target CAC (₹)</label>
                 <input style={{ ...s.input, maxWidth: 430 }} type="number" placeholder="e.g. 350" value={data.target_cac} onChange={(e) => set({ target_cac: e.target.value })} />
                 <div style={s.help}>Live CAC measured weekly · RAG fires when actual is &gt;25% off goal</div>
               </>
@@ -428,7 +428,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={s.secSub}>This is who the auto-emailer addresses for campaign assets, and who Ops loops in for clarifications.</div>
           <div style={s.grid2}>
             <div style={s.field}>
-              <label style={s.label}>POC name<span style={s.req}>*</span></label>
+              <label style={s.label}>POC name</label>
               <input style={s.input} placeholder="e.g. Aanya Krishnan" value={data.poc_name} onChange={(e) => set({ poc_name: e.target.value })} />
             </div>
             <div style={s.field}>
@@ -438,7 +438,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           </div>
           <div style={s.grid2}>
             <div style={s.field}>
-              <label style={s.label}>POC email<span style={s.req}>*</span></label>
+              <label style={s.label}>POC email</label>
               <div style={s.suffixWrap}>
                 <div style={s.prefixBox}>✉️</div>
                 <input style={s.affixInput} type="email" placeholder="aanya@brand.com" value={data.poc_email} onChange={(e) => set({ poc_email: e.target.value })} />
@@ -446,7 +446,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
               <div style={s.help}>Auto-emailer triggers to this address on save</div>
             </div>
             <div style={s.field}>
-              <label style={s.label}>POC phone<span style={s.req}>*</span></label>
+              <label style={s.label}>POC phone</label>
               <div style={s.suffixWrap}>
                 <div style={s.prefixBox}>+91</div>
                 <input style={s.affixInput} placeholder="98765 43210" value={data.poc_phone} onChange={(e) => set({ poc_phone: e.target.value })} />
@@ -467,7 +467,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={s.secTitle}>Agreement &amp; PO</div>
           <div style={s.secSub}>Legal agreement is required on save. PO is required for invoicing — can be added now or after agreement closure.</div>
           <div style={{ ...s.field, marginBottom: 22 }}>
-            <label style={s.label}>Legal agreement<span style={s.req}>*</span></label>
+            <label style={s.label}>Legal agreement</label>
             <label style={s.dropzone}>
               <input type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={pickFile(setAgreementFile)} />
               <div style={s.dzIcon}>📝</div>
@@ -543,7 +543,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
         <div style={s.secTitle}>Send welcome email</div>
         <div style={s.secSub}>The advertiser is onboarded. Review the draft below and send it to the POC — it goes from your own Google account.</div>
         <div style={{ ...s.field, marginBottom: 18 }}>
-          <label style={s.label}>To<span style={s.req}>*</span></label>
+          <label style={s.label}>To</label>
           <div style={s.suffixWrap}>
             <div style={s.prefixBox}>✉️</div>
             <input style={s.affixInput} type="text" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="poc@brand.com" />
