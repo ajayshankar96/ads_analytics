@@ -1479,6 +1479,24 @@ async def pg_table(
     }
 
 
+# ── Revenue Attribution ───────────────────────────────────────────────────────
+
+@app.post("/api/workflow/campaigns/{campaign_id}/attribution")
+async def run_campaign_attribution(campaign_id: str, file: UploadFile = File(...), drive_folder_url: str = Query(...), db: AsyncSession = Depends(get_db)):
+    """Run revenue attribution for a campaign using uploaded redemption file + Drive folder."""
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+
+    content = await file.read()
+    from attribution_worker import run_attribution
+    result = run_attribution(content, file.filename, drive_folder_url)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return {"success": True, **result}
+
+
 # ── ETL Sync ──────────────────────────────────────────────────────────────────
 
 @app.post("/api/workflow/campaigns/{campaign_id}/sync")

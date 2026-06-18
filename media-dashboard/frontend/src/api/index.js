@@ -244,6 +244,20 @@ export const getPgBreakdowns = (filters = {}) =>
 export const getPgTable = (filters = {}) =>
   apiFetch(`/api/dashboard/pg/table${buildQuery(filters)}`);
 
+export const runAttribution = async (campaignId, file, driveFolderUrl) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const resp = await fetch(`/api/workflow/campaigns/${campaignId}/attribution?drive_folder_url=${encodeURIComponent(driveFolderUrl)}`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!resp.ok) {
+    const d = await resp.json().catch(() => ({}));
+    throw new Error(d.detail || "Attribution failed");
+  }
+  return resp.json();
+};
+
 export const syncCampaign = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/sync`, { method: "POST" });
 

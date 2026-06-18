@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", bg: "#F7F8FA" };
 
@@ -368,6 +368,112 @@ function TrackingDoneView({ campaign, canEdit }) {
           </div>
         ))}
       </div>
+
+      {/* Revenue Attribution */}
+      {canEdit && <AttributionSection campaign={campaign} />}
+    </div>
+  );
+}
+
+function AttributionSection({ campaign }) {
+  const [driveFolderUrl, setDriveFolderUrl] = useState("");
+  const [file, setFile] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+
+  // Check if campaign has dynamic codes
+  const hasDynamicCodes = (() => {
+    try { const d = JSON.parse(campaign.promo_codes || '{}'); return d.type === 'dynamic'; } catch { return false; }
+  })();
+
+  if (!hasDynamicCodes) return null;
+
+  const handleRun = async () => {
+    if (!file) { alert("Upload a redemption file"); return; }
+    if (!driveFolderUrl.trim()) { alert("Enter the Drive folder URL"); return; }
+    setRunning(true);
+    setResult(null);
+    try {
+      const r = await runAttribution(campaign.campaign_id, file, driveFolderUrl);
+      setResult(r);
+    } catch (e) { alert("Attribution failed: " + e.message); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: c.ink, marginBottom: 12 }}>Revenue Attribution</div>
+
+      {!result ? (
+        <>
+          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12 }}>
+            Upload the redemption/revenue file and provide the Drive folder containing publisher code CSVs.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Redemption File (CSV/Excel)</label>
+              <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)}
+                style={{ fontSize: 12 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4, textTransform: "uppercase" }}>Drive Folder URL</label>
+              <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+                value={driveFolderUrl} onChange={(e) => setDriveFolderUrl(e.target.value)}
+                placeholder="https://drive.google.com/drive/folders/..." />
+            </div>
+          </div>
+          <button onClick={handleRun} disabled={running || !file || !driveFolderUrl.trim()}
+            style={{ background: "#7C3AED", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!file || !driveFolderUrl.trim()) ? 0.5 : 1 }}>
+            {running ? "Running attribution…" : "Run Revenue Attribution"}
+          </button>
+        </>
+      ) : (
+        <>
+          {/* Results summary */}
+          <div style={{ background: "#F0F4FF", borderRadius: 10, padding: "14px 16px", marginBottom: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, textAlign: "center" }}>
+              <div><div style={{ fontSize: 11, color: c.muted, fontWeight: 700 }}>TOTAL ORDERS</div><div style={{ fontSize: 18, fontWeight: 800, color: c.ink }}>{result.totals?.orders?.toLocaleString()}</div></div>
+              <div><div style={{ fontSize: 11, color: c.muted, fontWeight: 700 }}>TOTAL REVENUE</div><div style={{ fontSize: 18, fontWeight: 800, color: c.ink }}>₹{result.totals?.revenue?.toLocaleString()}</div></div>
+              <div><div style={{ fontSize: 11, color: c.muted, fontWeight: 700 }}>ATTRIBUTED</div><div style={{ fontSize: 18, fontWeight: 800, color: c.green }}>{result.totals?.attribution_rate}%</div></div>
+              <div><div style={{ fontSize: 11, color: c.muted, fontWeight: 700 }}>UNATTRIBUTED</div><div style={{ fontSize: 18, fontWeight: 800, color: c.red }}>{result.unattributed?.orders}</div></div>
+            </div>
+          </div>
+
+          {/* Per-publisher breakdown */}
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${c.line}` }}>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: c.muted, fontWeight: 700 }}>PUBLISHER</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 11, color: c.muted, fontWeight: 700 }}>OFFER</th>
+                <th style={{ textAlign: "right", padding: "8px 10px", fontSize: 11, color: c.muted, fontWeight: 700 }}>ORDERS</th>
+                <th style={{ textAlign: "right", padding: "8px 10px", fontSize: 11, color: c.muted, fontWeight: 700 }}>REVENUE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(result.summary || []).map((row, i) => (
+                <tr key={i} style={{ borderBottom: `1px solid #F7F8FA` }}>
+                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{row.publisher}</td>
+                  <td style={{ padding: "8px 10px", color: c.sub }}>{row.offer}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>{row.orders.toLocaleString()}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>₹{row.revenue.toLocaleString()}</td>
+                </tr>
+              ))}
+              {result.unattributed?.orders > 0 && (
+                <tr style={{ background: "#FEF3E2" }}>
+                  <td style={{ padding: "8px 10px", fontWeight: 600, color: c.red }}>Unattributed</td>
+                  <td style={{ padding: "8px 10px", color: c.muted }}>—</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: c.red }}>{result.unattributed.orders.toLocaleString()}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: c.red }}>₹{result.unattributed.revenue.toLocaleString()}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <button onClick={() => setResult(null)} style={{ marginTop: 12, background: "#F1F5F9", color: c.sub, border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            Run again with new file
+          </button>
+        </>
+      )}
     </div>
   );
 }
