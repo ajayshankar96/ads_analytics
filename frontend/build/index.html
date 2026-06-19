@@ -522,10 +522,14 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 .admin-row .badge{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--rp-blue-700);background:var(--rp-blue-50);padding:3px 8px;border-radius:6px}
 .admin-row .rm{background:none;border:0;color:var(--ink-300);cursor:pointer;font-size:13px;padding:5px 8px;border-radius:7px;flex-shrink:0}
 .admin-row .rm:hover{background:var(--red-50);color:var(--red-700)}
+.rl-stats{display:flex;gap:10px;padding:4px 24px 8px}
+.rl-stat{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px 10px;text-align:center}
+.rl-num{font-size:22px;font-weight:700;color:var(--ink-900);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.rl-lbl{font-size:10.5px;color:var(--ink-500);font-weight:600;margin-top:3px}
 @media (max-width:640px){
   .admin-modal{width:100%;max-height:92vh}
   .admin-modal-head{padding:18px 16px 12px}
-  .admin-add-row,.admin-msg,.admin-list-head{padding-left:16px;padding-right:16px}
+  .admin-add-row,.admin-msg,.admin-list-head,.rl-stats{padding-left:16px;padding-right:16px}
 }
 </style>
 </head>
@@ -554,6 +558,9 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
         <button class="admin-menu-item" onclick="openAdminModal()">
           <span>👥 User Roles</span><span class="admin-menu-chev">›</span>
         </button>
+        <button class="admin-menu-item" onclick="openRateModal()">
+          <span>⚙️ Rate Limits</span><span class="admin-menu-chev">›</span>
+        </button>
       </div>
     </div>
   </div>
@@ -577,6 +584,31 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
     <div class="admin-msg" id="adminMsg"></div>
     <div class="admin-list-head"><b id="adminCount">—</b> people with access</div>
     <div class="admin-list" id="adminList"></div>
+  </div>
+</div>
+
+<!-- ===== Admin · Rate Limit modal (admins only) ===== -->
+<div class="admin-modal-back" id="rlModalBack" onclick="if(event.target===this)closeRateModal()">
+  <div class="admin-modal" style="width:440px" role="dialog" aria-modal="true">
+    <div class="admin-modal-head">
+      <div>
+        <h2>Daily Search Limit</h2>
+        <p>The maximum number of searches the whole tool allows per day. Resets at midnight IST. Changes apply immediately.</p>
+      </div>
+      <button class="admin-x" onclick="closeRateModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="rl-stats">
+      <div class="rl-stat"><div class="rl-num" id="rlUsed">—</div><div class="rl-lbl">Used today</div></div>
+      <div class="rl-stat"><div class="rl-num" id="rlLimit">—</div><div class="rl-lbl">Current limit</div></div>
+      <div class="rl-stat"><div class="rl-num" id="rlRemaining">—</div><div class="rl-lbl">Remaining</div></div>
+    </div>
+    <div class="admin-list-head" style="padding-bottom:6px">Set new daily limit</div>
+    <div class="admin-add-row">
+      <input id="rlInput" type="number" min="1" step="1" placeholder="e.g. 2000"
+             onkeydown="if(event.key==='Enter')saveRateLimit()" />
+      <button class="admin-add-btn" id="rlSaveBtn" onclick="saveRateLimit()">Save</button>
+    </div>
+    <div class="admin-msg" id="rlMsg" style="padding-bottom:20px"></div>
   </div>
 </div>
 
@@ -2422,6 +2454,52 @@ async function adminRemoveUser(email){
   }catch(e){
     adminMsg("Couldn't remove: " + e.message, "err");
   }
+}
+
+/* ── Rate limit admin ── */
+function rlMsg(text, kind){
+  const el = document.getElementById("rlMsg");
+  el.textContent = text || "";
+  el.className = "admin-msg" + (kind ? " " + kind : "");
+  el.style.paddingBottom = "20px";
+}
+async function openRateModal(){
+  document.getElementById("adminMenu").classList.remove("open");
+  document.getElementById("rlModalBack").classList.add("on");
+  rlMsg("");
+  document.getElementById("rlInput").value = "";
+  ["rlUsed","rlLimit","rlRemaining"].forEach(id => document.getElementById(id).textContent = "…");
+  try{
+    const r = await fetch(PROXY + "/api/admin/rate-limit", {cache:"no-store"});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+    document.getElementById("rlUsed").textContent = d.used_today;
+    document.getElementById("rlLimit").textContent = d.daily_limit;
+    document.getElementById("rlRemaining").textContent = d.remaining;
+    document.getElementById("rlInput").placeholder = "current: " + d.daily_limit;
+  }catch(e){ rlMsg("Couldn't load: " + e.message, "err"); }
+}
+function closeRateModal(){ document.getElementById("rlModalBack").classList.remove("on"); }
+
+async function saveRateLimit(){
+  const input = document.getElementById("rlInput");
+  const btn = document.getElementById("rlSaveBtn");
+  const val = parseInt((input.value || "").trim(), 10);
+  if(!val || val < 1){ rlMsg("Enter a whole number of 1 or more.", "err"); return; }
+  btn.disabled = true; btn.textContent = "Saving…";
+  try{
+    const r = await fetch(PROXY + "/api/admin/rate-limit", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({daily_limit: val})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+    rlMsg("Daily limit updated to " + d.daily_limit + ".", "ok");
+    document.getElementById("rlLimit").textContent = d.daily_limit;
+    document.getElementById("rlRemaining").textContent = Math.max(0, d.daily_limit - (d.used_today||0));
+    input.value = "";
+  }catch(e){ rlMsg("Couldn't save: " + e.message, "err"); }
+  finally{ btn.disabled = false; btn.textContent = "Save"; }
 }
 
 adminInit();

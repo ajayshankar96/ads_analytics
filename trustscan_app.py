@@ -73,23 +73,89 @@ def _audit(event: dict):
 # One shared counter for the whole app. A "search" = one scan = one /api/ts1 call.
 # Stored as s3://$S3_BUCKET/TS_POC/search_counter/<YYYY-MM-DD>.json so it survives
 # pod restarts and resets automatically at midnight IST.
-DAILY_SEARCH_LIMIT = int(os.getenv("DAILY_SEARCH_LIMIT", "1000"))
-RATE_LIMIT_PREFIX  = os.getenv("RATE_LIMIT_PREFIX", "TS_POC/search_counter/")
+# The env value is the SEED/fallback; the live limit is admin-editable and
+# persisted in S3 (TS_POC/config/rate_limit.json), cached with a short TTL.
+DEFAULT_DAILY_LIMIT   = int(os.getenv("DAILY_SEARCH_LIMIT", "1000"))
+RATE_LIMIT_PREFIX     = os.getenv("RATE_LIMIT_PREFIX", "TS_POC/search_counter/")
+RATE_LIMIT_CONFIG_KEY = os.getenv("RATE_LIMIT_CONFIG_KEY", "TS_POC/config/rate_limit.json")
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-_RATE_LOCK = threading.Lock()
+_RATE_LOCK   = threading.Lock()
+_LIMIT_LOCK  = threading.Lock()
+_LIMIT_TTL   = 30  # seconds
+_LIMIT_CACHE = {"value": None, "ts": 0.0}
 
 def _rate_key():
     day = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
     return day, f"{RATE_LIMIT_PREFIX}{day}.json"
+
+def _limit_s3():
+    import boto3
+    return (boto3.client("s3", region_name="ap-south-1"),
+            os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics"))
+
+def _write_daily_limit(value, updated_by="system"):
+    s3, bucket = _limit_s3()
+    s3.put_object(Bucket=bucket, Key=RATE_LIMIT_CONFIG_KEY,
+        Body=json.dumps({
+            "daily_limit": int(value),
+            "updated": datetime.datetime.now(_IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+            "updated_by": updated_by,
+        }).encode(), ContentType="application/json")
+
+def get_daily_limit(force=False):
+    """Current daily search limit. S3-backed and admin-editable; seeded from the
+    env default on first run; falls back to the env default if S3 is unreachable."""
+    import time
+    now = time.time()
+    with _LIMIT_LOCK:
+        if (not force and _LIMIT_CACHE["value"] is not None
+                and now - _LIMIT_CACHE["ts"] < _LIMIT_TTL):
+            return _LIMIT_CACHE["value"]
+        val = None
+        try:
+            s3, bucket = _limit_s3()
+            raw = s3.get_object(Bucket=bucket, Key=RATE_LIMIT_CONFIG_KEY)["Body"].read().decode()
+            val = int(json.loads(raw).get("daily_limit"))
+        except Exception:
+            val = None
+        if not val or val <= 0:
+            val = DEFAULT_DAILY_LIMIT                  # seed from env
+            try:
+                _write_daily_limit(val, updated_by="seed:env")
+            except Exception as e:
+                logger.warning(f"[LIMIT_SEED_ERR] {e} — using env default")
+        _LIMIT_CACHE["value"] = val
+        _LIMIT_CACHE["ts"] = now
+        return val
+
+def set_daily_limit(value, updated_by="admin"):
+    value = int(value)
+    with _LIMIT_LOCK:
+        _write_daily_limit(value, updated_by=updated_by)
+        import time
+        _LIMIT_CACHE["value"] = value
+        _LIMIT_CACHE["ts"] = time.time()
+    return value
+
+def _today_count():
+    """Today's search count from S3 (0 if none yet)."""
+    try:
+        s3, bucket = _limit_s3()
+        _, key = _rate_key()
+        raw = s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode()
+        return int(json.loads(raw).get("count", 0))
+    except Exception:
+        return 0
 
 def _search_quota(do_increment: bool):
     """Global daily search counter in S3. Returns (allowed, count, limit).
 
     do_increment=True consumes one search (used by /api/ts1, once per scan);
     /api/ts2 calls with False to gate without double-counting the chunked calls.
-    Serialized by a lock and FAILS OPEN on any S3 error so a transient S3 issue
-    never blocks scanning.
+    The limit is read from the live (admin-editable) config. Serialized by a lock
+    and FAILS OPEN on any S3 error so a transient S3 issue never blocks scanning.
     """
+    limit = get_daily_limit()
     with _RATE_LOCK:
         try:
             import boto3
@@ -105,22 +171,22 @@ def _search_quota(do_increment: bool):
                     count = 0
                 else:
                     raise
-            if count >= DAILY_SEARCH_LIMIT:
-                return False, count, DAILY_SEARCH_LIMIT
+            if count >= limit:
+                return False, count, limit
             if do_increment:
                 count += 1
                 s3.put_object(
                     Bucket=bucket, Key=key,
                     Body=json.dumps({
-                        "date": day, "count": count, "limit": DAILY_SEARCH_LIMIT,
+                        "date": day, "count": count, "limit": limit,
                         "updated": datetime.datetime.now(_IST).strftime("%Y-%m-%d %H:%M:%S IST"),
                     }).encode(),
                     ContentType="application/json",
                 )
-            return True, count, DAILY_SEARCH_LIMIT
+            return True, count, limit
         except Exception as e:
             logger.warning(f"[RATE_LIMIT_ERR] {e} — failing open")
-            return True, -1, DAILY_SEARCH_LIMIT
+            return True, -1, limit
 
 def _rate_limit_response(limit: int):
     return JSONResponse(status_code=429, content={"error": {
@@ -629,6 +695,36 @@ async def admin_remove_user(request: Request):
     users = _mutate_allowlist(remove=[target], updated_by=actor)
     _audit({"type": "admin", "status": "remove_user", "email": actor, "removed": target})
     return JSONResponse({"ok": True, "removed": target, "total": len(users)})
+
+@app.get("/api/admin/rate-limit")
+def admin_get_rate_limit(request: Request):
+    if not is_admin(getattr(request.state, "user_email", None)):
+        raise HTTPException(status_code=403, detail="Admins only")
+    limit = get_daily_limit(force=True)
+    used = _today_count()
+    day, _ = _rate_key()
+    return JSONResponse({"daily_limit": limit, "used_today": used,
+                         "remaining": max(0, limit - used), "date": day})
+
+@app.post("/api/admin/rate-limit")
+async def admin_set_rate_limit(request: Request):
+    actor = getattr(request.state, "user_email", None)
+    if not is_admin(actor):
+        raise HTTPException(status_code=403, detail="Admins only")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    try:
+        val = int(body.get("daily_limit"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="daily_limit must be a whole number")
+    if val < 1 or val > 1000000:
+        raise HTTPException(status_code=400, detail="daily_limit must be between 1 and 1,000,000")
+    set_daily_limit(val, updated_by=actor)
+    _audit({"type": "admin", "status": "set_rate_limit", "email": actor, "daily_limit": val})
+    return JSONResponse({"ok": True, "daily_limit": val,
+                         "used_today": _today_count()})
 
 
 @app.get("/signin")
