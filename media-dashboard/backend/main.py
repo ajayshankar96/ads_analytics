@@ -1321,13 +1321,22 @@ async def pg_aggregates(
     sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM(advertiser_spends),0) as adv_spends, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
+    # Count distinct advertisers/publishers
+    count_sql = f"SELECT COUNT(DISTINCT advertiser) as adv_count, COUNT(DISTINCT publisher) as pub_count, COALESCE(SUM(distribution),0) as distribution, COALESCE(SUM(redirections),0) as redirections, COUNT(*) as total_rows FROM rmn_campaign_metrics{where}"
+    counts = (await db.execute(text(count_sql), params)).one()
+    dist = int(counts.distribution)
     return {
-        "impressions": imp, "clicks": clicks, "spends": round(spends, 2), "orders": orders,
+        "impressions": imp, "distribution": dist, "impressionsAndDistribution": imp + dist,
+        "clicks": clicks, "spends": round(spends, 2), "orders": orders,
         "ctr": round((clicks / imp * 100) if imp > 0 else 0, 2),
         "cpm": round((spends / imp * 1000) if imp > 0 else 0, 2),
         "cpc": round((spends / clicks) if clicks > 0 else 0, 2),
         "publisher_spends": round(float(row.pub_spends), 2),
         "advertiser_spends": round(float(row.adv_spends), 2),
+        "redirections": int(counts.redirections),
+        "advertiserCount": int(counts.adv_count), "publisherCount": int(counts.pub_count),
+        "totalRows": int(counts.total_rows), "cacheAge": 0,
+        "hasQL": False, "hasQQG": False, "hasCouponOrders": False,
         "days": int(row.days), "source": "postgres",
     }
 
