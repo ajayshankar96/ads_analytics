@@ -24,9 +24,10 @@ Razorpay's Kubernetes cluster.
 | Source repo | `github.com/ajayshankar96/ads_analytics` (branch `main`) |
 | Internal URL | https://trustscan-analytics.dev.razorpay.in |
 | External URL | https://trustscan-analytics.ext.dev.razorpay.in |
-| Auth | Google OAuth + email allowlist (`ALLOWED_EMAILS`) |
+| Auth | Google OAuth + email allowlist (S3-backed, admin-managed) |
+| Admins | `ADMIN_EMAILS` (default `ajay.shankar`, `dhruv.goel`) — manage access + limit in-app (see §6) |
 | Service account | `trustscan-poc-service-account` (IRSA role `dev-serve-trustscan-poc`) — grants S3 access |
-| Search limit | Global `DAILY_SEARCH_LIMIT` (default 1000) searches/day, persisted in S3 |
+| Search limit | Global daily cap (default 1000), admin-editable, persisted in S3 |
 
 ---
 
@@ -99,9 +100,10 @@ deployment spec.
 | `TRINO_PORT` / `TRINO_HTTP_SCHEME` / `TRINO_CATALOG` / `TRINO_SCHEMA` | ConfigMap / inline | Trino connection |
 | `TRINO_USER` / `TRINO_PASSWORD` | **Secret** `trustscan-secrets` | Trino credentials |
 | `S3_BUCKET` / `S3_PREFIX` | inline | Login/scan audit-log location |
-| `DAILY_SEARCH_LIMIT` | inline | Global daily search cap (default `1000`); see §5 |
+| `DAILY_SEARCH_LIMIT` | inline | **Seed/fallback** for the admin-editable daily cap (default `1000`); live value lives in S3 — see §5 |
 | `RATE_LIMIT_PREFIX` | inline | S3 prefix for the daily counter (default `TS_POC/search_counter/`) |
-| `ALLOWED_EMAILS` | inline | Comma-separated OAuth allowlist (see §4) |
+| `ALLOWED_EMAILS` | inline | **Seed/fallback** for the allowlist; live list lives in S3 and is admin-managed — see §4 |
+| `ADMIN_EMAILS` | inline | Who can use the in-app admin panel (default `ajay.shankar@razorpay.com,dhruv.goel@razorpay.com`); see §6 |
 | `GOOGLE_CLIENT_ID` | inline | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | inline | 🔒 OAuth client secret — **do not expose / commit** |
 | `SESSION_SECRET` | inline | 🔒 Session-cookie signing key — **do not expose / commit** |
@@ -115,7 +117,8 @@ deployment spec.
 
 ### S3 access (service account / IRSA)
 
-The app needs S3 to read/write the daily search counter (§5) and the audit log.
+The app needs S3 to read/write the daily search counter (§5), the audit log, and
+the admin-managed config (the allowlist and the daily-limit value — see §4/§6).
 Access is **not** via the EKS node role — that role has no S3 permissions. The
 deployment must run under the **`trustscan-poc-service-account`** service
 account, whose IRSA annotation maps it to IAM role `dev-serve-trustscan-poc`
@@ -153,26 +156,29 @@ kubectl rollout restart deployment/trustscan-analytics -n analytics-tools
 
 ## 4️⃣ Managing who can log in (allowlist)
 
-Access is gated by Google OAuth **and** the `ALLOWED_EMAILS` allowlist
-(`trustscan_app.py` rejects any authenticated email not in the set). The
-allowlist lives in the deployment's inline env, so update it with
-`kubectl set env` (this triggers a rollout):
+Access is gated by Google OAuth **and** an email allowlist, which is an
+**S3-backed, admin-editable store**:
+
+- **Source of truth:** `s3://$S3_BUCKET/TS_POC/config/allowed_emails.json`.
+- **Seeded** from the `ALLOWED_EMAILS` env var on first run (so nobody loses
+  access), cached ~30 s in memory, and **falls back** to the env value if S3 is
+  unreachable. Admins (§6) are always allowed, even if absent from the file.
+- A user who authenticates but isn't allowed gets a **403**.
+
+**Normal way to manage users:** the in-app **admin panel** (§6) — no redeploy.
+Adds take effect immediately; removes take effect at the user's next sign-in
+(an active session lasts up to 8 h).
+
+**Fallback (no UI):** view or edit the S3 file directly. Note the env var only
+*seeds* the file on first run — once `allowed_emails.json` exists, changing the
+env var alone will **not** update the live list.
 
 ```bash
-# Pass the FULL comma-separated list (it replaces the existing value)
-kubectl set env deployment/trustscan-analytics -n analytics-tools \
-  ALLOWED_EMAILS="ajay.shankar@razorpay.com,dhruv.goel@razorpay.com,narahari.bhat@razorpay.com,pranav.t@razorpay.com,amal.shaji@razorpay.com,ajayshankar1996@gmail.com,nithin.r@razorpay.com,maneesha.nair@razorpay.com,debasree.choudhury@razorpay.com"
+# View the live allowlist
+POD=$(kubectl get pods -n analytics-tools | grep trustscan-analytics | awk '{print $1}' | head -1)
+kubectl exec -n analytics-tools $POD -- python3 -c \
+  "import boto3,os,json; print(boto3.client('s3','ap-south-1').get_object(Bucket=os.getenv('S3_BUCKET'),Key='TS_POC/config/allowed_emails.json')['Body'].read().decode())"
 ```
-
-Verify:
-
-```bash
-kubectl get deploy trustscan-analytics -n analytics-tools \
-  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ALLOWED_EMAILS")].value}' \
-  | tr ',' '\n'
-```
-
-A user who authenticates but isn't on the list gets a 403 (not on allowlist).
 
 ---
 
@@ -196,11 +202,14 @@ one `/api/ts1` call). It's defined in `trustscan_app.py`:
 > `trustscan-poc-service-account` (see §3). Without it, every counter write is
 > `AccessDenied`, the limiter fails open, and the cap is **not** enforced.
 
-Change the limit (triggers a rollout):
+The **limit value** itself is admin-editable and stored at
+`s3://$S3_BUCKET/TS_POC/config/rate_limit.json` (seeded from `DAILY_SEARCH_LIMIT`
+on first run, env as fallback, cached ~30 s).
 
-```bash
-kubectl set env deployment/trustscan-analytics -n analytics-tools DAILY_SEARCH_LIMIT=2000
-```
+**Change the limit:** use the in-app **admin panel → Rate Limits** (§6) — it
+applies live, no redeploy. The `DAILY_SEARCH_LIMIT` env var only *seeds* the S3
+value on first run; once `rate_limit.json` exists, changing the env alone won't
+update the live limit.
 
 Check today's usage:
 
@@ -213,7 +222,45 @@ kubectl exec -n analytics-tools $POD -- python3 -c \
 
 ---
 
-## 6️⃣ Mobile vs desktop UI
+## 6️⃣ Admin panel (in-app access & limit management)
+
+Admins get a profile icon on the **desktop header** (top-right) that opens two
+tools — so routine user and limit changes need **no redeploy or kubectl**.
+
+- **Who's an admin:** anyone in `ADMIN_EMAILS` (default `ajay.shankar@razorpay.com`,
+  `dhruv.goel@razorpay.com`). Admins are always on the allowlist. The icon and
+  every admin endpoint are gated server-side — non-admins get `403`.
+- **👥 User Roles** → view the live allowlist, add an email (instant access) or
+  remove one (effective at next sign-in). Writes `allowed_emails.json` (§4).
+- **⚙️ Rate Limits** → view today's usage and raise/lower the daily cap live.
+  Writes `rate_limit.json` (§5).
+
+> The icon is desktop-only today (not yet on the mobile nav).
+
+Change the admin list (triggers a rollout):
+
+```bash
+kubectl set env deployment/trustscan-analytics -n analytics-tools \
+  ADMIN_EMAILS="ajay.shankar@razorpay.com,dhruv.goel@razorpay.com"
+```
+
+**Endpoints** (all behind login; admin-only ones return `403` for non-admins):
+
+| Method · Path | Purpose |
+|---|---|
+| `GET /api/whoami` | Current user + `is_admin` (frontend shows the icon if true) |
+| `GET /api/admin/users` | List the allowlist (with admin flags) |
+| `POST /api/admin/users` | Add — body `{"email": "..."}` or `{"emails": [...]}` |
+| `DELETE /api/admin/users` | Remove — body `{"email": "..."}` (admins protected) |
+| `GET /api/admin/rate-limit` | Current limit + used/remaining today |
+| `POST /api/admin/rate-limit` | Set limit — body `{"daily_limit": N}` |
+
+> **S3 config files** (under `TS_POC/config/`, require the IRSA SA — §3):
+> `allowed_emails.json` (allowlist) · `rate_limit.json` (daily limit).
+
+---
+
+## 7️⃣ Mobile vs desktop UI
 
 The frontend serves **one** `index.html`. It detects mobile via
 `navigator.userAgent`:
@@ -227,7 +274,7 @@ helpers. There is no separate mobile URL or build.
 
 ---
 
-## 7️⃣ Verify a deployment
+## 8️⃣ Verify a deployment
 
 ```bash
 # Pod should be Running with 0 restarts
