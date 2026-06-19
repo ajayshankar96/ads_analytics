@@ -63,8 +63,8 @@ function CampaignDetail({ campaign, segments, canEdit, onReload }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "24px", height: "calc(100vh - 140px)" }}>
       <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: c.ink }}>{campaign.advertiser_name} → {campaign.publisher_name}</h2>
-        <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{campaign.campaign_id} · {campaign.offer_title || ""}</div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: c.ink }}>{campaign.advertiser_name} → {campaign.publisher_name}{campaign.offer_title ? ` · ${campaign.offer_title}` : ""}</h2>
+        <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{campaign.campaign_id}</div>
       </div>
 
       <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: `2px solid ${c.line}` }}>
