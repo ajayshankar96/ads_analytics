@@ -16,7 +16,7 @@ import SalesPipeline from "./components/SalesPipeline";
 import CampaignOps from "./components/CampaignOps";
 import BudgetAllocation from "./components/BudgetAllocation";
 import CampaignTracking from "./components/CampaignTracking";
-import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess, getMyRole } from "./api";
+import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess, getMyRole, setDataSource as setDataSourceApi } from "./api";
 import QueryConsole from "./components/QueryConsole";
 import RoleManager from "./components/RoleManager";
 
@@ -325,6 +325,9 @@ export default function App() {
       .catch(() => setApiStatus("error"));
     getConsoleAccess().then((d) => setIsAdmin(!!d.is_admin)).catch(() => {});
     getMyRole().then((d) => { setUserRole(d.role || "VIEWER"); setUserEmail(d.email || ""); }).catch(() => {});
+    // Sync data source preference to backend
+    const savedSource = localStorage.getItem("dataSource") === "sheet" ? "sheet" : "postgres";
+    setDataSourceApi(savedSource).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -423,7 +426,7 @@ export default function App() {
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>Data Source</div>
                 <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
                   {[["sheet", "Google Sheet"], ["postgres", "Postgres"]].map(([val, label]) => (
-                    <button key={val} onClick={() => { setDataSource(val); localStorage.setItem("dataSource", val); }}
+                    <button key={val} onClick={() => { setDataSource(val); localStorage.setItem("dataSource", val); setDataSourceApi(val).catch(() => {}); }}
                       style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: dataSource === val ? "2px solid #2563eb" : "1px solid #e5e7eb", background: dataSource === val ? "#EAF0FF" : "#fff", color: dataSource === val ? "#2563eb" : "#64748b" }}>
                       {label}
                     </button>

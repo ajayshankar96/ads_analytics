@@ -84,6 +84,81 @@ from sqlalchemy import func, select, text
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Dual data source: Sheet cache OR Postgres ─────────────────────────────────
+_pg_cache = {"data": None, "ts": 0}
+
+def load_from_postgres():
+    """Load campaign metrics from Postgres in the same format as load_master_report_cache()."""
+    import time
+    now = time.time()
+    if _pg_cache["data"] and (now - _pg_cache["ts"]) < 60:
+        return _pg_cache["data"]
+
+    from sqlalchemy import create_engine
+    db_url = os.environ.get("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql+pg8000://").replace("postgresql://", "postgresql+pg8000://")
+    if not db_url:
+        return load_master_report_cache()
+    try:
+        eng = create_engine(db_url, pool_pre_ping=True)
+        with eng.connect() as conn:
+            rows_raw = conn.execute(text("SELECT advertiser, publisher, '' as industry, date::text, '' as week, '' as month_start, segment, '' as adv_segment, '' as cohort, advertiser as brand, '' as offer, impressions, distribution, clicks, CASE WHEN impressions > 0 THEN clicks::float/impressions*100 ELSE 0 END as ctr, orders_pub, scratches, coins_burned, redirections, spends, CASE WHEN impressions > 0 THEN spends/impressions*1000 ELSE 0 END as cpm, CASE WHEN clicks > 0 THEN spends/clicks ELSE 0 END as cpc, publisher_spends, advertiser_spends, advertiser_metrics FROM rmn_campaign_metrics ORDER BY date")).fetchall()
+
+        headers = ["Advertiser", "Publisher", "Advertiser_Industry", "Date", "Week_Start_Date", "Month_Start_Date", "Segment", "Advertiser_Segment", "Cohort_Name", "Brand", "Offer", "Impressions", "Distribution", "Clicks", "CTR", "Orders_pub", "Scratches", "Coins_Burned", "Redirections", "Spends", "CPM", "CPC", "Publisher_Spends", "Advertiser_Spends"]
+
+        # Parse advertiser_metrics JSON and add dynamic columns
+        import json as _json
+        all_adv_metrics = set()
+        parsed_rows = []
+        for r in rows_raw:
+            row = list(r[:24])
+            metrics = {}
+            if r[24]:
+                try: metrics = _json.loads(r[24])
+                except: pass
+            all_adv_metrics.update(metrics.keys())
+            parsed_rows.append((row, metrics))
+
+        adv_metric_cols = sorted(all_adv_metrics)
+        full_headers = headers + adv_metric_cols
+
+        full_rows = []
+        for row, metrics in parsed_rows:
+            for col in adv_metric_cols:
+                row.append(str(metrics.get(col, "-")))
+            full_rows.append([str(v) for v in row])
+
+        result = {"headers": full_headers, "rows": full_rows, "cache_age": 0}
+        _pg_cache["data"] = result
+        _pg_cache["ts"] = now
+        return result
+    except Exception as e:
+        logger.warning(f"Postgres load failed, falling back to sheet: {e}")
+        return load_master_report_cache()
+
+
+_active_source = {"value": "postgres"}  # default to postgres
+
+def load_data(source: str = None):
+    """Load data from either Sheet cache or Postgres."""
+    src = source or _active_source["value"]
+    if src == "postgres":
+        return load_from_postgres()
+    return load_master_report_cache()
+
+
+@app.get("/api/data-source")
+def get_data_source():
+    return {"source": _active_source["value"]}
+
+
+@app.post("/api/data-source")
+async def set_data_source(request: Request):
+    body = await request.json()
+    src = body.get("source", "sheet")
+    if src in ("sheet", "postgres"):
+        _active_source["value"] = src
+    return {"source": _active_source["value"]}
+
 app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -141,7 +216,7 @@ def get_filters(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
 ):
-    data = load_master_report_cache()
+    data = load_data()
     filters = {}
     if advertiser:
         filters["advertiser"] = advertiser
@@ -152,7 +227,7 @@ def get_filters(
 
 @app.get("/api/filter-relationships")
 def filter_relationships():
-    data = load_master_report_cache()
+    data = load_data()
     return get_filter_relationships(data)
 
 
@@ -169,7 +244,7 @@ def dashboard_aggregates(
     dateTo: Optional[str] = None,
 ):
     filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
-    data = load_master_report_cache()
+    data = load_data()
     rows = apply_filters(data["rows"], filters)
     aggs = calculate_aggregates(rows, data["headers"])
     return {**aggs, "totalRows": len(rows), "cacheAge": data.get("cache_age", 0)}
@@ -188,7 +263,7 @@ def dashboard_timeseries(
     groupBy: str = "day",
 ):
     filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
-    data = load_master_report_cache()
+    data = load_data()
     rows = apply_filters(data["rows"], filters)
     series = get_time_series(rows, data["headers"], group_by=groupBy)
     return {"timeSeries": series, "groupBy": groupBy}
@@ -206,7 +281,7 @@ def dashboard_breakdowns(
     dateTo: Optional[str] = None,
 ):
     filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
-    data = load_master_report_cache()
+    data = load_data()
     rows = apply_filters(data["rows"], filters)
     return {"breakdowns": get_breakdowns(rows, data["headers"])}
 
@@ -225,7 +300,7 @@ def dashboard_table(
     limit: int = 100,
 ):
     filters = _build_filters(advertiser, publisher, industry, segment, brand, offer, dateFrom, dateTo)
-    data = load_master_report_cache()
+    data = load_data()
     rows = apply_filters(data["rows"], filters)
     total = len(rows)
     table = prepare_table_data(rows, data["headers"], offset=offset, limit=limit)
@@ -251,7 +326,7 @@ def advertiser_performance(
     compare: bool = False,
     comparePeriods: int = 1,
 ):
-    data = load_master_report_cache()
+    data = load_data()
     filters = {
         "advertisers": advertisers or [],
         "publishers": publishers or [],
@@ -277,7 +352,7 @@ def publisher_performance(
     compare: bool = False,
     comparePeriods: int = 1,
 ):
-    data = load_master_report_cache()
+    data = load_data()
     filters = {
         "publishers": publishers or [],
         "segments": segments or [],
@@ -295,7 +370,7 @@ def publisher_performance(
 # ── Advertiser Health ─────────────────────────────────────────────────────────
 @app.get("/api/advertiser-health")
 def advertiser_health(viewMode: str = "weekly"):
-    data = load_master_report_cache()
+    data = load_data()
     result = get_advertiser_health(data["rows"], data["headers"], view_mode=viewMode)
     result["cacheAge"] = data.get("cache_age", 0)
     return result
@@ -309,7 +384,7 @@ def data_freshness():
     if cached:
         return cached
 
-    data = load_master_report_cache()
+    data = load_data()
     result = compute_data_freshness(data["rows"], data["headers"])
     cache.set(cache_key, result, ttl=600)
     return result
@@ -323,7 +398,7 @@ def monthly_spend():
     if cached:
         return cached
 
-    data = load_master_report_cache()
+    data = load_data()
     result = get_monthly_spend_analysis(data["rows"], data["headers"])
     cache.set(cache_key, result, ttl=600)
     return result
@@ -336,7 +411,7 @@ def budget(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
 ):
-    data = load_master_report_cache()
+    data = load_data()
     filters = {"month": month, "advertiser": advertiser or [], "publisher": publisher or []}
     return get_budget_data(data["rows"], data["headers"], filters=filters)
 
@@ -521,7 +596,7 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=503, detail="Chatbot not configured (missing LITELLM_API_KEY)")
 
     # Build data context from live cache
-    data = load_master_report_cache()
+    data = load_data()
     from data_logic import calculate_aggregates, compute_data_freshness, get_filter_options
     aggs = calculate_aggregates(data["rows"], data["headers"])
     freshness = compute_data_freshness(data["rows"], data["headers"])
@@ -1771,7 +1846,7 @@ def list_advertiser_reports():
 
 @app.get("/api/reporting/advertiser/columns")
 def get_adv_columns():
-    data = load_master_report_cache()
+    data = load_data()
     cols = get_available_columns(data["headers"])
     return {"columns": cols, "forcedColumns": FORCED_COLS}
 
@@ -1789,7 +1864,7 @@ def create_advertiser_report(config: AdvReportConfig):
     import json as _json
     from datetime import datetime as _dt
 
-    data = load_master_report_cache()
+    data = load_data()
     rows = filter_by_advertiser(data["rows"], data["headers"], config.advertiser)
     rows = filter_by_date(rows, data["headers"], config.dateFrom)
 
@@ -1883,7 +1958,7 @@ def refresh_advertiser_report(report_id: str):
             ))
         raise HTTPException(status_code=404, detail="Report not found")
 
-    data = load_master_report_cache()
+    data = load_data()
     rows = filter_by_advertiser(data["rows"], data["headers"], report["advertiser"])
     rows = filter_by_date(rows, data["headers"], report["dateFrom"] if report["dateFrom"] != "All" else None)
 
@@ -1955,7 +2030,7 @@ def list_publisher_reports():
 
 @app.get("/api/reporting/publisher/metrics")
 def get_pub_metrics():
-    data = load_master_report_cache()
+    data = load_data()
     from reporting_logic import PUB_FIXED_METRICS
     extra = get_publisher_extra_metrics(data["headers"])
     return {"fixedMetrics": PUB_FIXED_METRICS, "extraMetrics": extra}
@@ -1967,7 +2042,7 @@ def get_pub_advertisers(
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
 ):
-    data = load_master_report_cache()
+    data = load_data()
     advertisers = get_publisher_advertisers(data["rows"], data["headers"], publisher, dateFrom, dateTo)
     return {"advertisers": advertisers}
 
@@ -1994,7 +2069,7 @@ def create_publisher_report(config: PubReportConfig):
     from datetime import datetime as _dt
     from reporting_logic import PUB_FIXED_METRICS
 
-    data = load_master_report_cache()
+    data = load_data()
     rows = filter_by_publisher(data["rows"], data["headers"], config.publisher)
     rows = filter_by_date(rows, data["headers"], config.dateFrom, config.dateTo)
 
@@ -2089,7 +2164,7 @@ def refresh_publisher_report(report_id: str):
             ))
         raise HTTPException(status_code=404, detail="Publisher report not found")
 
-    data = load_master_report_cache()
+    data = load_data()
     rows = filter_by_publisher(data["rows"], data["headers"], report["publisher"])
     date_from = report["dateFrom"] if report["dateFrom"] not in ("All", "") else None
     date_to = report["dateTo"] if report.get("dateTo") else None

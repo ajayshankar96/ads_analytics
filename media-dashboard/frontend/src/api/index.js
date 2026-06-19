@@ -232,6 +232,9 @@ export const getSheetHeaders = (url) =>
   apiFetch(`/api/sheet-headers${buildQuery({ url })}`);
 
 // ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
+export const setDataSource = (source) =>
+  apiFetch("/api/data-source", { method: "POST", body: JSON.stringify({ source }) });
+
 export const getPgAggregates = (filters = {}) =>
   apiFetch(`/api/dashboard/pg/aggregates${buildQuery(filters)}`);
 
