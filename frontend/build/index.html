@@ -484,6 +484,49 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
 .m-sig-zero-badge{background:#EEF0F4;padding:2px 7px;border-radius:5px;font-size:9.5px;font-weight:600;color:#475569}
 .m-cattab-panel{display:none}
 .m-cattab-panel.active{display:block}
+
+/* ═══════════════════════════ ADMIN · USER ACCESS ═══════════════════════════ */
+.admin-wrap{position:relative}
+.admin-btn{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);background:#fff;display:grid;place-items:center;cursor:pointer;padding:0;transition:border-color .15s,box-shadow .15s}
+.admin-btn:hover{border-color:var(--rp-blue-500);box-shadow:0 0 0 3px rgba(13,148,251,.12)}
+.admin-avatar{width:26px;height:26px;border-radius:50%;background:var(--rp-blue-700);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center;text-transform:uppercase;font-family:'Inter',sans-serif}
+.admin-menu{position:absolute;top:calc(100% + 8px);right:0;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-lg);min-width:210px;padding:6px;display:none;z-index:120}
+.admin-menu.open{display:block}
+.admin-menu-email{font-size:11px;color:var(--ink-500);padding:8px 10px 9px;border-bottom:1px solid var(--line-2);margin-bottom:4px;word-break:break-all;font-weight:500}
+.admin-menu-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 10px;border-radius:8px;font-size:13px;font-weight:600;color:var(--ink-900);background:none;border:0;cursor:pointer;text-align:left}
+.admin-menu-item:hover{background:var(--rp-blue-25)}
+.admin-menu-chev{color:var(--ink-300);font-size:16px}
+
+.admin-modal-back{position:fixed;inset:0;background:rgba(1,38,82,.55);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
+.admin-modal-back.on{display:flex}
+.admin-modal{background:#fff;border-radius:16px;width:520px;max-width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(1,38,82,.4);overflow:hidden}
+.admin-modal-head{display:flex;align-items:flex-start;gap:14px;padding:22px 24px 16px}
+.admin-modal-head h2{margin:0 0 6px;font-size:19px;font-weight:700;color:var(--ink-900);letter-spacing:-.015em}
+.admin-modal-head p{margin:0;font-size:12.5px;color:var(--ink-500);line-height:1.5}
+.admin-x{margin-left:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;width:30px;height:30px;flex-shrink:0;cursor:pointer;color:var(--ink-500);font-size:13px}
+.admin-x:hover{background:var(--red-50);color:var(--red-700);border-color:#FCB7B7}
+.admin-add-row{display:flex;gap:8px;padding:0 24px 4px}
+.admin-add-row input{flex:1;height:42px;border:1px solid var(--line);border-radius:10px;padding:0 14px;font-size:14px;outline:none;color:var(--ink-900);transition:border-color .15s,box-shadow .15s}
+.admin-add-row input:focus{border-color:var(--rp-blue-500);box-shadow:0 0 0 3px rgba(13,148,251,.12)}
+.admin-add-btn{height:42px;padding:0 22px;background:var(--rp-blue-700);color:#fff;border-radius:10px;font-weight:600;font-size:13.5px;border:0;cursor:pointer}
+.admin-add-btn:hover{background:var(--rp-blue-800)}
+.admin-add-btn:disabled{background:#A8B5FF;cursor:not-allowed}
+.admin-msg{padding:8px 24px 0;font-size:12.5px;min-height:0}
+.admin-msg.ok{color:var(--green-700)}.admin-msg.err{color:var(--red-700)}
+.admin-list-head{padding:14px 24px 8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-500);font-weight:700}
+.admin-list-head b{color:var(--ink-900)}
+.admin-list{overflow-y:auto;padding:0 16px 18px;display:flex;flex-direction:column;gap:4px}
+.admin-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px}
+.admin-row:hover{background:var(--bg)}
+.admin-row .em{font-size:13px;color:var(--ink-900);flex:1;word-break:break-all}
+.admin-row .badge{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--rp-blue-700);background:var(--rp-blue-50);padding:3px 8px;border-radius:6px}
+.admin-row .rm{background:none;border:0;color:var(--ink-300);cursor:pointer;font-size:13px;padding:5px 8px;border-radius:7px;flex-shrink:0}
+.admin-row .rm:hover{background:var(--red-50);color:var(--red-700)}
+@media (max-width:640px){
+  .admin-modal{width:100%;max-height:92vh}
+  .admin-modal-head{padding:18px 16px 12px}
+  .admin-add-row,.admin-msg,.admin-list-head{padding-left:16px;padding-right:16px}
+}
 </style>
 </head>
 <body>
@@ -502,8 +545,40 @@ code{font-family:'SF Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,mo
     <span class="h-tag">By Razorpay</span>
     <div class="h-spacer"></div>
     <div class="h-proxy" id="proxyChip"><span class="proxy-dot"></span><span class="proxy-text"></span></div>
+    <div class="admin-wrap" id="adminWrap" style="display:none">
+      <button class="admin-btn" id="adminBtn" onclick="toggleAdminMenu(event)" aria-label="Admin menu" title="Admin">
+        <span class="admin-avatar" id="adminInitial">A</span>
+      </button>
+      <div class="admin-menu" id="adminMenu">
+        <div class="admin-menu-email" id="adminMenuEmail"></div>
+        <button class="admin-menu-item" onclick="openAdminModal()">
+          <span>👥 User Roles</span><span class="admin-menu-chev">›</span>
+        </button>
+      </div>
+    </div>
   </div>
 </header>
+
+<!-- ===== Admin · User Access modal (admins only) ===== -->
+<div class="admin-modal-back" id="adminModalBack" onclick="if(event.target===this)closeAdminModal()">
+  <div class="admin-modal" role="dialog" aria-modal="true">
+    <div class="admin-modal-head">
+      <div>
+        <h2>User Access</h2>
+        <p>Grant or revoke who can use TrustScan. Added users can sign in immediately; removed users lose access at next sign-in.</p>
+      </div>
+      <button class="admin-x" onclick="closeAdminModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="admin-add-row">
+      <input id="adminEmailInput" type="email" placeholder="name@razorpay.com" autocomplete="off" spellcheck="false"
+             onkeydown="if(event.key==='Enter')adminAddUser()" />
+      <button class="admin-add-btn" id="adminAddBtn" onclick="adminAddUser()">Add</button>
+    </div>
+    <div class="admin-msg" id="adminMsg"></div>
+    <div class="admin-list-head"><b id="adminCount">—</b> people with access</div>
+    <div class="admin-list" id="adminList"></div>
+  </div>
+</div>
 
 <section class="hero">
   <div class="eyebrow">Customer Intelligence · Unified Profile</div>
@@ -2240,6 +2315,116 @@ if(IS_MOBILE){
     }
   })();
 }
+
+/* ════════════════════════════ ADMIN · USER ACCESS ════════════════════════════ */
+let ADMIN_ME = null;
+
+async function adminInit(){
+  try{
+    const r = await fetch(PROXY + "/api/whoami", {cache:"no-store"});
+    if(!r.ok) return;
+    const me = await r.json();
+    ADMIN_ME = me;
+    if(me && me.is_admin){
+      const wrap = document.getElementById("adminWrap");
+      if(wrap) wrap.style.display = "block";
+      const init = document.getElementById("adminInitial");
+      const em = document.getElementById("adminMenuEmail");
+      if(init) init.textContent = (me.email || "A").charAt(0);
+      if(em) em.textContent = me.email || "";
+    }
+  }catch(e){ /* not logged in / offline — leave admin UI hidden */ }
+}
+
+function toggleAdminMenu(ev){
+  if(ev) ev.stopPropagation();
+  document.getElementById("adminMenu").classList.toggle("open");
+}
+document.addEventListener("click", function(e){
+  const menu = document.getElementById("adminMenu");
+  const wrap = document.getElementById("adminWrap");
+  if(menu && menu.classList.contains("open") && wrap && !wrap.contains(e.target))
+    menu.classList.remove("open");
+});
+
+function openAdminModal(){
+  document.getElementById("adminMenu").classList.remove("open");
+  document.getElementById("adminModalBack").classList.add("on");
+  document.getElementById("adminMsg").textContent = "";
+  document.getElementById("adminEmailInput").value = "";
+  loadAdminUsers();
+}
+function closeAdminModal(){
+  document.getElementById("adminModalBack").classList.remove("on");
+}
+
+function adminMsg(text, kind){
+  const el = document.getElementById("adminMsg");
+  el.textContent = text || "";
+  el.className = "admin-msg" + (kind ? " " + kind : "");
+}
+
+async function loadAdminUsers(){
+  const list = document.getElementById("adminList");
+  list.innerHTML = '<div style="padding:14px;color:#9AA5B1;font-size:13px">Loading…</div>';
+  try{
+    const r = await fetch(PROXY + "/api/admin/users", {cache:"no-store"});
+    if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ("HTTP " + r.status));
+    const data = await r.json();
+    document.getElementById("adminCount").textContent = data.total;
+    list.innerHTML = (data.users || []).map(function(u){
+      return '<div class="admin-row">'
+        + '<span class="em">' + u.email + '</span>'
+        + (u.is_admin ? '<span class="badge">Admin</span>'
+                      : '<button class="rm" title="Remove access" onclick="adminRemoveUser(\'' + u.email + '\')">Remove</button>')
+        + '</div>';
+    }).join("");
+  }catch(e){
+    list.innerHTML = '<div style="padding:14px;color:#B42318;font-size:13px">Couldn\'t load users: ' + e.message + '</div>';
+  }
+}
+
+async function adminAddUser(){
+  const input = document.getElementById("adminEmailInput");
+  const btn = document.getElementById("adminAddBtn");
+  const email = (input.value || "").trim().toLowerCase();
+  if(!email){ adminMsg("Enter an email address.", "err"); return; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ adminMsg("That doesn't look like a valid email.", "err"); return; }
+  btn.disabled = true; btn.textContent = "Adding…";
+  try{
+    const r = await fetch(PROXY + "/api/admin/users", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: email})
+    });
+    const data = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+    input.value = "";
+    adminMsg("Added " + email + " — they now have access.", "ok");
+    loadAdminUsers();
+  }catch(e){
+    adminMsg("Couldn't add: " + e.message, "err");
+  }finally{
+    btn.disabled = false; btn.textContent = "Add";
+  }
+}
+
+async function adminRemoveUser(email){
+  if(!confirm("Remove access for " + email + "?")) return;
+  try{
+    const r = await fetch(PROXY + "/api/admin/users", {
+      method:"DELETE", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: email})
+    });
+    const data = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+    adminMsg("Removed " + email + ".", "ok");
+    loadAdminUsers();
+  }catch(e){
+    adminMsg("Couldn't remove: " + e.message, "err");
+  }
+}
+
+adminInit();
 </script>
 </body>
 </html>

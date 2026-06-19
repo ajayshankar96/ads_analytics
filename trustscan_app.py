@@ -147,11 +147,100 @@ GOOGLE_REDIRECT_URI  = os.getenv("GOOGLE_REDIRECT_URI",
 SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
 SESSION_HOURS  = 8
 
+# Env-seeded allowlist — used to SEED the S3 store on first run and as a fallback
+# if S3 is ever unreachable. The live source of truth is the S3 file below.
 ALLOWED_EMAILS = set(
     e.strip().lower()
     for e in os.getenv("ALLOWED_EMAILS", "ajay.shankar@razorpay.com").split(",")
     if e.strip()
 )
+
+# Admins who can manage access via the in-app panel (static, via env).
+ADMIN_EMAILS = set(
+    e.strip().lower()
+    for e in os.getenv("ADMIN_EMAILS", "ajay.shankar@razorpay.com,dhruv.goel@razorpay.com").split(",")
+    if e.strip()
+)
+
+# ── Dynamic, admin-editable allowlist (S3-backed) ──────────────────────────────
+# Source of truth: s3://$S3_BUCKET/TS_POC/config/allowed_emails.json. Seeded from
+# the ALLOWED_EMAILS env var on first run (so nobody loses access), cached in
+# memory with a short TTL, and falls back to the env set if S3 is unreachable.
+# Admins (ADMIN_EMAILS) are always included so they can never lock themselves out.
+ALLOWLIST_KEY   = os.getenv("ALLOWLIST_KEY", "TS_POC/config/allowed_emails.json")
+_ALLOWLIST_TTL  = 30  # seconds
+_ALLOWLIST_CACHE = {"emails": None, "ts": 0.0}
+_ALLOWLIST_LOCK = threading.Lock()
+
+def _allowlist_s3():
+    import boto3
+    return (boto3.client("s3", region_name="ap-south-1"),
+            os.getenv("S3_BUCKET", "rzp-1415-prod-general-purpose-analytics"))
+
+def _read_allowlist():
+    """Return the allowlist set from S3, or None if absent/unreadable."""
+    try:
+        s3, bucket = _allowlist_s3()
+        raw = s3.get_object(Bucket=bucket, Key=ALLOWLIST_KEY)["Body"].read().decode()
+        return set(e.strip().lower() for e in json.loads(raw).get("emails", []) if e.strip())
+    except Exception:
+        return None
+
+def _write_allowlist(emails, updated_by="system"):
+    s3, bucket = _allowlist_s3()
+    body = json.dumps({
+        "emails": sorted(emails),
+        "updated": datetime.datetime.now(_IST).strftime("%Y-%m-%d %H:%M:%S IST"),
+        "updated_by": updated_by,
+    }, indent=2).encode()
+    s3.put_object(Bucket=bucket, Key=ALLOWLIST_KEY, Body=body, ContentType="application/json")
+
+def get_allowlist(force=False):
+    """Cached allowlist set (admins always included). Seeds S3 from env on first
+    run; falls back to the env set in-memory if S3 is unreachable."""
+    import time
+    now = time.time()
+    with _ALLOWLIST_LOCK:
+        if (not force and _ALLOWLIST_CACHE["emails"] is not None
+                and now - _ALLOWLIST_CACHE["ts"] < _ALLOWLIST_TTL):
+            return _ALLOWLIST_CACHE["emails"]
+        s3set = _read_allowlist()
+        if s3set is None:
+            s3set = set(ALLOWED_EMAILS)              # seed from env
+            try:
+                _write_allowlist(s3set, updated_by="seed:env")
+            except Exception as e:
+                logger.warning(f"[ALLOWLIST_SEED_ERR] {e} — using env set in-memory")
+        merged = s3set | ADMIN_EMAILS
+        _ALLOWLIST_CACHE["emails"] = merged
+        _ALLOWLIST_CACHE["ts"] = now
+        return merged
+
+def is_allowed(email):
+    return (email or "").strip().lower() in get_allowlist()
+
+def is_admin(email):
+    return (email or "").strip().lower() in ADMIN_EMAILS
+
+def _mutate_allowlist(add=None, remove=None, updated_by="admin"):
+    """Add/remove emails on the S3 allowlist under the lock; returns sorted list
+    of non-admin users."""
+    import time
+    with _ALLOWLIST_LOCK:
+        current = _read_allowlist()
+        if current is None:
+            current = set(ALLOWED_EMAILS)
+        for e in (add or []):
+            e = (e or "").strip().lower()
+            if e:
+                current.add(e)
+        for e in (remove or []):
+            current.discard((e or "").strip().lower())
+        current -= ADMIN_EMAILS          # admins live in ADMIN_EMAILS, not the file
+        _write_allowlist(current, updated_by=updated_by)
+        _ALLOWLIST_CACHE["emails"] = current | ADMIN_EMAILS
+        _ALLOWLIST_CACHE["ts"] = time.time()
+        return sorted(current)
 
 # In-memory CSRF state store  { state_token -> created_timestamp }
 _OAUTH_STATES: dict = {}
@@ -347,7 +436,7 @@ def auth_callback(request: Request,
     email = userinfo.get("email", "").lower().strip()
     name  = userinfo.get("name", email)
 
-    if email not in ALLOWED_EMAILS:
+    if not is_allowed(email):
         logger.warning(f"[ACCESS_DENIED] {email}")
         _audit({"type": "login", "status": "access_denied", "email": email, "name": name,
                 "device": device, "access": access, "ip": ip})
@@ -484,6 +573,62 @@ def activity_summary(request: Request):
         "events":         len(events),
     }
     return JSONResponse({"totals": totals, "users": out})
+
+
+# ── Admin: who am I + access management ────────────────────────────────────────
+@app.get("/api/whoami")
+def whoami(request: Request):
+    email = getattr(request.state, "user_email", None)
+    return JSONResponse({"email": email, "is_admin": is_admin(email)})
+
+@app.get("/api/admin/users")
+def admin_list_users(request: Request):
+    if not is_admin(getattr(request.state, "user_email", None)):
+        raise HTTPException(status_code=403, detail="Admins only")
+    allow = get_allowlist(force=True)
+    users = [{"email": e, "is_admin": e in ADMIN_EMAILS} for e in sorted(allow)]
+    return JSONResponse({"users": users, "total": len(users)})
+
+@app.post("/api/admin/users")
+async def admin_add_users(request: Request):
+    actor = getattr(request.state, "user_email", None)
+    if not is_admin(actor):
+        raise HTTPException(status_code=403, detail="Admins only")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = body.get("emails") or ([body["email"]] if body.get("email") else [])
+    valid, invalid = [], []
+    for e in raw:
+        e = (e or "").strip().lower()
+        if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", e):
+            valid.append(e)
+        elif e:
+            invalid.append(e)
+    if not valid:
+        raise HTTPException(status_code=400, detail="No valid email addresses provided")
+    users = _mutate_allowlist(add=valid, updated_by=actor)
+    _audit({"type": "admin", "status": "add_users", "email": actor, "added": valid})
+    return JSONResponse({"ok": True, "added": valid, "invalid": invalid, "total": len(users)})
+
+@app.delete("/api/admin/users")
+async def admin_remove_user(request: Request):
+    actor = getattr(request.state, "user_email", None)
+    if not is_admin(actor):
+        raise HTTPException(status_code=403, detail="Admins only")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    target = (body.get("email") or "").strip().lower()
+    if not target:
+        raise HTTPException(status_code=400, detail="email required")
+    if target in ADMIN_EMAILS:
+        raise HTTPException(status_code=400, detail="Cannot remove an admin")
+    users = _mutate_allowlist(remove=[target], updated_by=actor)
+    _audit({"type": "admin", "status": "remove_user", "email": actor, "removed": target})
+    return JSONResponse({"ok": True, "removed": target, "total": len(users)})
 
 
 @app.get("/signin")
