@@ -167,7 +167,11 @@ def _search_quota(do_increment: bool):
                 obj = s3.get_object(Bucket=bucket, Key=key)
                 count = int(json.loads(obj["Body"].read().decode()).get("count", 0))
             except ClientError as e:
-                if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                # The IRSA role has GetObject but not ListBucket, so a *missing*
+                # counter object returns AccessDenied (not NoSuchKey). Treat all
+                # three as "no counter for today yet → start at 0" so the first
+                # scan of the day actually creates and increments the file.
+                if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "AccessDenied"):
                     count = 0
                 else:
                     raise
