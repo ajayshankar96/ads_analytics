@@ -213,6 +213,15 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     await load();
   };
 
+  const totalBudgetLoaded = advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const totalAllocatedAll = grandTotal;
+  const allocationPct = totalBudgetLoaded > 0 ? (totalAllocatedAll / totalBudgetLoaded * 100) : 0;
+  const activePubs = publishers.filter((p) => pubTotals[p.id] > 0).length;
+  const unallocated = totalBudgetLoaded - totalAllocatedAll;
+
+  const PALETTE = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2", "#C8321E"];
+  const avatarColor = (name) => PALETTE[(name || "").charCodeAt(0) % PALETTE.length];
+
   if (loading) return <div style={s.loading}>Loading budget allocation…</div>;
 
   return (
@@ -227,6 +236,32 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         </div>
       </div>
 
+      {/* KPI Summary Cards */}
+      {advertisers.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+          <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Budget Loaded</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtInr(totalBudgetLoaded)}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Across {advertisers.length} advertisers</div>
+          </div>
+          <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Allocated</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtInr(totalAllocatedAll)}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{allocationPct.toFixed(1)}% of loaded</div>
+          </div>
+          <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Publishers Active</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{activePubs}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>of {publishers.length} total</div>
+          </div>
+          <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Unallocated</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: unallocated > 0 ? c.red : c.green }}>{fmtInr(unallocated)}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{unallocated > 0 ? "Needs attention" : "Fully allocated"}</div>
+          </div>
+        </div>
+      )}
+
       {advertisers.length === 0 ? (
         <div style={s.empty}>No onboarded advertisers yet.</div>
       ) : (
@@ -234,10 +269,10 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={s.th}>Advertiser</th>
+                <th style={{ ...s.th, minWidth: 150 }}>Advertiser</th>
                 <th style={{ ...s.th, ...s.thRight }}>Total Budget</th>
                 {publishers.map((p) => (
-                  <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}<br/><span style={{ fontWeight: 400, fontSize: 10 }}>{p.code}</span></th>
+                  <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}<br/><span style={{ fontWeight: 400, fontSize: 9 }}>{p.code}</span></th>
                 ))}
                 <th style={{ ...s.th, ...s.thRight }}>Allocated</th>
                 <th style={{ ...s.th, textAlign: "center" }}>%</th>
@@ -253,15 +288,19 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                 return (
                   <tr key={a.id}>
                     <td style={s.td}>
-                      <div style={s.advName}>{a.name}</div>
-                      <div style={s.advId}>{a.id}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 7, background: avatarColor(a.name), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{(a.name || "?").charAt(0).toUpperCase()}</div>
+                        <div><div style={s.advName}>{a.name}</div><div style={s.advId}>{a.id}</div></div>
+                      </div>
                     </td>
                     <td style={{ ...s.td, ...s.tdRight, fontWeight: 700 }}>{fmtInr(budget)}</td>
                     {publishers.map((p) => {
                       const cell = getCell(a.id, p.id);
                       const cantLive = cell.status === "CANT_GO_LIVE";
+                      const hasValue = parseInt(cell.amount, 10) > 0;
+                      const cellBg = cantLive ? "#F3F4F6" : hasValue ? "#E3F6EE" : "transparent";
                       return (
-                        <td key={p.id} style={{ ...s.td, textAlign: "center", padding: "6px 6px" }}>
+                        <td key={p.id} style={{ ...s.td, textAlign: "center", padding: "6px 6px", background: cellBg }}>
                           {cantLive ? (
                             <span style={s.cantLive} onClick={() => toggleStatus(a.id, p.id)} title="Click to enable">
                               Can't go live
@@ -296,7 +335,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               })}
               <tr style={s.totalRow}>
                 <td style={s.totalTd}>TOTAL</td>
-                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0))}</td>
+                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(totalBudgetLoaded)}</td>
                 {publishers.map((p) => (
                   <td key={p.id} style={{ ...s.totalTd, textAlign: "center" }}>{fmtInr(pubTotals[p.id])}</td>
                 ))}
