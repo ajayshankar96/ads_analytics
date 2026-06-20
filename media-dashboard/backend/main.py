@@ -146,19 +146,6 @@ def load_data(source: str = None):
     return load_master_report_cache()
 
 
-@app.get("/api/data-source")
-def get_data_source():
-    return {"source": _active_source["value"]}
-
-
-@app.post("/api/data-source")
-async def set_data_source(request: Request):
-    body = await request.json()
-    src = body.get("source", "sheet")
-    if src in ("sheet", "postgres"):
-        _active_source["value"] = src
-    return {"source": _active_source["value"]}
-
 app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
@@ -208,6 +195,21 @@ def health():
         "cache": "warm" if age is not None else "cold",
         "cacheAgeSecs": age,
     }
+
+
+# ── Data Source Toggle ─────────────────────────────────────────────────────────
+@app.get("/api/data-source")
+def get_data_source():
+    return {"source": _active_source["value"]}
+
+
+@app.post("/api/data-source")
+async def set_data_source_endpoint(request: Request):
+    body = await request.json()
+    src = body.get("source", "sheet")
+    if src in ("sheet", "postgres"):
+        _active_source["value"] = src
+    return {"source": _active_source["value"]}
 
 
 # ── Filters ───────────────────────────────────────────────────────────────────
