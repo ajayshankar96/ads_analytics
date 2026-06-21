@@ -130,7 +130,7 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
         {aggs.hasQL && <KPICard label="QL" value={fmt(aggs.ql)} sub={`CPQL: ₹${aggs.cpql}`} />}
         {aggs.hasQQG && <KPICard label="QQG" value={fmt(aggs.qqg)} sub={`CPQQG: ₹${aggs.cpqqg}`} />}
         {aggs.hasCouponOrders && <KPICard label="Coupon Orders" value={fmt(aggs.couponOrders)} />}
-        <KPICard label="Redirections" value={fmt(aggs.redirections)} />
+        <KPICard label="Adv Spends" value={`₹${fmt(aggs.advertiser_spends || aggs.advertiserSpends || 0)}`} />
         <KPICard label="Advertisers" value={aggs.advertiserCount ?? "—"} sub={`${aggs.publisherCount ?? "—"} Publishers`} />
         <KPICard label="Data Rows" value={fmt(aggs.totalRows)} sub={`Cache: ${aggs.cacheAge}s ago`} />
       </div>
