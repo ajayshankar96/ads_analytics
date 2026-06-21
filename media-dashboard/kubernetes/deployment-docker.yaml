@@ -21,18 +21,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: c.rzp.io/proxy_dockerhub/library/python:3.11-slim
-        command:
-          - /bin/bash
-          - -c
-          - |
-            apt-get update -qq && apt-get install -y -qq git &&
-            git clone --depth 1 "https://x-access-token:${GIT_TOKEN}@github.com/ajayshankar96/ads_analytics.git" /app &&
-            cd /app/media-dashboard/backend &&
-            pip install --no-cache-dir -q -r requirements.txt &&
-            python3 -c "import main" &&
-            alembic upgrade head &&
-            uvicorn main:app --host 0.0.0.0 --port 8000
+        image: c.rzp.io/razorpay/media-dashboard:latest
         ports:
         - containerPort: 8000
           name: http
@@ -40,11 +29,6 @@ spec:
         - secretRef:
             name: media-dashboard-postgres-credentials
         env:
-        - name: GIT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: media-dashboard-git
-              key: GITHUB_TOKEN
         - name: MASTER_SPREADSHEET_ID
           valueFrom:
             configMapKeyRef:
@@ -60,6 +44,7 @@ spec:
             configMapKeyRef:
               name: media-dashboard-config
               key: CACHE_REFRESH_INTERVAL
+        # ── Auth gate ──
         - name: GOOGLE_CLIENT_ID
           valueFrom:
             configMapKeyRef:
@@ -124,11 +109,11 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 120
+          initialDelaySeconds: 30
           periodSeconds: 15
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 90
+          initialDelaySeconds: 15
           periodSeconds: 10
