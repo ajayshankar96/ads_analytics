@@ -301,7 +301,12 @@ const S = {
 export default function App() {
   const [activeTab, setActiveTab]         = useState("dashboard");
   const [activeSubTab, setActiveSubTab]   = useState(null);
-  const [filters, setFilters]             = useState({});
+  const [filters, setFilters]             = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    return { dateFrom: `${y}-${m}-01`, dateTo: "" };
+  });
   const [filterOptions, setFilterOptions] = useState({});
   const [apiStatus, setApiStatus]         = useState("unknown");
   const [cacheAge, setCacheAge]           = useState(null);

@@ -7,9 +7,6 @@ import {
   getDashboardAggregates,
   getDashboardTimeSeries,
   getDashboardBreakdowns,
-  getPgAggregates,
-  getPgTimeseries,
-  getPgBreakdowns,
 } from "../api";
 
 const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
@@ -84,11 +81,10 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
 
   useEffect(() => {
     setLoading(true);
-    const usePg = dataSource === "postgres";
     Promise.all([
-      usePg ? getPgAggregates(filters) : getDashboardAggregates(filters),
-      usePg ? getPgTimeseries({ ...filters, groupBy }) : getDashboardTimeSeries({ ...filters, groupBy }),
-      usePg ? getPgBreakdowns(filters) : getDashboardBreakdowns(filters),
+      getDashboardAggregates(filters),
+      getDashboardTimeSeries({ ...filters, groupBy }),
+      getDashboardBreakdowns(filters),
     ])
       .then(([a, ts, bd]) => {
         setAggs(a);
@@ -111,13 +107,7 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
   }, [series, rangeKey]);
 
   if (loading) return <div style={s.loading}>Loading dashboard…</div>;
-  if (!aggs || (dataSource === "postgres" && aggs.days === 0)) return (
-    <div style={s.loading}>
-      {dataSource === "postgres"
-        ? "No data in Postgres yet. Sync campaigns in Campaign Success & Tracking first, or switch to Google Sheet source."
-        : "No data"}
-    </div>
-  );
+  if (!aggs) return <div style={s.loading}>No data available.</div>;
 
   const METRICS = [
     { key: "impressions", label: "Impressions" },

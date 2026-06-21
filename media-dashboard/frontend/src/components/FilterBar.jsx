@@ -98,6 +98,26 @@ export default function FilterBar({ options = {}, filters = {}, onChange }) {
       />
 
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <span style={s.label}>Month</span>
+        <input
+          type="month"
+          style={s.input}
+          value={(filters.dateFrom || "").substring(0, 7)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v) {
+              const [y, m] = v.split("-");
+              const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+              update("dateFrom", `${v}-01`);
+              update("dateTo", `${v}-${lastDay}`);
+            } else {
+              update("dateFrom", "");
+              update("dateTo", "");
+            }
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span style={s.label}>From</span>
         <input
           type="date"
