@@ -387,3 +387,177 @@ async def sync_all_campaigns(db: AsyncSession) -> List[Dict[str, Any]]:
             logger.error(f"Sync failed for {camp.id}: {e}")
             results.append({"campaign_id": camp.id, "error": str(e), "rows": 0})
     return results
+
+
+# ── BHIM Gmail Sync ───────────────────────────────────────────────────────────
+
+async def sync_bhim_from_gmail(db: AsyncSession) -> Dict[str, Any]:
+    """Fetch latest BHIM campaign report from Gmail and import into Postgres."""
+    import base64
+    from html.parser import HTMLParser
+    from datetime import date as date_type
+
+    try:
+        from sheets_client import _get_credentials
+        from googleapiclient.discovery import build
+
+        creds = _get_credentials()
+        gmail = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+        # Search for BHIM campaign emails
+        results = gmail.users().messages().list(
+            userId="me",
+            q='subject:"Razorpay<>BHIM" OR subject:"Razorpay BHIM Campaign"',
+            maxResults=10
+        ).execute()
+        messages = results.get("messages", [])
+
+        if not messages:
+            return {"error": "No BHIM emails found", "rows": 0}
+
+        # Find the one with actual data table
+        table_html = None
+        email_date = None
+        for m in messages:
+            msg = gmail.users().messages().get(userId="me", id=m["id"], format="raw").execute()
+            raw = base64.urlsafe_b64decode(msg["raw"]).decode("utf-8", errors="ignore")
+
+            if "Impression" in raw and "Spend" in raw and "MTD" in raw:
+                # Extract date from headers
+                for line in raw.split("\n")[:30]:
+                    if line.startswith("Date:"):
+                        email_date = line.replace("Date:", "").strip()
+                        break
+
+                # Extract HTML table
+                html_start = raw.find("<table")
+                if html_start > 0:
+                    html_end = raw.find("</table>", html_start)
+                    table_html = raw[html_start:html_end + 8]
+                    break
+
+        if not table_html:
+            return {"error": "No BHIM email with data table found", "rows": 0}
+
+        logger.info(f"Found BHIM email dated: {email_date}")
+
+        # Parse HTML table
+        class TableParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.rows = []
+                self.current_row = []
+                self.current_cell = ""
+                self.in_td = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag in ("td", "th"):
+                    self.in_td = True
+                    self.current_cell = ""
+
+            def handle_endtag(self, tag):
+                if tag in ("td", "th"):
+                    self.in_td = False
+                    self.current_row.append(self.current_cell.strip())
+                elif tag == "tr":
+                    if self.current_row:
+                        self.rows.append(self.current_row)
+                    self.current_row = []
+
+            def handle_data(self, data):
+                if self.in_td:
+                    self.current_cell += data
+
+        parser = TableParser()
+        parser.feed(table_html)
+
+        # Find brands (row 0) and MTD values (row 2)
+        if len(parser.rows) < 3:
+            return {"error": "Table too small to parse", "rows": 0}
+
+        brands_row = parser.rows[0]  # Brand names
+        mtd_row = None
+        for row in parser.rows:
+            if row and row[0] == "MTD":
+                mtd_row = row
+                break
+
+        if not mtd_row:
+            return {"error": "No MTD row found in table", "rows": 0}
+
+        # Extract brand names (skip first cell which is empty/header)
+        brands = [b.strip() for b in brands_row[1:] if b.strip() and b.strip() != "=C2=A0"]
+
+        # Extract MTD values (groups of 3: Impression, Clicks, Spend)
+        mtd_values = mtd_row[1:]  # skip "MTD" label
+
+        records = []
+        for i, brand in enumerate(brands):
+            idx = i * 3
+            if idx + 2 >= len(mtd_values):
+                break
+
+            def parse_num(val):
+                clean = val.replace(",", "").replace("=C2=A0", "0").replace("\xa0", "0").strip()
+                try:
+                    return float(clean)
+                except:
+                    return 0
+
+            impressions = int(parse_num(mtd_values[idx]))
+            clicks = int(parse_num(mtd_values[idx + 1]))
+            spends = parse_num(mtd_values[idx + 2])
+
+            if spends > 0 or impressions > 0:
+                records.append({
+                    "advertiser": brand,
+                    "impressions": impressions,
+                    "clicks": clicks,
+                    "spends": spends,
+                })
+
+        if not records:
+            return {"error": "No data parsed from table", "rows": 0}
+
+        # Import to Postgres
+        from sqlalchemy import text as sa_text
+        await db.execute(sa_text("DELETE FROM rmn_campaign_metrics WHERE publisher = 'BHIM' AND date >= '2026-06-01'"))
+
+        today = date_type.today()
+        batch = []
+        for r in records:
+            adv_code = re.sub(r"[^A-Za-z]", "", r["advertiser"])[:3].upper() or "UNK"
+            batch.append({
+                "campaign_id": f"BF-{adv_code}-BHI",
+                "date": today,
+                "advertiser": r["advertiser"],
+                "publisher": "BHIM",
+                "segment": "",
+                "impressions": r["impressions"],
+                "distribution": 0,
+                "clicks": r["clicks"],
+                "orders_pub": 0,
+                "scratches": 0,
+                "coins_burned": 0,
+                "redirections": 0,
+                "spends": r["spends"],
+                "publisher_spends": r["spends"],
+                "advertiser_spends": r["spends"] / 0.75,
+                "advertiser_metrics": None,
+                "synced_at": datetime.now(timezone.utc),
+            })
+
+        if batch:
+            await db.execute(sa_text("""
+                INSERT INTO rmn_campaign_metrics (campaign_id, date, advertiser, publisher, segment, impressions, distribution, clicks, orders_pub, scratches, coins_burned, redirections, spends, publisher_spends, advertiser_spends, advertiser_metrics, synced_at)
+                VALUES (:campaign_id, :date, :advertiser, :publisher, :segment, :impressions, :distribution, :clicks, :orders_pub, :scratches, :coins_burned, :redirections, :spends, :publisher_spends, :advertiser_spends, :advertiser_metrics, :synced_at)
+            """), batch)
+            await db.commit()
+
+        total_spends = sum(r["spends"] for r in records)
+        logger.info(f"BHIM sync: {len(batch)} brands, total spends: {total_spends:,.0f}")
+        return {"rows": len(batch), "total_spends": total_spends, "source": "gmail"}
+
+    except Exception as e:
+        logger.error(f"BHIM Gmail sync failed: {e}")
+        return {"error": str(e), "rows": 0}

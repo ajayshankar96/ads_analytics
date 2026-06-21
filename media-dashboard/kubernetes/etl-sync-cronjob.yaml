@@ -54,7 +54,7 @@ spec:
               cd /app/media-dashboard/backend
               pip install --no-cache-dir -q -r requirements.txt
 
-              echo "[4/4] Running ETL sync..."
+              echo "[4/5] Running ETL sync..."
               python3 -c "
               import asyncio, logging
               logging.basicConfig(level=logging.INFO)
@@ -69,6 +69,21 @@ spec:
                       print(f'ETL sync complete: {len(results)} campaigns, {total_rows} total rows, {len(errors)} errors')
                       for e in errors:
                           print(f'  ERROR: {e}')
+
+              asyncio.run(run())
+              "
+
+              echo "[5/5] Syncing BHIM from Gmail..."
+              python3 -c "
+              import asyncio, logging
+              logging.basicConfig(level=logging.INFO)
+              from db.database import async_session
+              import etl_worker
+
+              async def run():
+                  async with async_session() as db:
+                      result = await etl_worker.sync_bhim_from_gmail(db)
+                      print(f'BHIM sync: {result}')
 
               asyncio.run(run())
               "
