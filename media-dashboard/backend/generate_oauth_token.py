@@ -47,6 +47,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     # Gmail send: lets the app email campaign summaries from the authed account.
     "https://www.googleapis.com/auth/gmail.send",
+    # Gmail readonly: lets the app search and read emails (e.g., BHIM publisher reports).
+    "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
 
@@ -93,7 +95,7 @@ def main():
 
     print("\n✅ Wrote new_oauth_token.json")
     print("   Granted scopes:", out["scopes"])
-    for required in ("drive", "gmail.send"):
+    for required in ("drive", "gmail.send", "gmail.readonly"):
         full = f"https://www.googleapis.com/auth/{required}"
         if full not in out["scopes"]:
             print(f"   ⚠️  Scope NOT granted: {full} — make sure you approved that permission.")
