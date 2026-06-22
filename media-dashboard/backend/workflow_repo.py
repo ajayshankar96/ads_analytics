@@ -474,10 +474,6 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
     to_norm = wf.normalize_stage(to_stage)
 
 
-    if to_norm == wf.STAGE_LIVE:
-        open_tasks = await count_open_ops_tasks(db, campaign.id)
-        if open_tasks > 0:
-            raise ValueError(f"cannot go live: {open_tasks} ops task(s) not DONE")
 
     from_stage = campaign.current_stage
     campaign.current_stage = to_norm
