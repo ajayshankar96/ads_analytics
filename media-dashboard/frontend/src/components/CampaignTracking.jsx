@@ -239,15 +239,23 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         if (urls.length === 1) setPubDataUrl(urls[0].url);
       }).catch(() => {});
     }
-    // Check if mappings already exist
+    // Check if mappings or known URLs exist (either means no mapper needed)
     if (campaign.publisher_name) {
-      getColumnMappings(campaign.publisher_name, "publisher").then((d) => {
-        setPubMappingExists(d.mappings && d.mappings.length > 0);
+      Promise.all([
+        getColumnMappings(campaign.publisher_name, "publisher"),
+        getSheetUrls("publisher", campaign.publisher_name),
+      ]).then(([mRes, uRes]) => {
+        const hasMappingOrUrl = (mRes.mappings && mRes.mappings.length > 0) || (uRes.urls && uRes.urls.length > 0);
+        setPubMappingExists(hasMappingOrUrl);
       }).catch(() => {});
     }
     if (campaign.advertiser_name) {
-      getColumnMappings(campaign.advertiser_name, "advertiser").then((d) => {
-        setAdvMappingExists(d.mappings && d.mappings.length > 0);
+      Promise.all([
+        getColumnMappings(campaign.advertiser_name, "advertiser"),
+        getSheetUrls("advertiser", campaign.advertiser_name),
+      ]).then(([mRes, uRes]) => {
+        const hasMappingOrUrl = (mRes.mappings && mRes.mappings.length > 0) || (uRes.urls && uRes.urls.length > 0);
+        setAdvMappingExists(hasMappingOrUrl);
       }).catch(() => {});
     }
   }, [campaign.campaign_id]);
