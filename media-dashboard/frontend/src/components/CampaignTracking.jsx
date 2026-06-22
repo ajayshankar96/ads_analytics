@@ -260,18 +260,10 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     }
   }, [campaign.campaign_id]);
 
-  const toggleMetric = (m) => setSelectedMetrics((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
-  const toggleComputed = (p) => setComputedMetrics((prev) => prev.find((x) => x.name === p.name) ? prev.filter((x) => x.name !== p.name) : [...prev, p]);
-  const suggestedComputed = COMPUTED_PRESETS.filter((p) => p.needs.some((n) => selectedMetrics.some((m) => m.toLowerCase().includes(n.toLowerCase()))));
-
-  const buildGoalsJson = () => { const obj = { goals: { daily: {}, weekly: {}, monthly: {}, date_agnostic: {} } }; goals.forEach((g) => { if (g.name.trim() && g.period) obj.goals[g.period][g.name.trim()] = parseFloat(g.value) || 0; }); return JSON.stringify(obj); };
-  const buildMetricsJson = () => { const obj = { metrics_library: {} }; let idx = 1; selectedMetrics.forEach((m) => { obj.metrics_library[`metric_${idx}`] = { display_name: m, definition: `${m} from advertiser sheet`, calculation: "" }; idx++; }); computedMetrics.forEach((p) => { obj.metrics_library[`metric_${idx}`] = { display_name: p.name, definition: `Computed: ${p.formula}`, calculation: p.formula }; idx++; }); return JSON.stringify(obj); };
-
   const handleSubmit = async () => {
-    if (!advDataUrl.trim() || !pubDataUrl.trim()) { alert("Data Sheet URLs required"); return; }
-    if (!segmentPub.trim() || !segmentAdv.trim()) { alert("Segment names required"); return; }
+    if (!pubDataUrl.trim()) { alert("Publisher Data Sheet URL is required"); return; }
     setSubmitting(true);
-    try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: campaignType, advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, goals_json: buildGoalsJson(), metrics_json: buildMetricsJson(), additional_context: additionalContext }); onReload(); }
+    try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, goals_json: "{}", metrics_json: "{}", additional_context: "" }); onReload(); }
     catch (e) { alert("Failed: " + e.message); }
     finally { setSubmitting(false); }
   };
@@ -283,7 +275,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: c.green }}>✅ Tracking submitted</div>
         </div>
         <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px" }}>
-          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Segment (Advertiser)", campaign.segment_adv], ["Goals", campaign.goals_json], ["Metrics", campaign.metrics_json], ["Additional Context", campaign.additional_context]].map(([label, val]) => (
+          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Segment (Advertiser)", campaign.segment_adv]].map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 12 }}>
               <span style={{ color: c.muted, minWidth: 140 }}>{label}</span>
               <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>{val && val.startsWith && val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : (val || "—")}</span>
@@ -299,8 +291,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Campaign Type</label><select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={campaignType} onChange={(e) => setCampaignType(e.target.value)}>{CAMPAIGN_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
-        <div></div>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser Data Sheet URL</label>
           {advUrls.length > 1 ? (
@@ -333,45 +323,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
       {pubDataUrl && !pubMappingExists && <ColumnMapper sheetUrl={pubDataUrl} name={campaign.publisher_name} type="publisher" onSaved={() => setPubMappingExists(true)} />}
       {advDataUrl && !advMappingExists && <ColumnMapper sheetUrl={advDataUrl} name={campaign.advertiser_name} type="advertiser" onSaved={() => setAdvMappingExists(true)} />}
 
-      {/* Goals */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 6 }}>GOALS</label>
-        {goals.map((g, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 30px", gap: 8, marginBottom: 6 }}>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "7px 10px", fontSize: 12, outline: "none" }} value={g.name} onChange={(e) => { const u = [...goals]; u[i].name = e.target.value; setGoals(u); }} placeholder="e.g. CPL" />
-            <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "7px", fontSize: 12, outline: "none" }} value={g.period} onChange={(e) => { const u = [...goals]; u[i].period = e.target.value; setGoals(u); }}>{GOAL_PERIODS.map((p) => <option key={p} value={p}>{p}</option>)}</select>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "7px", fontSize: 12, outline: "none", textAlign: "right" }} type="number" value={g.value} onChange={(e) => { const u = [...goals]; u[i].value = e.target.value; setGoals(u); }} placeholder="0" />
-            <button onClick={() => setGoals(goals.filter((_, idx) => idx !== i))} style={{ background: "#FEE2E2", color: c.red, border: "none", borderRadius: 5, cursor: "pointer", fontSize: 11 }}>✕</button>
-          </div>
-        ))}
-        <button onClick={() => setGoals([...goals, { name: "", period: "daily", value: "" }])} style={{ background: "#E3F6EE", color: c.green, border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add Goal</button>
-      </div>
-
-      {/* Metrics */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 6 }}>METRICS</label>
-        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-          {Object.entries(INDUSTRY_PRESETS).map(([ind, metrics]) => (
-            <button key={ind} onClick={() => setSelectedMetrics(metrics)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, border: `1px solid ${c.line}`, background: "#EAF0FF", color: c.blue, cursor: "pointer" }}>{ind}</button>
-          ))}
-        </div>
-        {selectedMetrics.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-            {selectedMetrics.map((m) => <span key={m} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 11, background: "#E3F6EE", color: c.green, fontWeight: 600 }}>{m} <span onClick={() => toggleMetric(m)} style={{ cursor: "pointer" }}>×</span></span>)}
-          </div>
-        )}
-        {suggestedComputed.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {suggestedComputed.map((p) => { const sel = computedMetrics.find((x) => x.name === p.name); return (
-              <label key={p.name} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 5, fontSize: 11, background: sel ? "#E3F6EE" : "#F7F8FA", border: `1px solid ${sel ? c.green : c.line}`, cursor: "pointer" }}>
-                <input type="checkbox" checked={!!sel} onChange={() => toggleComputed(p)} style={{ width: 12, height: 12 }} />{p.name} = {p.formula}
-              </label>
-            ); })}
-          </div>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 14 }}><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Additional Context</label><textarea style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", minHeight: 60, outline: "none", resize: "vertical" }} value={additionalContext} onChange={(e) => setAdditionalContext(e.target.value)} placeholder="Notes..." /></div>
 
       <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{submitting ? "Submitting…" : "Submit Tracking & Complete ✓"}</button>
     </div>
