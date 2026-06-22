@@ -197,6 +197,39 @@ def health():
     }
 
 
+# ── Sheet URLs ────────────────────────────────────────────────────────────────
+
+@app.get("/api/sheet-urls")
+async def get_sheet_urls(type: Optional[str] = None, name: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Get stored sheet URLs, optionally filtered by type and/or name."""
+    result = await db.execute(text(
+        "SELECT id, type, name, url, created_at FROM rmn_sheet_urls ORDER BY type, name, created_at DESC"
+    ))
+    rows = result.fetchall()
+    urls = [{"id": r[0], "type": r[1], "name": r[2], "url": r[3], "created_at": r[4].isoformat() if r[4] else None} for r in rows]
+    if type:
+        urls = [u for u in urls if u["type"] == type]
+    if name:
+        urls = [u for u in urls if u["name"] == name]
+    return {"urls": urls}
+
+
+@app.post("/api/sheet-urls")
+async def add_sheet_url(request: Request, db: AsyncSession = Depends(get_db)):
+    """Add or update a sheet URL."""
+    body = await request.json()
+    url_type = body.get("type", "")
+    name = body.get("name", "")
+    url = body.get("url", "")
+    if not url_type or not name or not url:
+        raise HTTPException(status_code=400, detail="type, name, and url are required")
+    await db.execute(text(
+        "INSERT INTO rmn_sheet_urls (type, name, url) VALUES (:type, :name, :url)"
+    ), {"type": url_type, "name": name, "url": url})
+    await db.commit()
+    return {"success": True}
+
+
 # ── Data Source Toggle ─────────────────────────────────────────────────────────
 @app.get("/api/data-source")
 def get_data_source():

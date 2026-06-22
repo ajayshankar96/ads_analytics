@@ -236,6 +236,16 @@ class CampaignMetric(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SheetUrl(Base):
+    __tablename__ = "rmn_sheet_urls"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(16))  # 'advertiser' or 'publisher'
+    name: Mapped[str] = mapped_column(String(255))
+    url: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UserRole(Base):
     __tablename__ = "rmn_user_roles"
 

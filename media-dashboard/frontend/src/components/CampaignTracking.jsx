@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, addSheetUrl } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -93,6 +93,26 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [computedMetrics, setComputedMetrics] = useState([]);
   const [additionalContext, setAdditionalContext] = useState(campaign.additional_context || "");
   const [submitting, setSubmitting] = useState(false);
+  const [advUrls, setAdvUrls] = useState([]);
+  const [pubUrls, setPubUrls] = useState([]);
+
+  // Auto-populate URLs from sheet_urls table
+  useEffect(() => {
+    if (!campaign.advertiser_data_url && campaign.advertiser_name) {
+      getSheetUrls("advertiser", campaign.advertiser_name).then((d) => {
+        const urls = d.urls || [];
+        setAdvUrls(urls);
+        if (urls.length === 1) setAdvDataUrl(urls[0].url);
+      }).catch(() => {});
+    }
+    if (!campaign.publisher_data_url && campaign.publisher_name) {
+      getSheetUrls("publisher", campaign.publisher_name).then((d) => {
+        const urls = d.urls || [];
+        setPubUrls(urls);
+        if (urls.length === 1) setPubDataUrl(urls[0].url);
+      }).catch(() => {});
+    }
+  }, [campaign.campaign_id]);
 
   const toggleMetric = (m) => setSelectedMetrics((prev) => prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]);
   const toggleComputed = (p) => setComputedMetrics((prev) => prev.find((x) => x.name === p.name) ? prev.filter((x) => x.name !== p.name) : [...prev, p]);
@@ -135,8 +155,30 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Campaign Type</label><select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={campaignType} onChange={(e) => setCampaignType(e.target.value)}>{CAMPAIGN_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
         <div></div>
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser Data Sheet URL *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={advDataUrl} onChange={(e) => setAdvDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." /></div>
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Publisher Data Sheet URL *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={pubDataUrl} onChange={(e) => setPubDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." /></div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser Data Sheet URL</label>
+          {advUrls.length > 1 ? (
+            <select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={advDataUrl} onChange={(e) => setAdvDataUrl(e.target.value)}>
+              <option value="">Select URL...</option>
+              {advUrls.map((u, i) => <option key={i} value={u.url}>{u.url.substring(0, 60)}...</option>)}
+            </select>
+          ) : (
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={advDataUrl} onChange={(e) => setAdvDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
+          )}
+          {advDataUrl && <a href={advDataUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: c.blue, marginTop: 3, display: "inline-block" }}>Open sheet ↗</a>}
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Publisher Data Sheet URL</label>
+          {pubUrls.length > 1 ? (
+            <select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={pubDataUrl} onChange={(e) => setPubDataUrl(e.target.value)}>
+              <option value="">Select URL...</option>
+              {pubUrls.map((u, i) => <option key={i} value={u.url}>{u.url.substring(0, 60)}...</option>)}
+            </select>
+          ) : (
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={pubDataUrl} onChange={(e) => setPubDataUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." />
+          )}
+          {pubDataUrl && <a href={pubDataUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: c.blue, marginTop: 3, display: "inline-block" }}>Open sheet ↗</a>}
+        </div>
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)}><option value="">Select…</option>{segments.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
       </div>

@@ -231,6 +231,12 @@ export const submitTrackingSetup = (campaignId, payload) =>
 export const getSheetHeaders = (url) =>
   apiFetch(`/api/sheet-headers${buildQuery({ url })}`);
 
+export const getSheetUrls = (type, name) =>
+  apiFetch(`/api/sheet-urls${buildQuery({ type, name })}`);
+
+export const addSheetUrl = (type, name, url) =>
+  apiFetch("/api/sheet-urls", { method: "POST", body: JSON.stringify({ type, name, url }) });
+
 // ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
 export const setDataSource = (source) =>
   apiFetch("/api/data-source", { method: "POST", body: JSON.stringify({ source }) });
