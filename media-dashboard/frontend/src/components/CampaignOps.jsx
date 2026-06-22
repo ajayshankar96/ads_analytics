@@ -95,6 +95,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
   const [emailTo, setEmailTo] = useState("");
+  const [emailCc, setEmailCc] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -123,7 +124,6 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
       setShowEmail(true);
       setEmailSubject(`Campaign Details: ${campaign.advertiser_name} — ${assets.offer_title || "RMN"}`);
       setEmailBody(buildEmailDraft({ ...campaign, ...assets }));
-      onReload();
     } catch (e) { alert("Transition failed: " + e.message); }
   };
 
@@ -133,7 +133,8 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
     try {
       await handleSave();
       const token = await getGmailAccessToken();
-      await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), subject: emailSubject, html: textToHtml(emailBody) });
+      const cc = emailCc.split(",").map((x) => x.trim()).filter(Boolean);
+      await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), cc: cc.length ? cc : undefined, subject: emailSubject, html: textToHtml(emailBody) });
       await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
       await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
       await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }).catch(() => {});
@@ -230,6 +231,11 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
               value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="publisher@example.com" />
           </div>
           <div style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 3 }}>CC</label>
+            <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 10px", fontSize: 13, width: "100%", outline: "none" }}
+              value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="manager@brand.com, team@razorpay.com" />
+          </div>
+          <div style={{ marginBottom: 8 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 3 }}>Subject</label>
             <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 10px", fontSize: 13, width: "100%", outline: "none" }}
               value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
@@ -284,7 +290,7 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
     : [];
 
   const handleCreate = async () => {
-    if (!advId || !pubId || !offerTitle.trim()) return;
+    if (!advId || !pubId) return;
     setCreating(true);
     try {
       await createCampaign({ advertiser_id: advId, publisher_id: pubId, offer_title: offerTitle.trim() });
