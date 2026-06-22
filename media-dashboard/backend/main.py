@@ -1110,11 +1110,7 @@ async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession 
     merged = dict(payload or {})
     merged["status"] = "ONBOARDED"
     adv = await repo.update_advertiser(db, adv, merged)
-    # Sales → Ops hand-off: open (or reuse) the campaign for this advertiser so it
-    # appears in Campaign Ops linked to the new advertiser id.
-    campaign = await repo.open_campaign_for_advertiser(db, adv)
-    return {"success": True, "advertiser": repo.advertiser_dict(adv),
-            "campaign": repo.campaign_dict(campaign)}
+    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 
 
 @app.get("/api/workflow/available-combos")
