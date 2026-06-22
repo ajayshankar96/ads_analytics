@@ -96,7 +96,7 @@ const STANDARD_FIELDS = [
   { key: "cpc", label: "CPC" },
 ];
 
-function ColumnMapper({ sheetUrl, name, type }) {
+function ColumnMapper({ sheetUrl, name, type, onSaved }) {
   const [preview, setPreview] = useState(null);
   const [tabs, setTabs] = useState([]);
   const [selectedTab, setSelectedTab] = useState("");
@@ -135,6 +135,7 @@ function ColumnMapper({ sheetUrl, name, type }) {
     try {
       await saveColumnMapping({ name, type, sheet_url: sheetUrl, tab_name: selectedTab, header_row: headerRow, data_start_row: headerRow + 1, mapping, format_type: "vertical" });
       setSaved(true);
+      if (onSaved) onSaved();
       setTimeout(() => setSaved(false), 2000);
     } catch (e) { alert("Save failed: " + e.message); }
   };
@@ -219,8 +220,10 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [submitting, setSubmitting] = useState(false);
   const [advUrls, setAdvUrls] = useState([]);
   const [pubUrls, setPubUrls] = useState([]);
+  const [pubMappingExists, setPubMappingExists] = useState(true);
+  const [advMappingExists, setAdvMappingExists] = useState(true);
 
-  // Auto-populate URLs from sheet_urls table
+  // Auto-populate URLs from sheet_urls table + check mappings
   useEffect(() => {
     if (!campaign.advertiser_data_url && campaign.advertiser_name) {
       getSheetUrls("advertiser", campaign.advertiser_name).then((d) => {
@@ -234,6 +237,17 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         const urls = d.urls || [];
         setPubUrls(urls);
         if (urls.length === 1) setPubDataUrl(urls[0].url);
+      }).catch(() => {});
+    }
+    // Check if mappings already exist
+    if (campaign.publisher_name) {
+      getColumnMappings(campaign.publisher_name, "publisher").then((d) => {
+        setPubMappingExists(d.mappings && d.mappings.length > 0);
+      }).catch(() => {});
+    }
+    if (campaign.advertiser_name) {
+      getColumnMappings(campaign.advertiser_name, "advertiser").then((d) => {
+        setAdvMappingExists(d.mappings && d.mappings.length > 0);
       }).catch(() => {});
     }
   }, [campaign.campaign_id]);
@@ -307,9 +321,9 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
       </div>
 
-      {/* Column Mappers */}
-      {pubDataUrl && <ColumnMapper sheetUrl={pubDataUrl} name={campaign.publisher_name} type="publisher" />}
-      {advDataUrl && <ColumnMapper sheetUrl={advDataUrl} name={campaign.advertiser_name} type="advertiser" />}
+      {/* Column Mappers — only show if no mapping exists yet */}
+      {pubDataUrl && !pubMappingExists && <ColumnMapper sheetUrl={pubDataUrl} name={campaign.publisher_name} type="publisher" onSaved={() => setPubMappingExists(true)} />}
+      {advDataUrl && !advMappingExists && <ColumnMapper sheetUrl={advDataUrl} name={campaign.advertiser_name} type="advertiser" onSaved={() => setAdvMappingExists(true)} />}
 
       {/* Goals */}
       <div style={{ marginBottom: 14 }}>
