@@ -21,7 +21,7 @@ const s = {
   badge: { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#E3F6EE", color: c.green },
 };
 
-export default function AdvertiserDetails({ advertiser, onClose }) {
+export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
   const a = advertiser || {};
   const v = (x) => (x === "" || x === undefined || x === null ? "—" : String(x));
 
@@ -49,7 +49,10 @@ export default function AdvertiserDetails({ advertiser, onClose }) {
             <div style={s.title}>{a.name || "Advertiser"}</div>
             <div style={s.id}>{a.id} &nbsp;<span style={s.badge}>Onboarded</span></div>
           </div>
-          <button style={s.close} onClick={onClose} aria-label="Close">✕</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {onEdit && <button style={{ ...s.close, fontSize: 15 }} onClick={onEdit} aria-label="Edit" title="Edit advertiser">✏️</button>}
+            <button style={s.close} onClick={onClose} aria-label="Close">✕</button>
+          </div>
         </div>
         <div style={s.body}>
           {groups.map((g) => (
