@@ -379,6 +379,15 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
             style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             {sending ? "Sending…" : "Send Email & Move to Publisher Emailed ✉️"}
           </button>
+          <button onClick={async () => {
+            await handleSave();
+            await recordPublisherEmail(campaign.campaign_id, { to: emailTo || "sent offline", subject: emailSubject || "Sent offline", body: emailBody || "" });
+            await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
+            await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }).catch(() => {});
+            onReload();
+          }} style={{ background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            Mark as sent (sent offline)
+          </button>
         </div>
       )}
 

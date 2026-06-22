@@ -618,6 +618,11 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
             {step === 7 ? (
               <>
                 <button style={s.ghost} onClick={onClose} disabled={sendingEmail}>Skip &amp; finish</button>
+                <button style={s.ghost} onClick={async () => {
+                  try { await recordWelcomeEmail(advId, { to: emailTo || "sent offline", subject: emailSubject || "Sent offline", body: emailBody || "" }); }
+                  catch (_) {}
+                  onClose();
+                }} disabled={sendingEmail}>Mark as sent (offline)</button>
                 <button style={s.primary} onClick={sendWelcomeEmail} disabled={sendingEmail}>
                   {sendingEmail ? "Sending…" : "Send email & finish"} <span>✉️</span>
                 </button>
