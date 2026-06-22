@@ -35,11 +35,30 @@ const ASSET_FIELDS = [
 function buildEmailDraft(campaign) {
   const lines = ["Hi,", "", "Please find below the campaign details for your reference.", "",
     `Landing Link: ${campaign.landing_link || "—"}`, `Offer Title: ${campaign.offer_title || "—"}`, "",
-    "Terms & Conditions:", campaign.details_tc || "—", "", "How to Redeem:", campaign.how_to_redeem || "—", "",
-    `Promo Code(s): ${campaign.promo_codes || "—"}`, `Code Validity: ${campaign.code_validity || "—"}`, "",
-    `Creative: ${campaign.creative_url || "—"}`, `Logo: ${campaign.logo_url || "—"}`, "",
+    "Terms & Conditions:", campaign.details_tc || "—", "", "How to Redeem:", campaign.how_to_redeem || "—", ""];
+
+  // Add promo code section only if not "no code"
+  let codeData = {};
+  try { codeData = JSON.parse(campaign.promo_codes || "{}"); } catch {}
+  if (codeData.type !== "none") {
+    if (codeData.type === "static") {
+      lines.push(`Promo Code(s): ${codeData.codes || "—"}`);
+    } else if (codeData.type === "dynamic") {
+      lines.push(`Promo Code(s): Dynamic (see attached sheets)`);
+    } else {
+      lines.push(`Promo Code(s): ${campaign.promo_codes || "—"}`);
+    }
+    if (codeData.start_date || codeData.end_date) {
+      lines.push(`Code Validity: ${codeData.start_date || ""} to ${codeData.end_date || ""}`);
+    } else if (campaign.code_validity) {
+      lines.push(`Code Validity: ${campaign.code_validity}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(`Creative: ${campaign.creative_url || "—"}`, `Logo: ${campaign.logo_url || "—"}`, "",
     `Targeting: ${campaign.targeting || "—"}`, "", `Daily Budget: ${campaign.daily_budget || "—"}`,
-    `CPC/CPD: ${campaign.cpc_cpd || "—"}`, "", "Regards,", "AdOps Team | Razorpay"];
+    `CPC/CPD: ${campaign.cpc_cpd || "—"}`, "", "Regards,", "AdOps Team | Razorpay");
   return lines.join("\n");
 }
 
@@ -53,6 +72,95 @@ function fmtBudget(n) {
 }
 
 // ── Kanban Card ──────────────────────────────────────────────────────────────
+function CodesSection({ assets, setAssets }) {
+  const codeData = (() => { try { return JSON.parse(assets.promo_codes || '{}'); } catch { return {}; } })();
+  const codeType = codeData.type || "static";
+  const codes = codeData.codes || "";
+  const sheetsLinks = codeData.sheets_links || [""];
+  const utmUrl = codeData.utm_url || "";
+  const startDate = codeData.start_date || "";
+  const endDate = codeData.end_date || "";
+
+  const update = (patch) => {
+    const merged = { ...codeData, ...patch };
+    setAssets((prev) => ({ ...prev, promo_codes: JSON.stringify(merged), code_validity: merged.end_date || "" }));
+  };
+
+  const tabStyle = (active) => ({ padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", borderRadius: 6, border: "none", background: active ? c.blue : "#F1F5F9", color: active ? "#fff" : c.sub });
+
+  return (
+    <div>
+      <label style={{ fontSize: 12, fontWeight: 600, color: c.muted, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Code Type *</label>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <button style={tabStyle(codeType === "static")} onClick={() => update({ type: "static" })}>Static Codes</button>
+        <button style={tabStyle(codeType === "dynamic")} onClick={() => update({ type: "dynamic" })}>Dynamic Codes</button>
+        <button style={tabStyle(codeType === "none")} onClick={() => update({ type: "none" })}>No Code</button>
+      </div>
+
+      {codeType === "static" && (<>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (comma-separated)</label>
+          <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+            value={codes} onChange={(e) => update({ codes: e.target.value })} placeholder="CODE1, CODE2, CODE3" />
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Enter multiple codes separated by commas</div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
+          <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
+        </div>
+      </>)}
+
+      {codeType === "dynamic" && (<>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Codes (Google Sheets Links) *</label>
+          {sheetsLinks.map((link, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, flex: 1, outline: "none" }}
+                value={link} onChange={(e) => { const u = [...sheetsLinks]; u[i] = e.target.value; update({ sheets_links: u }); }}
+                placeholder="https://docs.google.com/spreadsheets/d/..." />
+              {sheetsLinks.length > 1 && <button onClick={() => update({ sheets_links: sheetsLinks.filter((_, idx) => idx !== i) })} style={{ background: "#FEE2E2", color: c.red, border: "none", borderRadius: 6, padding: "0 8px", cursor: "pointer", fontSize: 14 }}>×</button>}
+            </div>
+          ))}
+          <button onClick={() => update({ sheets_links: [...sheetsLinks, ""] })}
+            style={{ border: `1.5px dashed ${c.blue}`, background: "none", color: c.blue, borderRadius: 7, padding: "8px", width: "100%", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            ⊕ Add another sheet
+          </button>
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One sheet per Advertiser × Publisher × Segment × Offer combination.</div>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
+          <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL</div>
+        </div>
+      </>)}
+
+      {codeType === "none" && (
+        <div style={{ background: "#FEF3E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#92400E", marginBottom: 10 }}>
+          ⚠ <strong>No Code</strong> — This campaign does not use coupon codes for attribution.
+        </div>
+      )}
+
+      {codeType !== "none" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity Start Date</label>
+            <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+              value={startDate} onChange={(e) => update({ start_date: e.target.value })} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>Validity End Date</label>
+            <input type="date" style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
+              value={endDate} onChange={(e) => update({ end_date: e.target.value })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CampaignCard({ campaign, onClick }) {
   const avatarColor = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2"][
     (campaign.advertiser_name || "").charCodeAt(0) % 6
@@ -212,6 +320,23 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
             </div>
           );
         })}
+        {/* Promo Code Section */}
+        {isAssetStage && canEdit && (
+          <div style={{ padding: "14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
+            <CodesSection assets={assets} setAssets={setAssets} />
+          </div>
+        )}
+        {!isAssetStage && assets.promo_codes && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
+            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E3F6EE", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ color: c.green, fontSize: 13 }}>✓</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>Promo Codes</div>
+              <div style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{(() => { try { const d = JSON.parse(assets.promo_codes); return d.type === "none" ? "No Code" : d.type === "dynamic" ? "Dynamic Codes" : d.codes || "Static Codes"; } catch { return assets.promo_codes; } })()}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action buttons */}
