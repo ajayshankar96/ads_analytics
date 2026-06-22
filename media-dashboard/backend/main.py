@@ -230,6 +230,84 @@ async def add_sheet_url(request: Request, db: AsyncSession = Depends(get_db)):
     return {"success": True}
 
 
+# ── Column Mappings ───────────────────────────────────────────────────────────
+
+@app.get("/api/sheet-preview")
+async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
+    """Read first 5 rows from a sheet to show column structure for mapping."""
+    from sheets_client import _get_service
+    import re as _re
+    match = _re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid sheet URL")
+    sheet_id = match.group(1)
+    service = _get_service()
+    try:
+        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        target_tab = tab or tabs[0]
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=f"'{target_tab}'!A1:Z10"
+        ).execute()
+        rows = result.get("values", [])
+        return {"tabs": tabs, "selected_tab": target_tab, "rows": rows[:10]}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/column-mappings")
+async def get_column_mappings(name: Optional[str] = None, type: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Get saved column mappings."""
+    sql = "SELECT id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at FROM rmn_column_mappings"
+    params = {}
+    clauses = []
+    if name:
+        clauses.append("name = :name"); params["name"] = name
+    if type:
+        clauses.append("type = :type"); params["type"] = type
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY updated_at DESC"
+    result = await db.execute(text(sql), params)
+    rows = result.fetchall()
+    return {"mappings": [
+        {"id": r[0], "name": r[1], "type": r[2], "sheet_url": r[3], "tab_name": r[4],
+         "header_row": r[5], "data_start_row": r[6], "mapping": json.loads(r[7]) if r[7] else {},
+         "format_type": r[8], "created_at": r[9].isoformat() if r[9] else None}
+        for r in rows
+    ]}
+
+
+@app.post("/api/column-mappings")
+async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_db)):
+    """Save or update a column mapping."""
+    body = await request.json()
+    name = body.get("name", "")
+    map_type = body.get("type", "")
+    if not name or not map_type:
+        raise HTTPException(status_code=400, detail="name and type are required")
+
+    mapping_json = json.dumps(body.get("mapping", {}))
+
+    # Upsert: delete existing for this name+type, insert new
+    await db.execute(text("DELETE FROM rmn_column_mappings WHERE name = :name AND type = :type"),
+                     {"name": name, "type": map_type})
+    await db.execute(text("""
+        INSERT INTO rmn_column_mappings (name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, updated_at)
+        VALUES (:name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, NOW())
+    """), {
+        "name": name, "type": map_type,
+        "sheet_url": body.get("sheet_url", ""),
+        "tab_name": body.get("tab_name", ""),
+        "header_row": body.get("header_row", 1),
+        "data_start_row": body.get("data_start_row", 2),
+        "mapping": mapping_json,
+        "format_type": body.get("format_type", "vertical"),
+    })
+    await db.commit()
+    return {"success": True}
+
+
 # ── Data Source Toggle ─────────────────────────────────────────────────────────
 @app.get("/api/data-source")
 def get_data_source():

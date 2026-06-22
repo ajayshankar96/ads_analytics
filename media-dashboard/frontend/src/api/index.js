@@ -237,6 +237,15 @@ export const getSheetUrls = (type, name) =>
 export const addSheetUrl = (type, name, url) =>
   apiFetch("/api/sheet-urls", { method: "POST", body: JSON.stringify({ type, name, url }) });
 
+export const getSheetPreview = (url, tab) =>
+  apiFetch(`/api/sheet-preview${buildQuery({ url, tab })}`);
+
+export const getColumnMappings = (name, type) =>
+  apiFetch(`/api/column-mappings${buildQuery({ name, type })}`);
+
+export const saveColumnMapping = (payload) =>
+  apiFetch("/api/column-mappings", { method: "POST", body: JSON.stringify(payload) });
+
 // ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
 export const setDataSource = (source) =>
   apiFetch("/api/data-source", { method: "POST", body: JSON.stringify({ source }) });

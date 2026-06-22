@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, addSheetUrl } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, addSheetUrl, getSheetPreview, getColumnMappings, saveColumnMapping } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -82,6 +82,130 @@ function CampaignDetail({ campaign, segments, canEdit, onReload }) {
 }
 
 // ── Setup Tab ────────────────────────────────────────────────────────────────
+const STANDARD_FIELDS = [
+  { key: "date", label: "Date", required: true },
+  { key: "impressions", label: "Impressions" },
+  { key: "distribution", label: "Distribution" },
+  { key: "clicks", label: "Clicks" },
+  { key: "spends", label: "Spends" },
+  { key: "orders", label: "Orders" },
+  { key: "redirections", label: "Redirections" },
+  { key: "revenue", label: "Revenue" },
+  { key: "scratches", label: "Scratches" },
+  { key: "cpm", label: "CPM" },
+  { key: "cpc", label: "CPC" },
+];
+
+function ColumnMapper({ sheetUrl, name, type }) {
+  const [preview, setPreview] = useState(null);
+  const [tabs, setTabs] = useState([]);
+  const [selectedTab, setSelectedTab] = useState("");
+  const [headerRow, setHeaderRow] = useState(1);
+  const [mapping, setMapping] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [existingMapping, setExistingMapping] = useState(null);
+
+  useEffect(() => {
+    if (name && type) {
+      getColumnMappings(name, type).then((d) => {
+        if (d.mappings && d.mappings.length > 0) {
+          setExistingMapping(d.mappings[0]);
+          setMapping(d.mappings[0].mapping || {});
+          setHeaderRow(d.mappings[0].header_row || 1);
+          setSelectedTab(d.mappings[0].tab_name || "");
+        }
+      }).catch(() => {});
+    }
+  }, [name, type]);
+
+  const handlePreview = async () => {
+    if (!sheetUrl) return;
+    setLoading(true);
+    try {
+      const d = await getSheetPreview(sheetUrl, selectedTab || undefined);
+      setPreview(d.rows || []);
+      setTabs(d.tabs || []);
+      if (!selectedTab && d.selected_tab) setSelectedTab(d.selected_tab);
+    } catch (e) { alert("Failed to read sheet: " + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleSave = async () => {
+    try {
+      await saveColumnMapping({ name, type, sheet_url: sheetUrl, tab_name: selectedTab, header_row: headerRow, data_start_row: headerRow + 1, mapping, format_type: "vertical" });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) { alert("Save failed: " + e.message); }
+  };
+
+  const headers = preview && preview[headerRow - 1] ? preview[headerRow - 1] : [];
+
+  return (
+    <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Column Mapping — {name} ({type})</div>
+        {existingMapping && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Mapping saved</span>}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {tabs.length > 0 && (
+          <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12 }} value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)}>
+            {tabs.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        <button onClick={handlePreview} disabled={loading} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          {loading ? "Loading…" : preview ? "Refresh" : "Preview Sheet"}
+        </button>
+      </div>
+
+      {preview && (
+        <>
+          {/* Show preview rows */}
+          <div style={{ overflowX: "auto", marginBottom: 12 }}>
+            <table style={{ fontSize: 11, borderCollapse: "collapse", minWidth: 600 }}>
+              <tbody>
+                {preview.slice(0, 5).map((row, i) => (
+                  <tr key={i} style={{ background: i === headerRow - 1 ? "#EAF0FF" : "transparent" }}>
+                    <td style={{ padding: "3px 6px", color: c.muted, fontSize: 10 }}>{i + 1}</td>
+                    {(row || []).slice(0, 12).map((cell, j) => (
+                      <td key={j} style={{ padding: "3px 6px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 8 }}>
+            Header row: <input type="number" min="1" max="10" value={headerRow} onChange={(e) => setHeaderRow(parseInt(e.target.value) || 1)} style={{ width: 40, border: `1px solid ${c.line}`, borderRadius: 4, padding: "2px 4px", fontSize: 11 }} /> (highlighted in blue above)
+          </div>
+
+          {/* Mapping dropdowns */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+            {STANDARD_FIELDS.map((field) => (
+              <div key={field.key} style={{ fontSize: 12 }}>
+                <label style={{ fontSize: 10, color: c.muted, fontWeight: 600, display: "block", marginBottom: 2 }}>
+                  {field.label} {field.required && <span style={{ color: c.red }}>*</span>}
+                </label>
+                <select style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "5px 8px", fontSize: 11, width: "100%" }}
+                  value={mapping[field.key] || ""} onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}>
+                  <option value="">— skip —</option>
+                  {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={handleSave} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {saved ? "Saved ✓" : "Save Mapping"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [campaignType, setCampaignType] = useState("Single Campaign Sheet");
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
@@ -182,6 +306,10 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)}><option value="">Select…</option>{segments.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
       </div>
+
+      {/* Column Mappers */}
+      {pubDataUrl && <ColumnMapper sheetUrl={pubDataUrl} name={campaign.publisher_name} type="publisher" />}
+      {advDataUrl && <ColumnMapper sheetUrl={advDataUrl} name={campaign.advertiser_name} type="advertiser" />}
 
       {/* Goals */}
       <div style={{ marginBottom: 14 }}>
