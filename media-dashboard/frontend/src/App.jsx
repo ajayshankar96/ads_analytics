@@ -3,10 +3,6 @@ import Dashboard from "./components/Dashboard";
 import AdvertiserPerformance from "./components/AdvertiserPerformance";
 import PublisherPerformance from "./components/PublisherPerformance";
 import AdvertiserHealth from "./components/AdvertiserHealth";
-import DataFreshness from "./components/DataFreshness";
-import Budget from "./components/Budget";
-import MonthlySpend from "./components/MonthlySpend";
-import GlobalKPIs from "./components/GlobalKPIs";
 import FilterBar from "./components/FilterBar";
 import ChatBot from "./components/ChatBot";
 import CampaignOnboarding from "./components/CampaignOnboarding";
@@ -48,19 +44,9 @@ const TAB_GROUPS = [
     ],
   },
   {
-    label: "Data",
-    color: "#0891b2",
-    tabs: [
-      { id: "freshness", label: "Data Freshness", icon: "🕐" },
-      { id: "budget",    label: "Budget",         icon: "💰" },
-      { id: "monthly",   label: "Monthly Spend",  icon: "📅" },
-    ],
-  },
-  {
     label: "Manage",
     color: "#7c3aed",
     tabs: [
-      { id: "kpis",       label: "Global KPIs",         icon: "🎯" },
       { id: "onboarding", label: "Campaign Onboarding", icon: "📋" },
       { id: "roles",      label: "User Roles",          icon: "🔑" },
     ],
@@ -88,7 +74,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "freshness", "kpis", "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles",
+  "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -387,10 +373,6 @@ export default function App() {
       case "adv-perf":       return <AdvertiserPerformance {...props} />;
       case "pub-perf":       return <PublisherPerformance {...props} />;
       case "adv-health":     return <AdvertiserHealth />;
-      case "freshness":      return <DataFreshness />;
-      case "budget":         return <Budget />;
-      case "monthly":        return <MonthlySpend />;
-      case "kpis":           return <GlobalKPIs />;
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
       case "sales":          return <SalesPipeline userRole={userRole} />;
       case "ops":            return <CampaignOps userRole={userRole} />;
