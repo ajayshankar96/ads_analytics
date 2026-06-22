@@ -145,8 +145,13 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
 
   const handleMarkLive = async () => {
     try {
-      await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
-      await transitionCampaign(campaign.campaign_id, { to_stage: "LIVE" }).catch(() => {});
+      // Step through any intermediate stages to reach LIVE
+      const STAGE_PATH = ["OPS_SETUP", "ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER", "LIVE"];
+      const curIdx = STAGE_PATH.indexOf(stage);
+      const targetIdx = STAGE_PATH.indexOf("LIVE");
+      for (let i = curIdx + 1; i <= targetIdx; i++) {
+        await transitionCampaign(campaign.campaign_id, { to_stage: STAGE_PATH[i] }).catch(() => {});
+      }
       onReload();
     } catch (e) { alert("Failed: " + e.message); }
   };
