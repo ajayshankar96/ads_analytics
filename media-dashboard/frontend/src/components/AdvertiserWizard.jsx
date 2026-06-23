@@ -148,7 +148,7 @@ const GOAL_TYPES = [
   { id: "CAC", icon: "🧑‍💼", title: "CAC", desc: "Cost per acquisition — spend per new customer" },
 ];
 
-export default function AdvertiserWizard({ onClose, advertiser }) {
+export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }) {
   const a = advertiser || {};
   const [step, setStep] = useState(a.current_step || 1);
   const [advId, setAdvId] = useState(a.id || null);
@@ -156,6 +156,7 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
   const [data, setData] = useState({
     // Basics
     name: a.name || "", category: a.category || "", description: a.description || "",
+    owner_email: a.owner_email || userEmail,
     // Commercial
     buy_type: a.buy_type || "ROAS", roas_multiplier: a.roas_multiplier ?? "", cpc_rate: a.cpc_rate ?? "",
     budget_hint: a.budget_hint || "", gst: a.gst || "", pan: a.pan || "",
@@ -298,6 +299,11 @@ export default function AdvertiserWizard({ onClose, advertiser }) {
           <div style={s.field}>
             <label style={s.label}>Description (optional)</label>
             <textarea style={s.textarea} placeholder="A short blurb shown internally to Ops & Campaign Managers" value={data.description} onChange={(e) => set({ description: e.target.value })} />
+          </div>
+          <div style={{ ...s.field, marginTop: 22 }}>
+            <label style={s.label}>Owner</label>
+            <input style={{ ...s.input, background: "#F7F8FA", color: c.muted }} value={data.owner_email} readOnly />
+            <div style={s.help}>Auto-assigned to the creator. Cannot be changed.</div>
           </div>
         </>
       );

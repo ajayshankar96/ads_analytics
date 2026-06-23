@@ -374,7 +374,7 @@ export default function App() {
       case "pub-perf":       return <PublisherPerformance {...props} />;
       case "adv-health":     return <AdvertiserHealth />;
       case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
-      case "sales":          return <SalesPipeline userRole={userRole} />;
+      case "sales":          return <SalesPipeline userRole={userRole} userEmail={userEmail} />;
       case "ops":            return <CampaignOps userRole={userRole} />;
       case "pub-allocation": return <BudgetAllocation userRole={userRole} />;
       case "tracking":       return <CampaignTracking userRole={userRole} />;

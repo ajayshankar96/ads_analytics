@@ -75,7 +75,7 @@ def ops_task_dict(t: models.OpsTask) -> Dict[str, Any]:
 # ── Advertisers (6-step onboarding wizard) ─────────────────────────────────────
 
 _ADV_FIELDS = [
-    "name", "category", "description", "logo_name",
+    "name", "owner_email", "category", "description", "logo_name",
     "buy_type", "roas_multiplier", "cpc_rate", "budget_hint", "gst", "pan",
     "goal_type", "target_roas", "target_cac",
     "poc_name", "poc_designation", "poc_email", "poc_phone", "cc_finance",
@@ -86,7 +86,8 @@ _ADV_FLOAT = {"roas_multiplier", "cpc_rate", "target_roas", "target_cac"}
 
 def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
     return {
-        "id": a.id, "name": a.name, "status": a.status, "current_step": a.current_step,
+        "id": a.id, "name": a.name, "owner_email": a.owner_email,
+        "status": a.status, "current_step": a.current_step,
         "category": a.category, "description": a.description, "logo_name": a.logo_name,
         "buy_type": a.buy_type, "roas_multiplier": a.roas_multiplier, "cpc_rate": a.cpc_rate,
         "budget_hint": a.budget_hint, "gst": a.gst, "pan": a.pan,

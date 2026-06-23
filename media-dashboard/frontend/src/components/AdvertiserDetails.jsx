@@ -17,43 +17,21 @@ const s = {
   group: { border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 14 },
   groupTitle: { fontSize: 13, fontWeight: 800, color: c.blue, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 12 },
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "7px 0", fontSize: 13.5, borderBottom: `1px solid #F7F8FA` },
-  key: { color: c.muted, minWidth: 140 },
-  val: { color: c.ink, fontWeight: 600, textAlign: "right", maxWidth: "60%", wordBreak: "break-word" },
+  key: { color: c.muted, minWidth: 140, flexShrink: 0 },
+  val: { color: c.ink, fontWeight: 600, textAlign: "right", whiteSpace: "nowrap" },
   badge: { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#E3F6EE", color: c.green },
 };
 
-const FIELD_MAP = {
-  "Advertiser name": "name",
-  "Industry / Category": "category",
-  "Brand logo": "logo_name",
-  "Description": "description",
-  "Buy type": "buy_type",
-  "Rate (ROAS multiplier)": "roas_multiplier",
-  "Rate (CPC)": "cpc_rate",
-  "Budget hint": "budget_hint",
-  "GST": "gst",
-  "PAN": "pan",
-  "Goal type": "goal_type",
-  "Target (ROAS)": "target_roas",
-  "Target (CAC)": "target_cac",
-  "Name": "poc_name",
-  "Designation": "poc_designation",
-  "Email": "poc_email",
-  "Phone": "poc_phone",
-  "CC finance": "cc_finance",
-  "Legal agreement": "agreement_name",
-  "PO": "po_name",
-  "PO reference": "po_ref",
-  "Contract start": "contract_start",
-};
-
-function EditableRow({ label, value, fieldKey, advertiser, onUpdate }) {
+function EditableRow({ label, value, fieldKey, advertiser, onUpdate, canEdit }) {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const editable = canEdit && fieldKey;
+
   const startEdit = () => {
+    if (!editable) return;
     const raw = advertiser[fieldKey];
     setEditVal(raw === null || raw === undefined ? "" : String(raw));
     setEditing(true);
@@ -97,12 +75,12 @@ function EditableRow({ label, value, fieldKey, advertiser, onUpdate }) {
             value={editVal}
             onChange={(e) => setEditVal(e.target.value)}
             onKeyDown={handleKeyDown}
-            style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 160, textAlign: "right", outline: "none" }}
+            style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 180, textAlign: "right", outline: "none" }}
           />
           <button onClick={save} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 5, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-            {saving ? "…" : "✓"}
+            {saving ? "..." : "Save"}
           </button>
-          <button onClick={cancel} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: c.muted }}>✕</button>
+          <button onClick={cancel} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: c.muted }}>Cancel</button>
         </div>
       </div>
     );
@@ -110,25 +88,27 @@ function EditableRow({ label, value, fieldKey, advertiser, onUpdate }) {
 
   return (
     <div
-      style={{ ...s.row, cursor: fieldKey ? "pointer" : "default", background: hovered && fieldKey ? "#F7F9FC" : "transparent", borderRadius: 4 }}
+      style={{ ...s.row, cursor: editable ? "pointer" : "default", background: hovered && editable ? "#F7F9FC" : "transparent", borderRadius: 4, transition: "background 0.15s" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => fieldKey && startEdit()}
+      onClick={startEdit}
     >
       <span style={s.key}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={s.val}>{value}</span>
-        {hovered && fieldKey && (
-          <span style={{ fontSize: 11, color: c.blue, fontWeight: 600, opacity: 0.8 }}>Edit</span>
+        {hovered && editable && (
+          <span style={{ fontSize: 11, color: c.blue, fontWeight: 600 }}>Edit</span>
         )}
       </div>
     </div>
   );
 }
 
-export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
+export default function AdvertiserDetails({ advertiser, onClose, userEmail = "" }) {
   const [a, setA] = useState({ ...(advertiser || {}) });
   const v = (x) => (x === "" || x === undefined || x === null ? "—" : String(x));
+
+  const isOwner = userEmail && a.owner_email && userEmail.toLowerCase() === a.owner_email.toLowerCase();
 
   const handleUpdate = (fieldKey, newValue) => {
     setA((prev) => ({ ...prev, [fieldKey]: newValue }));
@@ -181,12 +161,26 @@ export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
           <div>
             <div style={s.eyebrow}>Onboarded Advertiser</div>
             <div style={s.title}>{a.name || "Advertiser"}</div>
-            <div style={s.id}>{a.id} &nbsp;<span style={s.badge}>Onboarded</span></div>
+            <div style={s.id}>
+              {a.id} &nbsp;<span style={s.badge}>Onboarded</span>
+            </div>
+            {a.owner_email && (
+              <div style={{ fontSize: 12, color: c.muted, marginTop: 6 }}>
+                Owner: <span style={{ fontWeight: 600, color: c.ink }}>{a.owner_email}</span>
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button style={s.close} onClick={onClose} aria-label="Close">✕</button>
           </div>
         </div>
+
+        {!isOwner && (
+          <div style={{ padding: "0 32px 12px", fontSize: 12, color: c.muted, fontStyle: "italic" }}>
+            View only — only the owner can edit fields.
+          </div>
+        )}
+
         <div style={s.body}>
           {groups.map((g) => (
             <div style={s.group} key={g.title}>
@@ -199,6 +193,7 @@ export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
                   fieldKey={row.field}
                   advertiser={a}
                   onUpdate={handleUpdate}
+                  canEdit={isOwner}
                 />
               ))}
             </div>

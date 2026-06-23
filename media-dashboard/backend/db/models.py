@@ -44,6 +44,7 @@ class Advertiser(Base):
 
     id: Mapped[str] = mapped_column(String(20), primary_key=True)  # ADV-KIM-0001
     name: Mapped[str] = mapped_column(String(255))
+    owner_email: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     status: Mapped[str] = mapped_column(String(16), index=True, default="DRAFT")  # DRAFT/ONBOARDED
     current_step: Mapped[int] = mapped_column(Integer, default=1)
 

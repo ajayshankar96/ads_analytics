@@ -1197,9 +1197,11 @@ async def get_advertiser(adv_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/api/advertisers")
-async def create_advertiser(payload: dict, db: AsyncSession = Depends(get_db)):
+async def create_advertiser(request: Request, payload: dict, db: AsyncSession = Depends(get_db)):
     if not (payload.get("name") or "").strip():
         raise HTTPException(status_code=400, detail="advertiser name is required to mint an ID")
+    if not payload.get("owner_email"):
+        payload["owner_email"] = getattr(request.state, "user_email", None)
     adv = await repo.create_advertiser(db, payload)
     return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 

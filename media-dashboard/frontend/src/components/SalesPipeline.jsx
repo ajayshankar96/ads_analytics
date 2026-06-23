@@ -80,7 +80,7 @@ const EyeIcon = ({ color = "#52606D" }) => (
   </svg>
 );
 
-export default function SalesPipeline({ userRole = "VIEWER" }) {
+export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
   const canEdit = userRole === "ADMIN" || userRole === "SALES";
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,8 +101,8 @@ export default function SalesPipeline({ userRole = "VIEWER" }) {
   return (
     <div>
       {canEdit && <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>}
-      {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} />}
-      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} />}
+      {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} userEmail={userEmail} />}
+      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} userEmail={userEmail} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
