@@ -8,6 +8,7 @@ async function apiFetch(path, options = {}) {
   const url = `${BASE}${path}`;
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
     ...options,
   });
   if (!res.ok) {
