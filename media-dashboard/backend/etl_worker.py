@@ -173,8 +173,8 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
             target_tabs = tabs[:5]
             logger.warning(f"No RZP tabs found in {sheet_url}, trying first tabs: {target_tabs}")
 
-        cfg_header_row = (col_mapping.get("header_row", 3) if col_mapping else 3)
-        cfg_data_start = (col_mapping.get("data_start_row", cfg_header_row + 1) if col_mapping else 4)
+        cfg_header_row = (col_mapping.get("header_row", 3) if col_mapping else None)
+        cfg_data_start = (col_mapping.get("data_start_row", cfg_header_row + 1) if col_mapping else None)
         field_map = col_mapping.get("mapping", {}) if col_mapping else {}
 
         for tab_name in target_tabs:
@@ -196,11 +196,29 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                     continue
 
             rows = result.get('values', [])
-            if len(rows) < cfg_data_start:
+            if len(rows) < 2:
                 continue
 
-            header_row = rows[cfg_header_row - 1]
-            data_rows = rows[cfg_data_start - 1:]
+            # Auto-detect header row for publishers if not explicitly configured
+            actual_header_row = cfg_header_row
+            actual_data_start = cfg_data_start
+            if actual_header_row is None:
+                # Check Row 1 for standard publisher columns (Date, Clicks, Impressions, etc.)
+                if rows and any(h.strip() in ('Date', 'Clicks', 'Impressions', 'Spends') for h in (rows[0] if rows else []) if h):
+                    actual_header_row = 1
+                    actual_data_start = 2
+                elif len(rows) >= 3 and any(h.strip() in ('Date', 'Clicks', 'Impressions', 'Spends') for h in (rows[2] if len(rows) > 2 else []) if h):
+                    actual_header_row = 3
+                    actual_data_start = 4
+                else:
+                    actual_header_row = 1
+                    actual_data_start = 2
+
+            if len(rows) < actual_data_start:
+                continue
+
+            header_row = rows[actual_header_row - 1]
+            data_rows = rows[actual_data_start - 1:]
 
             # Build col_map: header_name → column_index
             col_map = {}
