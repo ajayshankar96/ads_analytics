@@ -9,6 +9,7 @@ import {
   recordPublisherEmail,
   uploadCampaignAsset,
   createCampaign,
+  cloneCampaign,
   getAdvertisers,
   getPublishers,
   markNotLive,
@@ -264,6 +265,14 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
     } catch (e) { alert("Failed: " + e.message); }
   };
 
+  const handleClone = async () => {
+    try {
+      const res = await cloneCampaign(campaign.campaign_id);
+      alert(`New draft created: ${res.campaign.campaign_id}\nAll fields pre-filled from ${campaign.campaign_id}. Find it in the Draft column.`);
+      onReload();
+    } catch (e) { alert("Clone failed: " + e.message); }
+  };
+
   const isAssetStage = stage === "OPS_SETUP";
   const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
   const isLive = stage === "LIVE";
@@ -285,6 +294,11 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
         {isEmailedStage && canEdit && (
           <button onClick={handleMarkLive} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
             ⊙ Mark Live
+          </button>
+        )}
+        {isLive && canEdit && (
+          <button onClick={handleClone} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            + Edit (New Version)
           </button>
         )}
       </div>

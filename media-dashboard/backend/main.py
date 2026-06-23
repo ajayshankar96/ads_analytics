@@ -1268,6 +1268,15 @@ async def create_campaign(req: CreateCampaignRequest, db: AsyncSession = Depends
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+@app.post("/api/workflow/campaigns/{campaign_id}/clone")
+async def clone_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    source = await repo.get_campaign(db, campaign_id)
+    if not source:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    new_camp = await repo.clone_campaign(db, source)
+    return {"success": True, "campaign": repo.campaign_dict(new_camp), "source_id": campaign_id}
+
+
 class WelcomeEmailRequest(BaseModel):
     to: str = ""
     subject: str = ""

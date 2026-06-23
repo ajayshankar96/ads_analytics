@@ -196,6 +196,9 @@ export const getAvailableCombos = () => apiFetch("/api/workflow/available-combos
 export const createCampaign = (payload) =>
   apiFetch("/api/workflow/campaigns", { method: "POST", body: JSON.stringify(payload) });
 
+export const cloneCampaign = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/clone`, { method: "POST" });
+
 export const updateCampaignAssets = (campaignId, payload) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/assets`, {
     method: "PATCH",

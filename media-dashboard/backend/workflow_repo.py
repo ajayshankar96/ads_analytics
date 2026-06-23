@@ -372,6 +372,43 @@ async def create_new_campaign(db: AsyncSession, advertiser: models.Advertiser,
     return campaign
 
 
+async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Campaign:
+    """Clone a LIVE campaign into a new draft with all asset fields pre-filled."""
+    camp_id = await next_campaign_id(db, source.advertiser_name or "", source.publisher_name or "")
+    campaign = models.Campaign(
+        id=camp_id,
+        agreement_id=source.agreement_id or "",
+        name=f"{source.advertiser_name} campaign",
+        current_stage=wf.STAGE_OPS_SETUP,
+        advertiser_ref_id=source.advertiser_ref_id,
+        advertiser_name=source.advertiser_name,
+        publisher_id=source.publisher_id,
+        publisher_name=source.publisher_name,
+        offer_title=source.offer_title,
+        landing_link=source.landing_link,
+        details_tc=source.details_tc,
+        how_to_redeem=source.how_to_redeem,
+        promo_codes=source.promo_codes,
+        code_validity=source.code_validity,
+        creative_url=source.creative_url,
+        logo_url=source.logo_url,
+        targeting=source.targeting,
+        daily_budget=source.daily_budget,
+        cpc_cpd=source.cpc_cpd,
+    )
+    db.add(campaign)
+    for step in wf.OPS_STEPS:
+        db.add(models.OpsTask(id=wf.new_id("ops"), campaign_id=campaign.id, step=step, status="PENDING"))
+    db.add(models.StageTransition(
+        entity_type="CAMPAIGN", entity_id=campaign.id,
+        from_stage="CREATED", to_stage=wf.STAGE_OPS_SETUP,
+        note=f"cloned from {source.id}",
+    ))
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+
 async def open_campaign_for_advertiser(db: AsyncSession, advertiser: models.Advertiser,
                                        publisher_id: Optional[str] = None,
                                        publisher_name: Optional[str] = None) -> models.Campaign:
