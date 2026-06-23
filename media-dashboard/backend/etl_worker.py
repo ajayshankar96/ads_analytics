@@ -48,6 +48,10 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
     date_str = date_str.strip()
     if date_str.upper() in ('TOTAL', 'GRAND TOTAL', ''):
         return None
+    # Skip monthly summary rows like "Jan'26", "Feb'26", "June'26"
+    for m_name in MONTH_MAP:
+        if date_str.lower().startswith(m_name) and ("'" in date_str or "20" in date_str):
+            return None
     try:
         # MM/DD/YYYY or M/D/YYYY
         if '/' in date_str:
@@ -57,9 +61,15 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
                 if len(y) == 2:
                     y = '20' + y
                 return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-        # DD-MM-YYYY
-        if '-' in date_str and len(date_str) >= 8:
+        # DD-Mon (e.g. "25-Jan", "1-Feb") — uses year from tab name
+        if '-' in date_str:
             parts = date_str.split('-')
+            if len(parts) == 2:
+                day_part, mon_part = parts
+                if day_part.isdigit() and mon_part.lower()[:3] in MONTH_MAP:
+                    m_num = MONTH_MAP[mon_part.lower()[:3]]
+                    return f"{year}-{m_num}-{day_part.zfill(2)}"
+            # DD-MM-YYYY
             if len(parts) == 3 and all(p.isdigit() for p in parts):
                 d, m, y = parts
                 if len(y) == 2:
@@ -303,6 +313,77 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
     return records
 
 
+def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
+                              code_row: int = 3, data_start_row: int = 10,
+                              month_rows: int = 6) -> List[Dict]:
+    """Extract advertiser data from a pivoted promo-code sheet.
+    Structure: Row `code_row` has promo codes as column headers.
+    Rows 4..4+month_rows are monthly totals (skipped).
+    Rows from `data_start_row` onward have daily data with dates in column A.
+    Returns records with Date + Orders for the matching promo column."""
+    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
+    if not match:
+        return []
+
+    sheet_id = match.group(1)
+    records = []
+
+    try:
+        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
+        target_tabs = [t for t in tabs if 'RZP' in t.upper()] or tabs[:1]
+
+        for tab_name in target_tabs:
+            year, month = _get_year_month_from_tab(tab_name)
+
+            try:
+                result = service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
+                ).execute()
+            except Exception as e:
+                if '429' in str(e):
+                    time.sleep(60)
+                    result = service.spreadsheets().values().get(
+                        spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
+                    ).execute()
+                else:
+                    logger.error(f"Error reading tab {tab_name}: {e}")
+                    continue
+
+            rows = result.get('values', [])
+            if len(rows) < code_row:
+                continue
+
+            # Find the promo code column in the code_row
+            codes_row = rows[code_row - 1]
+            promo_col = None
+            for i, cell in enumerate(codes_row):
+                if cell and cell.strip().upper() == promo_code.strip().upper():
+                    promo_col = i
+                    break
+
+            if promo_col is None:
+                logger.warning(f"Promo code '{promo_code}' not found in row {code_row} of {tab_name}")
+                continue
+
+            logger.info(f"  Found promo '{promo_code}' at column {promo_col} in {tab_name}")
+
+            # Extract daily data (skip monthly summary rows)
+            for row in rows[data_start_row - 1:]:
+                if not row or not row[0]:
+                    continue
+                date_str = _parse_date_from_row(row[0].strip(), year, month)
+                if not date_str:
+                    continue
+                val = _safe_float(row[promo_col]) if len(row) > promo_col else 0
+                records.append({'Date': date_str, 'Orders': val})
+
+    except Exception as e:
+        logger.error(f"Error extracting promo code sheet: {e}")
+
+    return records
+
+
 async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str, Any]:
     """Sync one campaign: pull sheets → merge → store in Postgres."""
     from sheets_client import _get_service
@@ -348,6 +429,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         is_publisher=False,
         col_mapping=adv_col_mapping,
     )
+    # If standard extraction returned nothing, try promo-code pivoted format
+    if not adv_records and campaign.segment_adv:
+        logger.info(f"  Standard extraction empty, trying promo-code format for '{campaign.segment_adv}'...")
+        adv_records = _extract_promo_code_sheet(
+            service, campaign.advertiser_data_url,
+            promo_code=campaign.segment_adv,
+        )
     logger.info(f"  Advertiser records: {len(adv_records)}")
 
     # Extract publisher data
