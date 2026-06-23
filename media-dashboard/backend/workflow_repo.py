@@ -40,7 +40,8 @@ def agreement_dict(a: models.Agreement) -> Dict[str, Any]:
 
 def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
     return {
-        "campaign_id": c.id, "agreement_id": c.agreement_id, "name": c.name,
+        "campaign_id": c.id, "parent_campaign_id": c.parent_campaign_id,
+        "agreement_id": c.agreement_id, "name": c.name,
         "current_stage": c.current_stage, "ads_campaign_ref_id": c.ads_campaign_ref_id,
         "advertiser_ref_id": c.advertiser_ref_id,
         "advertiser_name": c.advertiser_name, "publisher_id": c.publisher_id,
@@ -59,6 +60,8 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "publisher_email_subject": c.publisher_email_subject,
         "publisher_email_body": c.publisher_email_body,
         "publisher_email_sent_at": c.publisher_email_sent_at.isoformat() if c.publisher_email_sent_at else None,
+        "publisher_email_thread_id": c.publisher_email_thread_id,
+        "publisher_email_message_id": c.publisher_email_message_id,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
@@ -314,11 +317,16 @@ async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, pa
     return campaign
 
 
-async def record_publisher_email(db: AsyncSession, campaign: models.Campaign, *, to: str, subject: str, body: str) -> models.Campaign:
+async def record_publisher_email(db: AsyncSession, campaign: models.Campaign, *, to: str, subject: str, body: str,
+                                  thread_id: Optional[str] = None, message_id: Optional[str] = None) -> models.Campaign:
     campaign.publisher_email_to = to
     campaign.publisher_email_subject = subject
     campaign.publisher_email_body = body
     campaign.publisher_email_sent_at = datetime.now(timezone.utc)
+    if thread_id:
+        campaign.publisher_email_thread_id = thread_id
+    if message_id:
+        campaign.publisher_email_message_id = message_id
     campaign.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(campaign)
@@ -373,10 +381,14 @@ async def create_new_campaign(db: AsyncSession, advertiser: models.Advertiser,
 
 
 async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Campaign:
-    """Clone a LIVE campaign into a new draft with all asset fields pre-filled."""
+    """Clone a LIVE campaign into a new draft with all asset fields pre-filled.
+    Always resolves parent_campaign_id to the root of the lineage."""
+    # Resolve to root: if source already has a parent, use that; otherwise source is the root
+    root_id = source.parent_campaign_id or source.id
     camp_id = await next_campaign_id(db, source.advertiser_name or "", source.publisher_name or "")
     campaign = models.Campaign(
         id=camp_id,
+        parent_campaign_id=root_id,
         agreement_id=source.agreement_id or "",
         name=f"{source.advertiser_name} campaign",
         current_stage=wf.STAGE_OPS_SETUP,
@@ -395,6 +407,9 @@ async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Ca
         targeting=source.targeting,
         daily_budget=source.daily_budget,
         cpc_cpd=source.cpc_cpd,
+        # Carry thread info so the clone can reply on the same email thread
+        publisher_email_thread_id=source.publisher_email_thread_id,
+        publisher_email_message_id=source.publisher_email_message_id,
     )
     db.add(campaign)
     for step in wf.OPS_STEPS:
@@ -402,7 +417,7 @@ async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Ca
     db.add(models.StageTransition(
         entity_type="CAMPAIGN", entity_id=campaign.id,
         from_stage="CREATED", to_stage=wf.STAGE_OPS_SETUP,
-        note=f"cloned from {source.id}",
+        note=f"cloned from {source.id} (root: {root_id})",
     ))
     await db.commit()
     await db.refresh(campaign)

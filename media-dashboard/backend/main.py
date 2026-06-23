@@ -1770,6 +1770,8 @@ class PublisherEmailRequest(BaseModel):
     to: str = ""
     subject: str = ""
     body: str = ""
+    thread_id: Optional[str] = None
+    message_id: Optional[str] = None
 
 
 @app.post("/api/workflow/campaigns/{campaign_id}/publisher-email")
@@ -1777,7 +1779,8 @@ async def workflow_record_publisher_email(campaign_id: str, req: PublisherEmailR
     campaign = await repo.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
-    campaign = await repo.record_publisher_email(db, campaign, to=req.to, subject=req.subject, body=req.body)
+    campaign = await repo.record_publisher_email(db, campaign, to=req.to, subject=req.subject, body=req.body,
+                                                    thread_id=req.thread_id, message_id=req.message_id)
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 

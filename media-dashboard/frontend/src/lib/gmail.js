@@ -45,21 +45,27 @@ export function utf8ToBase64(str) {
 }
 
 // Sends an HTML email via the Gmail API as the signed-in user ("me").
-export async function sendViaGmail(token, { to, cc, subject, html }) {
+// If threadId is provided, the email is sent as a reply on that thread.
+// If inReplyTo is provided, adds In-Reply-To and References headers for threading.
+export async function sendViaGmail(token, { to, cc, subject, html, threadId, inReplyTo }) {
   const headerLines = [
     `To: ${to.join(", ")}`,
     cc && cc.length ? `Cc: ${cc.join(", ")}` : null,
     "MIME-Version: 1.0",
     "Content-Type: text/html; charset=UTF-8",
     `Subject: =?UTF-8?B?${utf8ToBase64(subject)}?=`,
+    inReplyTo ? `In-Reply-To: ${inReplyTo}` : null,
+    inReplyTo ? `References: ${inReplyTo}` : null,
   ].filter((l) => l != null);
   // A single blank line MUST separate headers from the body (RFC 822/MIME).
   const message = headerLines.join("\r\n") + "\r\n\r\n" + html;
   const raw = utf8ToBase64(message).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const body = { raw };
+  if (threadId) body.threadId = threadId;
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

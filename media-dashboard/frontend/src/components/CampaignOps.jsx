@@ -243,8 +243,13 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
       await handleSave();
       const token = await getGmailAccessToken();
       const cc = emailCc.split(",").map((x) => x.trim()).filter(Boolean);
-      await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), cc: cc.length ? cc : undefined, subject: emailSubject, html: textToHtml(emailBody) });
-      await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: emailSubject, body: emailBody });
+      // If this campaign has thread info (e.g. cloned from a LIVE campaign), reply on the same thread
+      const threadId = campaign.publisher_email_thread_id || undefined;
+      const inReplyTo = campaign.publisher_email_message_id || undefined;
+      const subjectLine = threadId && !emailSubject.startsWith("Re:") ? `Re: ${emailSubject}` : emailSubject;
+      const gmailRes = await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), cc: cc.length ? cc : undefined, subject: subjectLine, html: textToHtml(emailBody), threadId, inReplyTo });
+      // Save thread info so future clones can also reply on this thread
+      await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: subjectLine, body: emailBody, thread_id: gmailRes.threadId || null, message_id: gmailRes.id || null });
       await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
       await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }).catch(() => {});
       onReload();

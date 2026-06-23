@@ -103,6 +103,7 @@ class Campaign(Base):
     __tablename__ = "rmn_campaigns"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    parent_campaign_id: Mapped[Optional[str]] = mapped_column(String(32), index=True, default=None)
     agreement_id: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(255))
     current_stage: Mapped[str] = mapped_column(String(32), index=True, default="OPS_SETUP")
@@ -138,6 +139,9 @@ class Campaign(Base):
     publisher_email_subject: Mapped[Optional[str]] = mapped_column(String(512), default=None)
     publisher_email_body: Mapped[Optional[str]] = mapped_column(Text, default=None)
     publisher_email_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
+    # Gmail thread tracking (for reply-on-same-thread across clones)
+    publisher_email_thread_id: Mapped[Optional[str]] = mapped_column(String(128), default=None)
+    publisher_email_message_id: Mapped[Optional[str]] = mapped_column(String(255), default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
