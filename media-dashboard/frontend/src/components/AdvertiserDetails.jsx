@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { updateAdvertiser } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A" };
 
@@ -15,15 +16,123 @@ const s = {
   body: { padding: "0 32px 28px", maxHeight: "70vh", overflowY: "auto" },
   group: { border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 14 },
   groupTitle: { fontSize: 13, fontWeight: 800, color: c.blue, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 12 },
-  row: { display: "flex", justifyContent: "space-between", gap: 16, padding: "7px 0", fontSize: 13.5, borderBottom: `1px solid #F7F8FA` },
+  row: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "7px 0", fontSize: 13.5, borderBottom: `1px solid #F7F8FA` },
   key: { color: c.muted, minWidth: 140 },
   val: { color: c.ink, fontWeight: 600, textAlign: "right", maxWidth: "60%", wordBreak: "break-word" },
   badge: { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "#E3F6EE", color: c.green },
 };
 
+const FIELD_MAP = {
+  "Advertiser name": "name",
+  "Industry / Category": "category",
+  "Brand logo": "logo_name",
+  "Description": "description",
+  "Buy type": "buy_type",
+  "Rate (ROAS multiplier)": "roas_multiplier",
+  "Rate (CPC)": "cpc_rate",
+  "Budget hint": "budget_hint",
+  "GST": "gst",
+  "PAN": "pan",
+  "Goal type": "goal_type",
+  "Target (ROAS)": "target_roas",
+  "Target (CAC)": "target_cac",
+  "Name": "poc_name",
+  "Designation": "poc_designation",
+  "Email": "poc_email",
+  "Phone": "poc_phone",
+  "CC finance": "cc_finance",
+  "Legal agreement": "agreement_name",
+  "PO": "po_name",
+  "PO reference": "po_ref",
+  "Contract start": "contract_start",
+};
+
+function EditableRow({ label, value, fieldKey, advertiser, onUpdate }) {
+  const [hovered, setHovered] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    const raw = advertiser[fieldKey];
+    setEditVal(raw === null || raw === undefined ? "" : String(raw));
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      let payload = {};
+      if (fieldKey === "cc_finance") {
+        payload[fieldKey] = editVal.toLowerCase() === "yes" || editVal === "true";
+      } else if (["roas_multiplier", "cpc_rate", "target_roas", "target_cac"].includes(fieldKey)) {
+        payload[fieldKey] = editVal ? parseFloat(editVal) : null;
+      } else {
+        payload[fieldKey] = editVal || null;
+      }
+      await updateAdvertiser(advertiser.id, payload);
+      onUpdate(fieldKey, payload[fieldKey]);
+      setEditing(false);
+    } catch (e) {
+      alert("Save failed: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancel = () => setEditing(false);
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") save();
+    if (e.key === "Escape") cancel();
+  };
+
+  if (editing) {
+    return (
+      <div style={s.row}>
+        <span style={s.key}>{label}</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input
+            autoFocus
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 160, textAlign: "right", outline: "none" }}
+          />
+          <button onClick={save} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 5, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+            {saving ? "…" : "✓"}
+          </button>
+          <button onClick={cancel} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: c.muted }}>✕</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{ ...s.row, cursor: fieldKey ? "pointer" : "default", background: hovered && fieldKey ? "#F7F9FC" : "transparent", borderRadius: 4 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => fieldKey && startEdit()}
+    >
+      <span style={s.key}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={s.val}>{value}</span>
+        {hovered && fieldKey && (
+          <span style={{ fontSize: 11, color: c.blue, fontWeight: 600, opacity: 0.8 }}>Edit</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
-  const a = advertiser || {};
+  const [a, setA] = useState({ ...(advertiser || {}) });
   const v = (x) => (x === "" || x === undefined || x === null ? "—" : String(x));
+
+  const handleUpdate = (fieldKey, newValue) => {
+    setA((prev) => ({ ...prev, [fieldKey]: newValue }));
+  };
 
   const rate = a.buy_type === "ROAS"
     ? (a.roas_multiplier ? `${a.roas_multiplier}x ROAS` : "—")
@@ -33,11 +142,36 @@ export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
     : (a.target_cac ? `₹${a.target_cac}` : "—");
 
   const groups = [
-    { title: "Basics", rows: [["Advertiser name", v(a.name)], ["Industry / Category", v(a.category)], ["Brand logo", v(a.logo_name)], ["Description", v(a.description)]] },
-    { title: "Commercial", rows: [["Buy type", v(a.buy_type)], ["Rate", rate], ["Budget hint", a.budget_hint ? `₹${a.budget_hint}` : "—"], ["GST", v(a.gst)], ["PAN", v(a.pan)]] },
-    { title: "Performance Goal", rows: [["Goal type", v(a.goal_type)], ["Target", target]] },
-    { title: "Point of Contact", rows: [["Name", v(a.poc_name)], ["Designation", v(a.poc_designation)], ["Email", v(a.poc_email)], ["Phone", a.poc_phone ? `+91 ${a.poc_phone}` : "—"], ["CC finance", a.cc_finance ? "Yes" : "No"]] },
-    { title: "Agreement & PO", rows: [["Legal agreement", v(a.agreement_name)], ["PO", v(a.po_name)], ["PO reference", v(a.po_ref)], ["Contract start", v(a.contract_start)]] },
+    { title: "Basics", rows: [
+      { label: "Advertiser name", value: v(a.name), field: "name" },
+      { label: "Industry / Category", value: v(a.category), field: "category" },
+      { label: "Brand logo", value: v(a.logo_name), field: "logo_name" },
+      { label: "Description", value: v(a.description), field: "description" },
+    ]},
+    { title: "Commercial", rows: [
+      { label: "Buy type", value: v(a.buy_type), field: "buy_type" },
+      { label: "Rate", value: rate, field: a.buy_type === "ROAS" ? "roas_multiplier" : "cpc_rate" },
+      { label: "Budget hint", value: a.budget_hint ? `₹${a.budget_hint}` : "—", field: "budget_hint" },
+      { label: "GST", value: v(a.gst), field: "gst" },
+      { label: "PAN", value: v(a.pan), field: "pan" },
+    ]},
+    { title: "Performance Goal", rows: [
+      { label: "Goal type", value: v(a.goal_type), field: "goal_type" },
+      { label: "Target", value: target, field: a.goal_type === "ROAS" ? "target_roas" : "target_cac" },
+    ]},
+    { title: "Point of Contact", rows: [
+      { label: "Name", value: v(a.poc_name), field: "poc_name" },
+      { label: "Designation", value: v(a.poc_designation), field: "poc_designation" },
+      { label: "Email", value: v(a.poc_email), field: "poc_email" },
+      { label: "Phone", value: a.poc_phone ? `+91 ${a.poc_phone}` : "—", field: "poc_phone" },
+      { label: "CC finance", value: a.cc_finance ? "Yes" : "No", field: "cc_finance" },
+    ]},
+    { title: "Agreement & PO", rows: [
+      { label: "Legal agreement", value: v(a.agreement_name), field: "agreement_name" },
+      { label: "PO", value: v(a.po_name), field: "po_name" },
+      { label: "PO reference", value: v(a.po_ref), field: "po_ref" },
+      { label: "Contract start", value: v(a.contract_start), field: "contract_start" },
+    ]},
   ];
 
   return (
@@ -50,7 +184,6 @@ export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
             <div style={s.id}>{a.id} &nbsp;<span style={s.badge}>Onboarded</span></div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {onEdit && <button style={{ ...s.close, fontSize: 15 }} onClick={onEdit} aria-label="Edit" title="Edit advertiser">✏️</button>}
             <button style={s.close} onClick={onClose} aria-label="Close">✕</button>
           </div>
         </div>
@@ -58,8 +191,15 @@ export default function AdvertiserDetails({ advertiser, onClose, onEdit }) {
           {groups.map((g) => (
             <div style={s.group} key={g.title}>
               <div style={s.groupTitle}>{g.title}</div>
-              {g.rows.map(([k, val]) => (
-                <div style={s.row} key={k}><span style={s.key}>{k}</span><span style={s.val}>{val}</span></div>
+              {g.rows.map((row) => (
+                <EditableRow
+                  key={row.label}
+                  label={row.label}
+                  value={row.value}
+                  fieldKey={row.field}
+                  advertiser={a}
+                  onUpdate={handleUpdate}
+                />
               ))}
             </div>
           ))}

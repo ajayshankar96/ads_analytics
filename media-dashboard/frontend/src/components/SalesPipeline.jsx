@@ -102,7 +102,7 @@ export default function SalesPipeline({ userRole = "VIEWER" }) {
     <div>
       {canEdit && <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>}
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} />}
-      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => setViewAdv(null)} onEdit={() => { setViewAdv(null); setWizard(viewAdv); }} />}
+      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
