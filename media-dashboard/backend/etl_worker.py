@@ -49,8 +49,26 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
     if date_str.upper() in ('TOTAL', 'GRAND TOTAL', ''):
         return None
     try:
+        # MM/DD/YYYY or M/D/YYYY
+        if '/' in date_str:
+            parts = date_str.split('/')
+            if len(parts) == 3:
+                m, d, y = parts
+                if len(y) == 2:
+                    y = '20' + y
+                return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+        # DD-MM-YYYY
+        if '-' in date_str and len(date_str) >= 8:
+            parts = date_str.split('-')
+            if len(parts) == 3 and all(p.isdigit() for p in parts):
+                d, m, y = parts
+                if len(y) == 2:
+                    y = '20' + y
+                return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+        # YYYYMMDD
         if len(date_str) == 8 and date_str.isdigit():
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        # Just a day number (legacy format — needs year/month from tab name)
         parts = date_str.split()
         day = parts[0].zfill(2)
         if day.isdigit() and 1 <= int(day) <= 31:
@@ -107,10 +125,29 @@ def _evaluate_formula(formula_str: str, row_data: Dict[str, float]) -> float:
         return 0.0
 
 
+async def _load_column_mapping(db: AsyncSession, name: str, map_type: str) -> Optional[Dict]:
+    """Load a saved column mapping from DB."""
+    result = await db.execute(text(
+        "SELECT tab_name, header_row, data_start_row, mapping, format_type "
+        "FROM rmn_column_mappings WHERE name = :name AND type = :type ORDER BY updated_at DESC LIMIT 1"
+    ), {"name": name, "type": map_type})
+    row = result.fetchone()
+    if not row:
+        return None
+    return {
+        "tab_name": row[0],
+        "header_row": row[1],
+        "data_start_row": row[2],
+        "mapping": json.loads(row[3]) if row[3] else {},
+        "format_type": row[4],
+    }
+
+
 def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                         offer_filter: str, metric_names: List[str],
-                        is_publisher: bool) -> List[Dict]:
-    """Extract records from a Google Sheet (advertiser or publisher)."""
+                        is_publisher: bool, col_mapping: Optional[Dict] = None) -> List[Dict]:
+    """Extract records from a Google Sheet. Uses col_mapping if provided,
+    otherwise falls back to legacy RZP-tab segment-block format."""
     match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
     if not match:
         logger.error(f"Invalid sheet URL: {sheet_url}")
@@ -120,19 +157,29 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
     records = []
 
     try:
-        # Get all sheet tabs
         meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
-        rzp_tabs = [t for t in tabs if 'RZP' in t.upper()]
 
-        if not rzp_tabs:
-            logger.warning(f"No RZP tabs found in {sheet_url}")
-            return []
+        # Determine tabs to process
+        if col_mapping and col_mapping.get("tab_name"):
+            target_tabs = [t for t in tabs if col_mapping["tab_name"] in t]
+            if not target_tabs:
+                target_tabs = [t for t in tabs if 'RZP' in t.upper()]
+        else:
+            target_tabs = [t for t in tabs if 'RZP' in t.upper()]
 
-        for tab_name in rzp_tabs:
+        if not target_tabs:
+            # Last resort: use all tabs
+            target_tabs = tabs[:5]
+            logger.warning(f"No RZP tabs found in {sheet_url}, trying first tabs: {target_tabs}")
+
+        cfg_header_row = (col_mapping.get("header_row", 3) if col_mapping else 3)
+        cfg_data_start = (col_mapping.get("data_start_row", cfg_header_row + 1) if col_mapping else 4)
+        field_map = col_mapping.get("mapping", {}) if col_mapping else {}
+
+        for tab_name in target_tabs:
             year, month = _get_year_month_from_tab(tab_name)
 
-            # Read all data from this tab
             try:
                 result = service.spreadsheets().values().get(
                     spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
@@ -149,57 +196,65 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                     continue
 
             rows = result.get('values', [])
-            if len(rows) < 4:
+            if len(rows) < cfg_data_start:
                 continue
 
-            # Row 3 (index 2) = headers, Row 4+ = data
-            header_row = rows[2]
-            data_rows = rows[3:]
+            header_row = rows[cfg_header_row - 1]
+            data_rows = rows[cfg_data_start - 1:]
 
-            # Find segment columns
-            segment_columns = [i for i, h in enumerate(header_row) if h.strip().upper() == 'SEGMENT']
+            # Build col_map: header_name → column_index
+            col_map = {}
+            for i, h in enumerate(header_row):
+                if h and h.strip():
+                    col_map[h.strip()] = i
 
-            for seg_col in segment_columns:
-                # Build column map for this block
-                col_map = {}
-                block_start = max(0, seg_col - 1)
-                for offset in range(20):
-                    col_idx = block_start + offset
-                    if col_idx >= len(header_row):
-                        break
-                    col_header = header_row[col_idx].strip()
-                    if offset > 0 and not col_header:
-                        break
-                    if col_header:
-                        col_map[col_header] = col_idx
+            # If we have a configured field_map, use it to resolve standard keys
+            if col_mapping and field_map:
+                # field_map: { "date": "Date", "clicks": "Clicks", ... }
+                resolved = {}
+                for std_key, sheet_col_name in field_map.items():
+                    if sheet_col_name and sheet_col_name in col_map:
+                        resolved[std_key] = col_map[sheet_col_name]
+                # Use resolved mapping
+                date_idx = resolved.get("date")
+                seg_idx = col_map.get("Segment", col_map.get("segment"))
+            else:
+                # Legacy: use header names directly
+                date_idx = col_map.get("Date")
+                seg_idx = col_map.get("Segment")
+                resolved = None
 
-                for row in data_rows:
-                    if len(row) <= seg_col:
+            if date_idx is None:
+                logger.warning(f"No Date column found in tab {tab_name}")
+                continue
+
+            for row in data_rows:
+                if len(row) <= date_idx:
+                    continue
+
+                # Segment filter
+                if seg_idx is not None and segment_filter:
+                    seg_val = row[seg_idx].strip() if len(row) > seg_idx else ""
+                    if not _matches_segment(seg_val, segment_filter):
                         continue
 
-                    segment_value = row[seg_col].strip() if len(row) > seg_col else ""
-                    if not _matches_segment(segment_value, segment_filter):
-                        continue
+                date_str = _parse_date_from_row(row[date_idx], year, month)
+                if not date_str:
+                    continue
 
-                    # Offer filter (for publisher data)
-                    if offer_filter and is_publisher:
-                        offer_col = seg_col - 1 if seg_col > 0 else None
-                        if offer_col is not None and len(row) > offer_col:
-                            row_offer = row[offer_col].strip().upper()
-                            if row_offer != offer_filter.upper():
-                                continue
+                record = {'Date': date_str}
 
-                    # Get date
-                    date_col = col_map.get('Date')
-                    if date_col is None or len(row) <= date_col:
-                        continue
-                    date_str = _parse_date_from_row(row[date_col] if len(row) > date_col else "", year, month)
-                    if not date_str:
-                        continue
-
-                    record = {'Date': date_str}
-
-                    if is_publisher:
+                if is_publisher:
+                    if resolved:
+                        record['Impressions'] = _safe_float(row[resolved['impressions']]) if 'impressions' in resolved and len(row) > resolved['impressions'] else 0
+                        record['Distribution'] = _safe_float(row[resolved['distribution']]) if 'distribution' in resolved and len(row) > resolved['distribution'] else 0
+                        record['Clicks'] = _safe_float(row[resolved['clicks']]) if 'clicks' in resolved and len(row) > resolved['clicks'] else 0
+                        record['Orders_pub'] = _safe_float(row[resolved['orders']]) if 'orders' in resolved and len(row) > resolved['orders'] else 0
+                        record['Scratches'] = _safe_float(row[resolved['scratches']]) if 'scratches' in resolved and len(row) > resolved['scratches'] else 0
+                        record['Coins_Burned'] = _safe_float(row[resolved.get('coins_burned', -1)]) if 'coins_burned' in resolved and len(row) > resolved.get('coins_burned', 999) else 0
+                        record['Redirections'] = _safe_float(row[resolved['redirections']]) if 'redirections' in resolved and len(row) > resolved['redirections'] else 0
+                        record['Spends'] = _safe_float(row[resolved['spends']]) if 'spends' in resolved and len(row) > resolved['spends'] else 0
+                    else:
                         record['Impressions'] = _safe_float(row[col_map['Impressions']]) if 'Impressions' in col_map and len(row) > col_map['Impressions'] else 0
                         record['Distribution'] = _safe_float(row[col_map['Distribution']]) if 'Distribution' in col_map and len(row) > col_map['Distribution'] else 0
                         record['Clicks'] = _safe_float(row[col_map['Clicks']]) if 'Clicks' in col_map and len(row) > col_map['Clicks'] else 0
@@ -208,15 +263,21 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                         record['Coins_Burned'] = _safe_float(row[col_map.get('Coins Burned', col_map.get('Coins_Burned', -1))]) if ('Coins Burned' in col_map or 'Coins_Burned' in col_map) else 0
                         record['Redirections'] = _safe_float(row[col_map['Redirections']]) if 'Redirections' in col_map and len(row) > col_map['Redirections'] else 0
                         record['Spends'] = _safe_float(row[col_map['Spends']]) if 'Spends' in col_map and len(row) > col_map['Spends'] else 0
-                    else:
-                        # Advertiser: extract only requested metrics
-                        for metric_name in metric_names:
+                else:
+                    for metric_name in metric_names:
+                        if resolved:
+                            mk = metric_name.lower().replace(' ', '_')
+                            if mk in resolved and len(row) > resolved[mk]:
+                                record[metric_name] = _safe_float(row[resolved[mk]])
+                            else:
+                                record[metric_name] = 0.0
+                        else:
                             if metric_name in col_map and len(row) > col_map[metric_name]:
                                 record[metric_name] = _safe_float(row[col_map[metric_name]])
                             else:
                                 record[metric_name] = 0.0
 
-                    records.append(record)
+                records.append(record)
 
     except Exception as e:
         logger.error(f"Error extracting from {sheet_url}: {e}")
@@ -251,6 +312,14 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
 
     service = _get_service()
 
+    # Load configurable column mappings from DB (if saved via Column Mapper UI)
+    pub_col_mapping = await _load_column_mapping(db, campaign.publisher_name or "", "publisher")
+    adv_col_mapping = await _load_column_mapping(db, campaign.advertiser_name or "", "advertiser")
+    if pub_col_mapping:
+        logger.info(f"  Using saved column mapping for publisher '{campaign.publisher_name}'")
+    if adv_col_mapping:
+        logger.info(f"  Using saved column mapping for advertiser '{campaign.advertiser_name}'")
+
     # Extract advertiser data
     logger.info(f"Syncing {campaign.id}: pulling advertiser data...")
     adv_records = _extract_from_sheet(
@@ -259,6 +328,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         offer_filter=campaign.offer_title or "",
         metric_names=direct_metrics,
         is_publisher=False,
+        col_mapping=adv_col_mapping,
     )
     logger.info(f"  Advertiser records: {len(adv_records)}")
 
@@ -270,6 +340,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         offer_filter=campaign.offer_title or "",
         metric_names=[],
         is_publisher=True,
+        col_mapping=pub_col_mapping,
     )
     logger.info(f"  Publisher records: {len(pub_records)}")
 
