@@ -421,21 +421,33 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
 
     # Extract advertiser data
     logger.info(f"Syncing {campaign.id}: pulling advertiser data...")
-    adv_records = _extract_from_sheet(
-        service, campaign.advertiser_data_url,
-        segment_filter=campaign.segment_adv,
-        offer_filter=campaign.offer_title or "",
-        metric_names=direct_metrics,
-        is_publisher=False,
-        col_mapping=adv_col_mapping,
-    )
-    # If standard extraction returned nothing, try promo-code pivoted format
-    if not adv_records and campaign.segment_adv:
-        logger.info(f"  Standard extraction empty, trying promo-code format for '{campaign.segment_adv}'...")
+    if adv_col_mapping and adv_col_mapping.get("format_type") == "promo_pivot":
+        # Use the visual picker config — promo code is in segment_adv or mapping
+        mapping_data = adv_col_mapping.get("mapping", {})
+        promo_code = mapping_data.get("orders") or campaign.segment_adv
+        code_row = adv_col_mapping.get("header_row", 3)
+        data_start = adv_col_mapping.get("data_start_row", 10)
+        logger.info(f"  Using promo_pivot mapping: code='{promo_code}', code_row={code_row}")
         adv_records = _extract_promo_code_sheet(
             service, campaign.advertiser_data_url,
-            promo_code=campaign.segment_adv,
+            promo_code=promo_code, code_row=code_row, data_start_row=data_start,
         )
+    else:
+        adv_records = _extract_from_sheet(
+            service, campaign.advertiser_data_url,
+            segment_filter=campaign.segment_adv,
+            offer_filter=campaign.offer_title or "",
+            metric_names=direct_metrics,
+            is_publisher=False,
+            col_mapping=adv_col_mapping,
+        )
+        # If standard extraction returned nothing, try promo-code pivoted format
+        if not adv_records and campaign.segment_adv:
+            logger.info(f"  Standard extraction empty, trying promo-code format for '{campaign.segment_adv}'...")
+            adv_records = _extract_promo_code_sheet(
+                service, campaign.advertiser_data_url,
+                promo_code=campaign.segment_adv,
+            )
     logger.info(f"  Advertiser records: {len(adv_records)}")
 
     # Extract publisher data

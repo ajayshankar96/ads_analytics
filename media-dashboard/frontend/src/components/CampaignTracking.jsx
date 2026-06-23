@@ -207,6 +207,151 @@ function ColumnMapper({ sheetUrl, name, type, onSaved }) {
   );
 }
 
+// ── Visual Sheet Picker (for advertiser sheets with varied formats) ──────────
+function VisualSheetPicker({ sheetUrl, name, onSaved }) {
+  const [tabs, setTabs] = useState([]);
+  const [selectedTab, setSelectedTab] = useState("");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState("date"); // "date" or "value"
+  const [dateCol, setDateCol] = useState(null);
+  const [valueCol, setValueCol] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const loadSheet = async (tab) => {
+    setLoading(true);
+    try {
+      const d = await getSheetPreview(sheetUrl, tab || undefined);
+      setRows(d.rows || []);
+      setTabs(d.tabs || []);
+      if (!selectedTab && d.selected_tab) setSelectedTab(d.selected_tab);
+    } catch (e) { alert("Failed to read sheet: " + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleTabChange = (t) => { setSelectedTab(t); loadSheet(t); };
+
+  const handleCellClick = (colIdx) => {
+    if (mode === "date") setDateCol(colIdx);
+    else setValueCol(colIdx);
+  };
+
+  const handleSave = async () => {
+    if (dateCol === null || valueCol === null) { alert("Please select both a Date column and a Value column"); return; }
+    setSaving(true);
+    try {
+      // Derive header row and mapping from selections
+      const codeRow = rows.findIndex((row, i) => i > 0 && row[valueCol] && row[valueCol].trim()) + 1;
+      const dateHeaderName = rows[0] && rows[0][dateCol] ? rows[0][dateCol] : `col_${dateCol}`;
+      const valueHeaderName = rows[codeRow - 1] && rows[codeRow - 1][valueCol] ? rows[codeRow - 1][valueCol] : `col_${valueCol}`;
+      await saveColumnMapping({
+        name, type: "advertiser", sheet_url: sheetUrl, tab_name: selectedTab,
+        header_row: codeRow, data_start_row: codeRow + 1,
+        mapping: { date: dateHeaderName, orders: valueHeaderName, date_col_index: dateCol, value_col_index: valueCol },
+        format_type: "promo_pivot",
+      });
+      setSaved(true);
+      if (onSaved) onSaved();
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) { alert("Save failed: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => { setOpen(true); loadSheet(); }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>
+        Configure Advertiser Sheet
+      </button>
+    );
+  }
+
+  const maxCols = Math.min(15, Math.max(...rows.map((r) => r.length), 0));
+  const colLetters = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + i));
+
+  return (
+    <div style={{ border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px", marginTop: 10, background: "#fff" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: c.ink }}>Configure Advertiser Sheet — {name}</div>
+        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: c.muted }}>✕</button>
+      </div>
+
+      {/* Tab selector */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        {tabs.length > 0 && (
+          <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12 }} value={selectedTab} onChange={(e) => handleTabChange(e.target.value)}>
+            {tabs.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+        <button onClick={() => loadSheet(selectedTab)} disabled={loading} style={{ background: c.bg, border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {/* Mode toggle */}
+      {rows.length > 0 && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button onClick={() => setMode("date")} style={{ background: mode === "date" ? "#DBEAFE" : "#fff", border: `2px solid ${mode === "date" ? c.blue : c.line}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: mode === "date" ? c.blue : c.muted, cursor: "pointer" }}>
+              Select Date Column {dateCol !== null && `(${colLetters[dateCol]})`}
+            </button>
+            <button onClick={() => setMode("value")} style={{ background: mode === "value" ? "#DCFCE7" : "#fff", border: `2px solid ${mode === "value" ? c.green : c.line}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: mode === "value" ? c.green : c.muted, cursor: "pointer" }}>
+              Select Value Column {valueCol !== null && `(${colLetters[valueCol]})`}
+            </button>
+          </div>
+
+          {/* Spreadsheet grid */}
+          <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: 600 }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted }}>#</th>
+                  {colLetters.map((letter, colIdx) => (
+                    <th key={colIdx} onClick={() => handleCellClick(colIdx)}
+                      style={{ padding: "5px 8px", background: colIdx === dateCol ? "#DBEAFE" : colIdx === valueCol ? "#DCFCE7" : "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: colIdx === dateCol ? c.blue : colIdx === valueCol ? c.green : c.muted, cursor: "pointer", minWidth: 60 }}>
+                      {letter}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    <td style={{ padding: "4px 8px", background: "#F9FAFB", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, fontWeight: 600 }}>{rowIdx + 1}</td>
+                    {colLetters.map((_, colIdx) => {
+                      const cellVal = row[colIdx] || "";
+                      const isDateCol = colIdx === dateCol;
+                      const isValueCol = colIdx === valueCol;
+                      return (
+                        <td key={colIdx} onClick={() => handleCellClick(colIdx)}
+                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: isDateCol ? "#EFF6FF" : isValueCol ? "#F0FDF4" : "transparent", fontWeight: (isDateCol || isValueCol) ? 600 : 400, color: isDateCol ? c.blue : isValueCol ? c.green : c.ink }}>
+                          {String(cellVal).substring(0, 15)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Summary */}
+          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 16 }}>
+            <span>Date: <strong style={{ color: dateCol !== null ? c.blue : c.muted }}>{dateCol !== null ? `Column ${colLetters[dateCol]}` : "not selected"}</strong></span>
+            <span>Value: <strong style={{ color: valueCol !== null ? c.green : c.muted }}>{valueCol !== null ? `Column ${colLetters[valueCol]}${rows[2] && rows[2][valueCol] ? ` (${rows[2][valueCol]})` : ""}` : "not selected"}</strong></span>
+          </div>
+
+          {/* Save */}
+          <button onClick={handleSave} disabled={saving || dateCol === null || valueCol === null} style={{ background: (dateCol !== null && valueCol !== null) ? c.green : c.line, color: (dateCol !== null && valueCol !== null) ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: (dateCol !== null && valueCol !== null) ? "pointer" : "not-allowed" }}>
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [campaignType, setCampaignType] = useState("Single Campaign Sheet");
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
@@ -319,9 +464,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
       </div>
 
-      {/* Column Mappers — only show if no mapping exists yet */}
-      {pubDataUrl && !pubMappingExists && <ColumnMapper sheetUrl={pubDataUrl} name={campaign.publisher_name} type="publisher" onSaved={() => setPubMappingExists(true)} />}
-      {advDataUrl && !advMappingExists && <ColumnMapper sheetUrl={advDataUrl} name={campaign.advertiser_name} type="advertiser" onSaved={() => setAdvMappingExists(true)} />}
+      {/* Publisher: auto-detected, no mapper needed. Advertiser: visual picker */}
+      {advDataUrl && !advMappingExists && <VisualSheetPicker sheetUrl={advDataUrl} name={campaign.advertiser_name} onSaved={() => setAdvMappingExists(true)} />}
 
 
       <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{submitting ? "Submitting…" : "Submit Tracking & Complete ✓"}</button>

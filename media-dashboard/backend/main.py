@@ -247,10 +247,10 @@ async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
         tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
         target_tab = tab or tabs[0]
         result = service.spreadsheets().values().get(
-            spreadsheetId=sheet_id, range=f"'{target_tab}'!A1:Z10"
+            spreadsheetId=sheet_id, range=f"'{target_tab}'!A1:Z20"
         ).execute()
         rows = result.get("values", [])
-        return {"tabs": tabs, "selected_tab": target_tab, "rows": rows[:10]}
+        return {"tabs": tabs, "selected_tab": target_tab, "rows": rows[:20]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
