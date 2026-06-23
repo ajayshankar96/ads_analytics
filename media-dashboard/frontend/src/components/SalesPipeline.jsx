@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getAdvertisers } from "../api";
+import { getAdvertisers, recordWelcomeEmail } from "../api";
 import AdvertiserWizard from "./AdvertiserWizard";
 import AdvertiserDetails from "./AdvertiserDetails";
 
@@ -80,6 +80,47 @@ const EyeIcon = ({ color = "#52606D" }) => (
   </svg>
 );
 
+function MarkSentIcon({ advertiser, userEmail, onMarked }) {
+  const [hovered, setHovered] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const isOwner = userEmail && advertiser.owner_email && userEmail.toLowerCase() === advertiser.owner_email.toLowerCase();
+
+  const handleMark = async () => {
+    setSaving(true);
+    try {
+      await recordWelcomeEmail(advertiser.id, { to: advertiser.poc_email || "offline", subject: "Sent offline", body: "Marked as sent offline by owner" });
+      setConfirming(false);
+      if (onMarked) onMarked();
+    } catch (e) {
+      alert("Failed to mark: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  if (confirming) {
+    return (
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <button onClick={handleMark} disabled={saving} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+          {saving ? "..." : "Confirm"}
+        </button>
+        <button onClick={() => setConfirming(false)} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "3px 6px", fontSize: 10, cursor: "pointer", color: c.muted }}>No</button>
+      </div>
+    );
+  }
+
+  return (
+    <span
+      title={isOwner ? "Click to mark email as sent (offline)" : "Welcome email not sent yet"}
+      style={{ display: "inline-flex", opacity: hovered && isOwner ? 1 : 0.6, cursor: isOwner ? "pointer" : "default", transition: "opacity 0.15s" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => isOwner && setConfirming(true)}
+    >
+      <MailIcon color={hovered && isOwner ? c.green : "#B0B8C4"} />
+    </span>
+  );
+}
+
 export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
   const canEdit = userRole === "ADMIN" || userRole === "SALES";
   const [advertisers, setAdvertisers] = useState([]);
@@ -156,9 +197,7 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
                           <MailIcon color="#0F8C6A" />
                         </span>
                       ) : (
-                        <span title="Welcome email not sent yet" style={{ display: "inline-flex", opacity: 0.6 }}>
-                          <MailIcon color="#B0B8C4" />
-                        </span>
+                        <MarkSentIcon advertiser={a} userEmail={userEmail} onMarked={load} />
                       )}
                     </td>
                     <td style={s.td}>
