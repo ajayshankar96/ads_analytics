@@ -203,9 +203,10 @@ function CampaignCard({ campaign, onClick }) {
 function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
+  const hasThread = !!(campaign.publisher_email_thread_id);
+  const [emailTo, setEmailTo] = useState(hasThread ? (campaign.publisher_email_to || "") : "");
   const [emailCc, setEmailCc] = useState("");
-  const [emailSubject, setEmailSubject] = useState("");
+  const [emailSubject, setEmailSubject] = useState(hasThread ? (campaign.publisher_email_subject || "") : "");
   const [emailBody, setEmailBody] = useState("");
   const [sending, setSending] = useState(false);
   const [showEmail, setShowEmail] = useState(false);

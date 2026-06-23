@@ -407,7 +407,9 @@ async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Ca
         targeting=source.targeting,
         daily_budget=source.daily_budget,
         cpc_cpd=source.cpc_cpd,
-        # Carry thread info so the clone can reply on the same email thread
+        # Carry email info so the clone can reply-all on the same thread
+        publisher_email_to=source.publisher_email_to,
+        publisher_email_subject=source.publisher_email_subject,
         publisher_email_thread_id=source.publisher_email_thread_id,
         publisher_email_message_id=source.publisher_email_message_id,
     )
