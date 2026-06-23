@@ -100,10 +100,11 @@ function MarkSentIcon({ advertiser, userEmail, onMarked }) {
   if (confirming) {
     return (
       <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: c.ink, whiteSpace: "nowrap" }}>Mailed offline?</span>
         <button onClick={handleMark} disabled={saving} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
           {saving ? "..." : "Confirm"}
         </button>
-        <button onClick={() => setConfirming(false)} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "3px 6px", fontSize: 10, cursor: "pointer", color: c.muted }}>No</button>
+        <button onClick={() => { setConfirming(false); setHovered(false); }} style={{ background: "transparent", border: `1px solid ${c.line}`, borderRadius: 5, padding: "3px 6px", fontSize: 10, cursor: "pointer", color: c.muted }}>No</button>
       </div>
     );
   }
