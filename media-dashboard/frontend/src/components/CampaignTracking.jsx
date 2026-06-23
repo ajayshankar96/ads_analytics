@@ -214,8 +214,8 @@ function VisualSheetPicker({ sheetUrl, name, onSaved }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("date"); // "date" or "value"
-  const [dateCol, setDateCol] = useState(null);
-  const [valueCol, setValueCol] = useState(null);
+  const [dateCell, setDateCell] = useState(null); // { row, col }
+  const [valueCell, setValueCell] = useState(null); // { row, col }
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(false);
@@ -233,23 +233,23 @@ function VisualSheetPicker({ sheetUrl, name, onSaved }) {
 
   const handleTabChange = (t) => { setSelectedTab(t); loadSheet(t); };
 
-  const handleCellClick = (colIdx) => {
-    if (mode === "date") setDateCol(colIdx);
-    else setValueCol(colIdx);
+  const handleCellClick = (rowIdx, colIdx) => {
+    if (mode === "date") setDateCell({ row: rowIdx, col: colIdx });
+    else setValueCell({ row: rowIdx, col: colIdx });
   };
 
   const handleSave = async () => {
-    if (dateCol === null || valueCol === null) { alert("Please select both a Date column and a Value column"); return; }
+    if (!dateCell || !valueCell) { alert("Please select both where dates start and where values start"); return; }
     setSaving(true);
     try {
-      // Derive header row and mapping from selections
-      const codeRow = rows.findIndex((row, i) => i > 0 && row[valueCol] && row[valueCol].trim()) + 1;
-      const dateHeaderName = rows[0] && rows[0][dateCol] ? rows[0][dateCol] : `col_${dateCol}`;
-      const valueHeaderName = rows[codeRow - 1] && rows[codeRow - 1][valueCol] ? rows[codeRow - 1][valueCol] : `col_${valueCol}`;
+      const dataStartRow = Math.max(dateCell.row, valueCell.row) + 1; // 1-indexed
+      const valueCellContent = rows[valueCell.row] && rows[valueCell.row][valueCell.col] ? rows[valueCell.row][valueCell.col].trim() : `col_${valueCell.col}`;
+      const dateCellContent = rows[dateCell.row] && rows[dateCell.row][dateCell.col] ? rows[dateCell.row][dateCell.col].trim() : `col_${dateCell.col}`;
       await saveColumnMapping({
         name, type: "advertiser", sheet_url: sheetUrl, tab_name: selectedTab,
-        header_row: codeRow, data_start_row: codeRow + 1,
-        mapping: { date: dateHeaderName, orders: valueHeaderName, date_col_index: dateCol, value_col_index: valueCol },
+        header_row: valueCell.row + 1, // row where the value header/code is (1-indexed)
+        data_start_row: dataStartRow,
+        mapping: { date: dateCellContent, orders: valueCellContent, date_col_index: dateCell.col, value_col_index: valueCell.col, date_start_row: dateCell.row + 1, value_start_row: valueCell.row + 1 },
         format_type: "promo_pivot",
       });
       setSaved(true);
@@ -292,24 +292,26 @@ function VisualSheetPicker({ sheetUrl, name, onSaved }) {
       {/* Mode toggle */}
       {rows.length > 0 && (
         <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
             <button onClick={() => setMode("date")} style={{ background: mode === "date" ? "#DBEAFE" : "#fff", border: `2px solid ${mode === "date" ? c.blue : c.line}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: mode === "date" ? c.blue : c.muted, cursor: "pointer" }}>
-              Select Date Column {dateCol !== null && `(${colLetters[dateCol]})`}
+              Click where dates start
             </button>
             <button onClick={() => setMode("value")} style={{ background: mode === "value" ? "#DCFCE7" : "#fff", border: `2px solid ${mode === "value" ? c.green : c.line}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: mode === "value" ? c.green : c.muted, cursor: "pointer" }}>
-              Select Value Column {valueCol !== null && `(${colLetters[valueCol]})`}
+              Click where values start
             </button>
+          </div>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
+            {mode === "date" ? "Click the first cell that has a date (e.g. \"25-Jan\" or \"04/10/2026\")" : "Click the cell with the promo code or value column header (e.g. \"BTXRZJ500\" or \"Orders\")"}
           </div>
 
           {/* Spreadsheet grid */}
-          <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12 }}>
+          <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12, maxHeight: 400, overflowY: "auto" }}>
             <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: 600 }}>
               <thead>
                 <tr>
-                  <th style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted }}>#</th>
+                  <th style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, position: "sticky", top: 0, zIndex: 1 }}>#</th>
                   {colLetters.map((letter, colIdx) => (
-                    <th key={colIdx} onClick={() => handleCellClick(colIdx)}
-                      style={{ padding: "5px 8px", background: colIdx === dateCol ? "#DBEAFE" : colIdx === valueCol ? "#DCFCE7" : "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: colIdx === dateCol ? c.blue : colIdx === valueCol ? c.green : c.muted, cursor: "pointer", minWidth: 60 }}>
+                    <th key={colIdx} style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: c.muted, minWidth: 60, position: "sticky", top: 0, zIndex: 1 }}>
                       {letter}
                     </th>
                   ))}
@@ -321,11 +323,18 @@ function VisualSheetPicker({ sheetUrl, name, onSaved }) {
                     <td style={{ padding: "4px 8px", background: "#F9FAFB", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, fontWeight: 600 }}>{rowIdx + 1}</td>
                     {colLetters.map((_, colIdx) => {
                       const cellVal = row[colIdx] || "";
-                      const isDateCol = colIdx === dateCol;
-                      const isValueCol = colIdx === valueCol;
+                      const isDateCell = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
+                      const isValueCell = valueCell && valueCell.row === rowIdx && valueCell.col === colIdx;
+                      const isDateCol = dateCell && dateCell.col === colIdx && rowIdx >= dateCell.row;
+                      const isValueCol = valueCell && valueCell.col === colIdx && rowIdx >= valueCell.row;
+                      let bg = "transparent";
+                      if (isDateCell) bg = "#BFDBFE";
+                      else if (isValueCell) bg = "#BBF7D0";
+                      else if (isDateCol) bg = "#EFF6FF";
+                      else if (isValueCol) bg = "#F0FDF4";
                       return (
-                        <td key={colIdx} onClick={() => handleCellClick(colIdx)}
-                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: isDateCol ? "#EFF6FF" : isValueCol ? "#F0FDF4" : "transparent", fontWeight: (isDateCol || isValueCol) ? 600 : 400, color: isDateCol ? c.blue : isValueCol ? c.green : c.ink }}>
+                        <td key={colIdx} onClick={() => handleCellClick(rowIdx, colIdx)}
+                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: bg, fontWeight: (isDateCell || isValueCell) ? 700 : 400, color: isDateCell ? c.blue : isValueCell ? c.green : c.ink, transition: "background 0.1s" }}>
                           {String(cellVal).substring(0, 15)}
                         </td>
                       );
@@ -337,13 +346,17 @@ function VisualSheetPicker({ sheetUrl, name, onSaved }) {
           </div>
 
           {/* Summary */}
-          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 16 }}>
-            <span>Date: <strong style={{ color: dateCol !== null ? c.blue : c.muted }}>{dateCol !== null ? `Column ${colLetters[dateCol]}` : "not selected"}</strong></span>
-            <span>Value: <strong style={{ color: valueCol !== null ? c.green : c.muted }}>{valueCol !== null ? `Column ${colLetters[valueCol]}${rows[2] && rows[2][valueCol] ? ` (${rows[2][valueCol]})` : ""}` : "not selected"}</strong></span>
+          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <span>Date starts: <strong style={{ color: dateCell ? c.blue : c.muted }}>
+              {dateCell ? `${colLetters[dateCell.col]}${dateCell.row + 1} "${(rows[dateCell.row] && rows[dateCell.row][dateCell.col]) || ""}"` : "click a cell"}
+            </strong></span>
+            <span>Value starts: <strong style={{ color: valueCell ? c.green : c.muted }}>
+              {valueCell ? `${colLetters[valueCell.col]}${valueCell.row + 1} "${(rows[valueCell.row] && rows[valueCell.row][valueCell.col]) || ""}"` : "click a cell"}
+            </strong></span>
           </div>
 
           {/* Save */}
-          <button onClick={handleSave} disabled={saving || dateCol === null || valueCol === null} style={{ background: (dateCol !== null && valueCol !== null) ? c.green : c.line, color: (dateCol !== null && valueCol !== null) ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: (dateCol !== null && valueCol !== null) ? "pointer" : "not-allowed" }}>
+          <button onClick={handleSave} disabled={saving || !dateCell || !valueCell} style={{ background: (dateCell && valueCell) ? c.green : c.line, color: (dateCell && valueCell) ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: (dateCell && valueCell) ? "pointer" : "not-allowed" }}>
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
           </button>
         </>

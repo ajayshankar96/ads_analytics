@@ -426,8 +426,9 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         mapping_data = adv_col_mapping.get("mapping", {})
         promo_code = mapping_data.get("orders") or campaign.segment_adv
         code_row = adv_col_mapping.get("header_row", 3)
-        data_start = adv_col_mapping.get("data_start_row", 10)
-        logger.info(f"  Using promo_pivot mapping: code='{promo_code}', code_row={code_row}")
+        # data_start_row from the cell picker = where the first date cell is
+        data_start = int(mapping_data.get("date_start_row", adv_col_mapping.get("data_start_row", 10)))
+        logger.info(f"  Using promo_pivot mapping: code='{promo_code}', code_row={code_row}, data_start={data_start}")
         adv_records = _extract_promo_code_sheet(
             service, campaign.advertiser_data_url,
             promo_code=promo_code, code_row=code_row, data_start_row=data_start,
