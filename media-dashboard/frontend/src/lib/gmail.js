@@ -26,17 +26,38 @@ export function useGisLoaded() {
   return loaded;
 }
 
-// Opens the Google consent/picker popup and resolves with a gmail.send token.
+// Opens the Google consent/picker popup and resolves with a gmail.send + readonly token.
 export function getGmailAccessToken() {
   return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) return reject(new Error("Google Sign-In not loaded yet."));
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_WEB_CLIENT_ID,
-      scope: "https://www.googleapis.com/auth/gmail.send",
+      scope: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly",
       callback: (resp) => resp.error ? reject(new Error(resp.error)) : resolve(resp.access_token),
     });
     client.requestAccessToken();
   });
+}
+
+// Fetches the latest message's Message-ID header from a Gmail thread.
+// Returns null if the thread can't be read.
+export async function getLatestMessageId(token, threadId) {
+  if (!threadId) return null;
+  try {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=metadata&metadataHeaders=Message-Id`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const messages = data.messages || [];
+    if (!messages.length) return null;
+    const lastMsg = messages[messages.length - 1];
+    const headers = lastMsg.payload?.headers || [];
+    const msgIdHeader = headers.find((h) => h.name.toLowerCase() === "message-id");
+    return msgIdHeader?.value || null;
+  } catch {
+    return null;
+  }
 }
 
 // UTF-8 safe base64 (handles ₹ etc.)
