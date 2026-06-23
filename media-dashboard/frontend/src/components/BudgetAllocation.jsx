@@ -232,7 +232,6 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <input type="month" style={s.monthPicker} value={month} onChange={(e) => setMonth(e.target.value)} />
         </div>
         <div style={s.btnRow}>
-          {canEdit && <button style={s.addBtn} onClick={() => setShowAddPub(true)}>+ New Publisher</button>}
         </div>
       </div>
 
