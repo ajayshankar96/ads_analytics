@@ -39,8 +39,8 @@ export function getGmailAccessToken() {
   });
 }
 
-// Fetches the latest message's Message-ID header from a Gmail thread.
-// Returns null if the thread can't be read.
+// Fetches the latest message's RFC Message-ID header from a Gmail thread.
+// Returns null if the thread can't be read (e.g. sender doesn't own the thread).
 export async function getLatestMessageId(token, threadId) {
   if (!threadId) return null;
   try {
@@ -53,6 +53,24 @@ export async function getLatestMessageId(token, threadId) {
     if (!messages.length) return null;
     const lastMsg = messages[messages.length - 1];
     const headers = lastMsg.payload?.headers || [];
+    const msgIdHeader = headers.find((h) => h.name.toLowerCase() === "message-id");
+    return msgIdHeader?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+// Fetches the RFC Message-ID header of a specific sent message (by Gmail ID).
+// Used to store the canonical Message-ID for cross-user threading.
+export async function getRfcMessageId(token, gmailMsgId) {
+  if (!gmailMsgId) return null;
+  try {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMsgId}?format=metadata&metadataHeaders=Message-Id`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const headers = data.payload?.headers || [];
     const msgIdHeader = headers.find((h) => h.name.toLowerCase() === "message-id");
     return msgIdHeader?.value || null;
   } catch {

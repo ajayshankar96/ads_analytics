@@ -15,7 +15,7 @@ import {
   markNotLive,
   getAllAllocationsForMonth,
 } from "../api";
-import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml, getLatestMessageId } from "../lib/gmail";
+import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml, getLatestMessageId, getRfcMessageId } from "../lib/gmail";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -243,14 +243,16 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
       await handleSave();
       const token = await getGmailAccessToken();
       const cc = emailCc.split(",").map((x) => x.trim()).filter(Boolean);
-      // If this campaign has thread info (cloned from a LIVE campaign), reply on the same thread
       const threadId = campaign.publisher_email_thread_id || undefined;
-      // Fetch the latest Message-ID from the thread so Outlook/non-Gmail clients thread correctly
-      const inReplyTo = threadId ? await getLatestMessageId(token, threadId) : undefined;
-      const subjectLine = threadId && !emailSubject.startsWith("Re:") ? `Re: ${emailSubject}` : emailSubject;
+      // Try to get the latest Message-ID from the thread (works if sender has the thread in their mailbox)
+      // Falls back to the stored RFC Message-ID (works for CC'd users who can't read the thread via ID)
+      let inReplyTo = threadId ? await getLatestMessageId(token, threadId) : null;
+      if (!inReplyTo) inReplyTo = campaign.publisher_email_message_id || undefined;
+      const subjectLine = (threadId || inReplyTo) && !emailSubject.startsWith("Re:") ? `Re: ${emailSubject}` : emailSubject;
       const gmailRes = await sendViaGmail(token, { to: emailTo.split(",").map((x) => x.trim()), cc: cc.length ? cc : undefined, subject: subjectLine, html: textToHtml(emailBody), threadId, inReplyTo });
-      // Save thread info so future clones can also reply on this thread
-      await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: subjectLine, body: emailBody, thread_id: gmailRes.threadId || null, message_id: gmailRes.id || null });
+      // Fetch the RFC Message-ID of what we just sent (for cross-user threading)
+      const rfcMsgId = await getRfcMessageId(token, gmailRes.id);
+      await recordPublisherEmail(campaign.campaign_id, { to: emailTo, subject: subjectLine, body: emailBody, thread_id: gmailRes.threadId || null, message_id: rfcMsgId || gmailRes.id || null });
       await transitionCampaign(campaign.campaign_id, { to_stage: "CREATIVE_REVIEW" }).catch(() => {});
       await transitionCampaign(campaign.campaign_id, { to_stage: "SHARED_TO_PUBLISHER" }).catch(() => {});
       onReload();
