@@ -315,12 +315,15 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
 
 def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
                               code_row: int = 3, data_start_row: int = 10,
-                              month_rows: int = 6) -> List[Dict]:
-    """Extract advertiser data from a pivoted promo-code sheet.
-    Structure: Row `code_row` has promo codes as column headers.
-    Rows 4..4+month_rows are monthly totals (skipped).
-    Rows from `data_start_row` onward have daily data with dates in column A.
-    Returns records with Date + Orders for the matching promo column."""
+                              date_col: int = 0,
+                              metric_columns: Optional[Dict[str, int]] = None) -> List[Dict]:
+    """Extract advertiser data from a sheet using configured column positions.
+
+    Supports two modes:
+    1. Single promo_code: finds the code in code_row, reads that column
+    2. Multi-metric (metric_columns): reads from specific column indices
+       metric_columns = {"orders": 5, "revenue": 6}
+    """
     match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
     if not match:
         return []
@@ -351,32 +354,38 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
                     continue
 
             rows = result.get('values', [])
-            if len(rows) < code_row:
-                continue
 
-            # Find the promo code column in the code_row
-            codes_row = rows[code_row - 1]
-            promo_col = None
-            for i, cell in enumerate(codes_row):
-                if cell and cell.strip().upper() == promo_code.strip().upper():
-                    promo_col = i
-                    break
-
-            if promo_col is None:
-                logger.warning(f"Promo code '{promo_code}' not found in row {code_row} of {tab_name}")
-                continue
-
-            logger.info(f"  Found promo '{promo_code}' at column {promo_col} in {tab_name}")
-
-            # Extract daily data (skip monthly summary rows)
-            for row in rows[data_start_row - 1:]:
-                if not row or not row[0]:
+            # Determine which columns to read
+            cols_to_read = {}
+            if metric_columns:
+                cols_to_read = metric_columns
+            elif promo_code and len(rows) >= code_row:
+                codes_row = rows[code_row - 1]
+                promo_col = None
+                for i, cell in enumerate(codes_row):
+                    if cell and cell.strip().upper() == promo_code.strip().upper():
+                        promo_col = i
+                        break
+                if promo_col is None:
+                    logger.warning(f"Promo code '{promo_code}' not found in row {code_row} of {tab_name}")
                     continue
-                date_str = _parse_date_from_row(row[0].strip(), year, month)
+                cols_to_read = {"orders": promo_col}
+                logger.info(f"  Found promo '{promo_code}' at column {promo_col} in {tab_name}")
+
+            if not cols_to_read:
+                continue
+
+            # Extract daily data from data_start_row onward
+            for row in rows[data_start_row - 1:]:
+                if not row or len(row) <= date_col or not row[date_col]:
+                    continue
+                date_str = _parse_date_from_row(row[date_col].strip(), year, month)
                 if not date_str:
                     continue
-                val = _safe_float(row[promo_col]) if len(row) > promo_col else 0
-                records.append({'Date': date_str, 'Orders': val})
+                record = {'Date': date_str}
+                for metric_key, col_idx in cols_to_read.items():
+                    record[metric_key.capitalize()] = _safe_float(row[col_idx]) if len(row) > col_idx else 0
+                records.append(record)
 
     except Exception as e:
         logger.error(f"Error extracting promo code sheet: {e}")
@@ -422,17 +431,29 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     # Extract advertiser data
     logger.info(f"Syncing {campaign.id}: pulling advertiser data...")
     if adv_col_mapping and adv_col_mapping.get("format_type") == "promo_pivot":
-        # Use the visual picker config — promo code is in segment_adv or mapping
         mapping_data = adv_col_mapping.get("mapping", {})
-        promo_code = mapping_data.get("orders") or campaign.segment_adv
         code_row = adv_col_mapping.get("header_row", 3)
-        # data_start_row from the cell picker = where the first date cell is
+        date_col = int(mapping_data.get("date_col_index", 0))
         data_start = int(mapping_data.get("date_start_row", adv_col_mapping.get("data_start_row", 10)))
-        logger.info(f"  Using promo_pivot mapping: code='{promo_code}', code_row={code_row}, data_start={data_start}")
-        adv_records = _extract_promo_code_sheet(
-            service, campaign.advertiser_data_url,
-            promo_code=promo_code, code_row=code_row, data_start_row=data_start,
-        )
+        # Check for multi-metric config (new visual picker format)
+        metrics_cfg = mapping_data.get("metrics")
+        if metrics_cfg and isinstance(metrics_cfg, dict):
+            metric_columns = {k: int(v["col"]) for k, v in metrics_cfg.items() if isinstance(v, dict) and "col" in v}
+            logger.info(f"  Using multi-metric mapping: {list(metric_columns.keys())}, date_col={date_col}, data_start={data_start}")
+            adv_records = _extract_promo_code_sheet(
+                service, campaign.advertiser_data_url,
+                promo_code="", code_row=code_row, data_start_row=data_start,
+                date_col=date_col, metric_columns=metric_columns,
+            )
+        else:
+            # Legacy single-value mode
+            promo_code = mapping_data.get("orders") or campaign.segment_adv
+            logger.info(f"  Using promo_pivot mapping: code='{promo_code}', code_row={code_row}, data_start={data_start}")
+            adv_records = _extract_promo_code_sheet(
+                service, campaign.advertiser_data_url,
+                promo_code=promo_code, code_row=code_row, data_start_row=data_start,
+                date_col=date_col,
+            )
     else:
         adv_records = _extract_from_sheet(
             service, campaign.advertiser_data_url,
@@ -468,16 +489,6 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     pub_by_date = {r['Date']: r for r in pub_records}
     all_dates = sorted(set(list(adv_by_date.keys()) + list(pub_by_date.keys())))
 
-    # Parse formula configs
-    budget_metrics = {}
-    try:
-        cd = json.loads(campaign.details_tc or '{}') if campaign.details_tc and campaign.details_tc.startswith('{') else {}
-        budget_metrics = cd.get('campaign_details', {}).get('budget_and_metrics', {})
-    except Exception:
-        pass
-    pub_formula = budget_metrics.get('publisher_spends_calc', 'Spends')
-    adv_formula = budget_metrics.get('advertiser_spends_calc', 'Spends')
-
     rows_synced = 0
     now = datetime.now(timezone.utc)
 
@@ -490,21 +501,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         adv_row = adv_by_date.get(date_str, {})
         pub_row = pub_by_date.get(date_str, {})
 
-        # Merge data for formula evaluation
-        merged = {**pub_row, **adv_row}
-        merged.pop('Date', None)
+        # Store all advertiser metrics as JSONB (raw values, no formula computation)
+        adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
 
-        # Compute publisher/advertiser spends
-        pub_spends = _evaluate_formula(pub_formula, merged)
-        adv_spends = _evaluate_formula(adv_formula, merged)
-
-        # Compute derived metrics
-        adv_metrics_dict = {}
-        for metric_name in direct_metrics:
-            adv_metrics_dict[metric_name] = adv_row.get(metric_name, 0)
-        for cdef in computed_metrics:
-            val = _evaluate_formula(cdef['calculation'], merged)
-            adv_metrics_dict[cdef['display_name']] = round(val, 4)
+        # Spends: use publisher sheet value if available, otherwise 0
+        # (proper spend calculation will be done via billing config + query-time join later)
+        pub_spends = float(pub_row.get('Spends', 0))
+        adv_spends = 0.0
 
         # Upsert to DB
         await db.execute(text("""
