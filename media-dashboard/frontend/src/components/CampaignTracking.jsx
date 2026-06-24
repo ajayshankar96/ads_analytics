@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, getSheetHeaders, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, addSheetUrl, getSheetPreview, getColumnMappings, saveColumnMapping } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, getSheetPreview, getColumnMappings, saveColumnMapping } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -53,8 +53,6 @@ function CampaignList({ campaigns, selected, onSelect }) {
 // ── Right Panel: Detail with Tabs ────────────────────────────────────────────
 function CampaignDetail({ campaign, segments, canEdit, onReload }) {
   const [activeTab, setActiveTab] = useState(campaign.tracking_submitted ? "sync" : "setup");
-  const isDone = campaign.tracking_submitted;
-
   const tabs = [
     { id: "setup", label: "Setup" },
     { id: "sync", label: "Data Sync" },
@@ -97,117 +95,6 @@ const STANDARD_FIELDS = [
   { key: "cpc", label: "CPC" },
 ];
 
-function ColumnMapper({ sheetUrl, name, type, onSaved }) {
-  const [preview, setPreview] = useState(null);
-  const [tabs, setTabs] = useState([]);
-  const [selectedTab, setSelectedTab] = useState("");
-  const [headerRow, setHeaderRow] = useState(1);
-  const [mapping, setMapping] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [existingMapping, setExistingMapping] = useState(null);
-
-  useEffect(() => {
-    if (name && type) {
-      getColumnMappings(name, type).then((d) => {
-        if (d.mappings && d.mappings.length > 0) {
-          setExistingMapping(d.mappings[0]);
-          setMapping(d.mappings[0].mapping || {});
-          setHeaderRow(d.mappings[0].header_row || 1);
-          setSelectedTab(d.mappings[0].tab_name || "");
-        }
-      }).catch(() => {});
-    }
-  }, [name, type]);
-
-  const handlePreview = async () => {
-    if (!sheetUrl) return;
-    setLoading(true);
-    try {
-      const d = await getSheetPreview(sheetUrl, selectedTab || undefined);
-      setPreview(d.rows || []);
-      setTabs(d.tabs || []);
-      if (!selectedTab && d.selected_tab) setSelectedTab(d.selected_tab);
-    } catch (e) { alert("Failed to read sheet: " + e.message); }
-    finally { setLoading(false); }
-  };
-
-  const handleSave = async () => {
-    try {
-      await saveColumnMapping({ name, type, sheet_url: sheetUrl, tab_name: selectedTab, header_row: headerRow, data_start_row: headerRow + 1, mapping, format_type: "vertical" });
-      setSaved(true);
-      if (onSaved) onSaved();
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) { alert("Save failed: " + e.message); }
-  };
-
-  const headers = preview && preview[headerRow - 1] ? preview[headerRow - 1] : [];
-
-  return (
-    <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginTop: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>Column Mapping — {name} ({type})</div>
-        {existingMapping && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Mapping saved</span>}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        {tabs.length > 0 && (
-          <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12 }} value={selectedTab} onChange={(e) => setSelectedTab(e.target.value)}>
-            {tabs.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        )}
-        <button onClick={handlePreview} disabled={loading} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          {loading ? "Loading…" : preview ? "Refresh" : "Preview Sheet"}
-        </button>
-      </div>
-
-      {preview && (
-        <>
-          {/* Show preview rows */}
-          <div style={{ overflowX: "auto", marginBottom: 12 }}>
-            <table style={{ fontSize: 11, borderCollapse: "collapse", minWidth: 600 }}>
-              <tbody>
-                {preview.slice(0, 5).map((row, i) => (
-                  <tr key={i} style={{ background: i === headerRow - 1 ? "#EAF0FF" : "transparent" }}>
-                    <td style={{ padding: "3px 6px", color: c.muted, fontSize: 10 }}>{i + 1}</td>
-                    {(row || []).slice(0, 12).map((cell, j) => (
-                      <td key={j} style={{ padding: "3px 6px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cell}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ fontSize: 11, color: c.muted, marginBottom: 8 }}>
-            Header row: <input type="number" min="1" max="10" value={headerRow} onChange={(e) => setHeaderRow(parseInt(e.target.value) || 1)} style={{ width: 40, border: `1px solid ${c.line}`, borderRadius: 4, padding: "2px 4px", fontSize: 11 }} /> (highlighted in blue above)
-          </div>
-
-          {/* Mapping dropdowns */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-            {STANDARD_FIELDS.map((field) => (
-              <div key={field.key} style={{ fontSize: 12 }}>
-                <label style={{ fontSize: 10, color: c.muted, fontWeight: 600, display: "block", marginBottom: 2 }}>
-                  {field.label} {field.required && <span style={{ color: c.red }}>*</span>}
-                </label>
-                <select style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "5px 8px", fontSize: 11, width: "100%" }}
-                  value={mapping[field.key] || ""} onChange={(e) => setMapping({ ...mapping, [field.key]: e.target.value })}>
-                  <option value="">— skip —</option>
-                  {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
-                </select>
-              </div>
-            ))}
-          </div>
-
-          <button onClick={handleSave} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-            {saved ? "Saved ✓" : "Save Mapping"}
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ── Visual Sheet Picker (multi-metric support) ──────────────────────────────
 function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
   const [tabs, setTabs] = useState([]);
@@ -220,6 +107,34 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(false);
+  const [existingConfig, setExistingConfig] = useState(null);
+
+  // Load existing mapping on mount
+  useEffect(() => {
+    if (name) {
+      getColumnMappings(name, "advertiser").then((d) => {
+        if (d.mappings && d.mappings.length > 0) {
+          const m = d.mappings[0];
+          setExistingConfig(m);
+          setSelectedTab(m.tab_name || "");
+          // Pre-populate selections from saved mapping
+          const mapping = m.mapping || {};
+          if (mapping.date_col_index != null && mapping.date_start_row) {
+            setDateCell({ row: mapping.date_start_row - 1, col: mapping.date_col_index });
+          }
+          if (mapping.metrics) {
+            const restored = {};
+            Object.entries(mapping.metrics).forEach(([key, val]) => {
+              if (val && val.col != null && val.start_row) {
+                restored[key] = { row: val.start_row - 1, col: val.col };
+              }
+            });
+            setMetricCells(restored);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [name]);
 
   const loadSheet = async (tab) => {
     setLoading(true);
@@ -267,9 +182,12 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
 
   if (!open) {
     return (
-      <button onClick={() => { setOpen(true); loadSheet(); }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>
-        Configure Advertiser Sheet
-      </button>
+      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => { setOpen(true); if (!rows.length) loadSheet(selectedTab || undefined); }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          {existingConfig ? "Edit Sheet Configuration" : "Configure Advertiser Sheet"}
+        </button>
+        {existingConfig && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Configured — {Object.keys(existingConfig.mapping?.metrics || {}).length || 1} metric(s) mapped</span>}
+      </div>
     );
   }
 
@@ -397,8 +315,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [submitting, setSubmitting] = useState(false);
   const [advUrls, setAdvUrls] = useState([]);
   const [pubUrls, setPubUrls] = useState([]);
-  const [pubMappingExists, setPubMappingExists] = useState(true);
-  const [advMappingExists, setAdvMappingExists] = useState(true);
 
   // Auto-populate URLs from sheet_urls table + check mappings
   useEffect(() => {
@@ -414,25 +330,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         const urls = d.urls || [];
         setPubUrls(urls);
         if (urls.length === 1) setPubDataUrl(urls[0].url);
-      }).catch(() => {});
-    }
-    // Check if mappings or known URLs exist (either means no mapper needed)
-    if (campaign.publisher_name) {
-      Promise.all([
-        getColumnMappings(campaign.publisher_name, "publisher"),
-        getSheetUrls("publisher", campaign.publisher_name),
-      ]).then(([mRes, uRes]) => {
-        const hasMappingOrUrl = (mRes.mappings && mRes.mappings.length > 0) || (uRes.urls && uRes.urls.length > 0);
-        setPubMappingExists(hasMappingOrUrl);
-      }).catch(() => {});
-    }
-    if (campaign.advertiser_name) {
-      Promise.all([
-        getColumnMappings(campaign.advertiser_name, "advertiser"),
-        getSheetUrls("advertiser", campaign.advertiser_name),
-      ]).then(([mRes, uRes]) => {
-        const hasMappingOrUrl = (mRes.mappings && mRes.mappings.length > 0) || (uRes.urls && uRes.urls.length > 0);
-        setAdvMappingExists(hasMappingOrUrl);
       }).catch(() => {});
     }
   }, [campaign.campaign_id]);
@@ -526,7 +423,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           sheetUrl={advDataUrl}
           name={campaign.advertiser_name}
           metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
-          onSaved={() => setAdvMappingExists(true)}
+          onSaved={() => {}}
         />
       )}
 
