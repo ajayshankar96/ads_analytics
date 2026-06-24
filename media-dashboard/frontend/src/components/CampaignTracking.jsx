@@ -520,8 +520,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         </div>
       </div>
 
-      {/* Visual picker for advertiser sheet — shows only when metrics are selected */}
-      {advDataUrl && advMetrics.length > 0 && !advMappingExists && (
+      {/* Visual picker for advertiser sheet — shows when metrics are selected */}
+      {advDataUrl && advMetrics.length > 0 && (
         <VisualSheetPicker
           sheetUrl={advDataUrl}
           name={campaign.advertiser_name}
