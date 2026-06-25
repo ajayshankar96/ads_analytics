@@ -17,24 +17,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "rmn_billing_config",
-        sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("campaign_id", sa.String(32), nullable=False, index=True),
-        sa.Column("side", sa.String(16), nullable=False),
-        sa.Column("billing_model", sa.String(16), nullable=False),
-        sa.Column("rate", sa.Float, nullable=False),
-        sa.Column("start_date", sa.Date, nullable=False),
-        sa.Column("end_date", sa.Date, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("created_by", sa.String(255), nullable=True),
-    )
-    op.create_index(
-        "uq_billing_campaign_side_start",
-        "rmn_billing_config",
-        ["campaign_id", "side", "start_date"],
-        unique=True,
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS rmn_billing_config (
+            id BIGSERIAL PRIMARY KEY,
+            campaign_id VARCHAR(32) NOT NULL,
+            side VARCHAR(16) NOT NULL,
+            billing_model VARCHAR(16) NOT NULL,
+            rate FLOAT NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            created_by VARCHAR(255)
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_billing_campaign_id ON rmn_billing_config (campaign_id)")
+    op.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_billing_campaign_side_start ON rmn_billing_config (campaign_id, side, start_date)")
 
 
 def downgrade() -> None:
