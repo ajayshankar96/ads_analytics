@@ -1463,8 +1463,26 @@ async def workflow_update_assets(campaign_id: str, request: Request, db: AsyncSe
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
     payload = await request.json()
-    campaign = await repo.update_campaign_assets(db, campaign, payload)
-    return {"success": True, "campaign": repo.campaign_dict(campaign)}
+    user_email = getattr(request.state, "user_email", None) or payload.pop("changed_by", None)
+    campaign, changes = await repo.update_campaign_assets(db, campaign, payload, changed_by=user_email)
+    return {"success": True, "campaign": repo.campaign_dict(campaign), "changes": changes}
+
+
+@app.get("/api/workflow/campaigns/{campaign_id}/changelog")
+async def workflow_get_changelog(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    rows = (await db.execute(
+        select(models.CampaignChangelog)
+        .where(models.CampaignChangelog.campaign_id == campaign_id)
+        .order_by(models.CampaignChangelog.changed_at.desc())
+        .limit(100)
+    )).scalars().all()
+    return {"entries": [
+        {"id": r.id, "field": r.field_name, "old_value": r.old_value,
+         "new_value": r.new_value, "changed_by": r.changed_by,
+         "changed_at": r.changed_at.isoformat() if r.changed_at else None}
+        for r in rows
+    ]}
 
 
 class NotLiveRequest(BaseModel):

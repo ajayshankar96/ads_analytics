@@ -200,6 +200,9 @@ export const createCampaign = (payload) =>
 export const cloneCampaign = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/clone`, { method: "POST" });
 
+export const getCampaignChangelog = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/changelog`);
+
 export const updateCampaignAssets = (campaignId, payload) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/assets`, {
     method: "PATCH",

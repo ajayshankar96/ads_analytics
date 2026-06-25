@@ -307,14 +307,27 @@ _ASSET_FIELDS = [
 ]
 
 
-async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, payload: Dict[str, Any]) -> models.Campaign:
+async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, payload: Dict[str, Any], changed_by: str = None) -> tuple:
+    """Update campaign assets and log changes. Returns (campaign, changes_list)."""
+    changes = []
     for f in _ASSET_FIELDS:
         if f in payload:
+            old_val = getattr(campaign, f, None) or ""
+            new_val = payload[f] or ""
+            if str(old_val) != str(new_val):
+                changes.append({"field": f, "old": old_val, "new": new_val})
+                db.add(models.CampaignChangelog(
+                    campaign_id=campaign.id,
+                    field_name=f,
+                    old_value=str(old_val) if old_val else None,
+                    new_value=str(new_val) if new_val else None,
+                    changed_by=changed_by,
+                ))
             setattr(campaign, f, payload[f] or None)
     campaign.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(campaign)
-    return campaign
+    return campaign, changes
 
 
 async def record_publisher_email(db: AsyncSession, campaign: models.Campaign, *, to: str, subject: str, body: str,

@@ -255,6 +255,18 @@ class BillingConfig(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(255), default=None)
 
 
+class CampaignChangelog(Base):
+    __tablename__ = "rmn_campaign_changelog"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(String(32), index=True)
+    field_name: Mapped[str] = mapped_column(String(64))
+    old_value: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    changed_by: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ColumnMapping(Base):
     __tablename__ = "rmn_column_mappings"
 

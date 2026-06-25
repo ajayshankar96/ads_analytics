@@ -9,11 +9,11 @@ import {
   recordPublisherEmail,
   uploadCampaignAsset,
   createCampaign,
-  cloneCampaign,
   getAdvertisers,
   getPublishers,
   markNotLive,
   getAllAllocationsForMonth,
+  getCampaignChangelog,
 } from "../api";
 import { useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml, getLatestMessageId, getRfcMessageId } from "../lib/gmail";
 
@@ -222,9 +222,40 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
 
   const handleSave = async () => {
     setSaving(true);
-    try { await updateCampaignAssets(campaign.campaign_id, assets); }
+    try {
+      const res = await updateCampaignAssets(campaign.campaign_id, assets);
+      if (stage === "LIVE" && res.changes && res.changes.length > 0) {
+        setLastChanges(res.changes);
+        setShowUpdateEmailPrompt(true);
+      }
+    }
     catch (e) { alert("Save failed: " + e.message); }
     finally { setSaving(false); }
+  };
+
+  const handleSendUpdateEmail = async () => {
+    try {
+      const token = await getGmailAccessToken();
+      const threadId = campaign.publisher_email_thread_id || undefined;
+      let inReplyTo = threadId ? await getLatestMessageId(token, threadId) : null;
+      if (!inReplyTo) inReplyTo = campaign.publisher_email_message_id || undefined;
+      const changeLines = lastChanges.map((ch) => `• ${ch.field}: ${ch.old || "(empty)"} → ${ch.new}`).join("\n");
+      const body = `Hi,\n\nPlease note the following updates to campaign ${campaign.advertiser_name} → ${campaign.publisher_name}:\n\n${changeLines}\n\nThank you,\nRMN Team`;
+      const subject = threadId || inReplyTo ? `Re: ${campaign.publisher_email_subject || "Campaign Update"}` : `Campaign Update: ${campaign.advertiser_name}`;
+      const to = (campaign.publisher_email_to || "").split(",").map((x) => x.trim()).filter(Boolean);
+      if (!to.length) { alert("No publisher email on file"); setShowUpdateEmailPrompt(false); return; }
+      await sendViaGmail(token, { to, subject, html: textToHtml(body), threadId, inReplyTo });
+      alert("Update email sent!");
+    } catch (e) { alert("Email failed: " + e.message); }
+    setShowUpdateEmailPrompt(false);
+    setLastChanges([]);
+  };
+
+  const loadChangelog = async () => {
+    try {
+      const res = await getCampaignChangelog(campaign.campaign_id);
+      setChangelog(res.entries || []);
+    } catch { setChangelog([]); }
   };
 
   const handleMarkAssetsReceived = async () => {
@@ -274,15 +305,12 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
     } catch (e) { alert("Failed: " + e.message); }
   };
 
-  const handleClone = async () => {
-    try {
-      const res = await cloneCampaign(campaign.campaign_id);
-      alert(`New draft created: ${res.campaign.campaign_id}\nAll fields pre-filled from ${campaign.campaign_id}. Find it in the Draft column.`);
-      onReload();
-    } catch (e) { alert("Clone failed: " + e.message); }
-  };
+  const [changelog, setChangelog] = useState([]);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [showUpdateEmailPrompt, setShowUpdateEmailPrompt] = useState(false);
+  const [lastChanges, setLastChanges] = useState([]);
 
-  const isAssetStage = stage === "OPS_SETUP";
+  const isAssetStage = stage === "OPS_SETUP" || stage === "LIVE";
   const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
   const isLive = stage === "LIVE";
 
@@ -306,15 +334,13 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
           </button>
         )}
         {isLive && canEdit && (
-          <button onClick={handleClone} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-            + Edit (New Version)
-          </button>
+          <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Edit fields directly below ↓</span>
         )}
       </div>
 
       {/* Assets list */}
       <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 10 }}>
-        Assets {isAssetStage ? "· Fill all fields" : "· Received"}
+        Assets {stage === "OPS_SETUP" ? "· Fill all fields" : stage === "LIVE" ? "· Edit directly" : "· Received"}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
         {ASSET_FIELDS.filter((f) => f.type !== "hidden" && f.type !== "codes").map((f) => {
@@ -368,14 +394,16 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
           <button onClick={handleSave} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             {saving ? "Saving…" : "Save Assets"}
           </button>
-          <button onClick={handleMarkAssetsReceived} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            Mark Assets Received & Draft Email →
-          </button>
+          {stage === "OPS_SETUP" && (
+            <button onClick={handleMarkAssetsReceived} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Mark Assets Received & Draft Email →
+            </button>
+          )}
         </div>
       )}
 
       {/* Email compose */}
-      {(showEmail || (isAssetStage && emailSent)) && !isEmailedStage && (
+      {(showEmail || (stage === "OPS_SETUP" && emailSent)) && !isEmailedStage && !isLive && (
         <div style={{ background: "#F0F4FF", borderRadius: 10, padding: "16px", marginTop: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: c.ink, marginBottom: 12 }}>Send to Publisher</div>
           <div style={{ marginBottom: 8 }}>
@@ -419,6 +447,52 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
         <div style={{ background: "#E3F6EE", borderRadius: 8, padding: "12px 14px", marginTop: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: c.green }}>✉️ Email sent to publisher</div>
           <div style={{ fontSize: 12, color: c.sub, marginTop: 3 }}>To: {campaign.publisher_email_to} · {new Date(campaign.publisher_email_sent_at).toLocaleString("en-IN")}</div>
+        </div>
+      )}
+
+      {/* Update email prompt (LIVE edits) */}
+      {showUpdateEmailPrompt && (
+        <div style={{ background: "#FFF8E1", borderRadius: 8, padding: "14px", marginTop: 16, border: "1px solid #FFE082" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 8 }}>Changes saved! Send update email to publisher?</div>
+          <div style={{ fontSize: 12, color: c.sub, marginBottom: 10 }}>
+            {lastChanges.map((ch, i) => <div key={i}>• {ch.field}: {ch.old || "(empty)"} → {ch.new}</div>)}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSendUpdateEmail} disabled={!gisReady}
+              style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              Yes, send email
+            </button>
+            <button onClick={() => { setShowUpdateEmailPrompt(false); setLastChanges([]); }}
+              style={{ background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              No, just save
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Change History */}
+      {isLive && (
+        <div style={{ marginTop: 24 }}>
+          <button onClick={() => { setShowChangelog(!showChangelog); if (!showChangelog) loadChangelog(); }}
+            style={{ background: "none", border: "none", color: c.blue, cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 }}>
+            {showChangelog ? "▾ Hide Change History" : "▸ Change History"}
+          </button>
+          {showChangelog && (
+            <div style={{ marginTop: 10, maxHeight: 300, overflowY: "auto" }}>
+              {changelog.length === 0 && <div style={{ fontSize: 12, color: c.muted }}>No changes logged yet.</div>}
+              {changelog.map((entry) => (
+                <div key={entry.id} style={{ padding: "8px 0", borderBottom: `1px solid ${c.line}`, fontSize: 12 }}>
+                  <span style={{ color: c.muted }}>{new Date(entry.changed_at).toLocaleString("en-IN")}</span>
+                  {" — "}
+                  <span style={{ color: c.ink, fontWeight: 600 }}>{(entry.changed_by || "").split("@")[0]}</span>
+                  {" changed "}
+                  <span style={{ fontWeight: 600 }}>{entry.field}</span>
+                  {entry.old_value && <span style={{ color: c.red }}> from "{entry.old_value.substring(0, 40)}"</span>}
+                  <span style={{ color: c.green }}> to "{(entry.new_value || "").substring(0, 40)}"</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
