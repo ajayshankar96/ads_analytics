@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, getSheetPreview, getColumnMappings, saveColumnMapping } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, getSheetPreview, getColumnMappings, saveColumnMapping, getBillingConfig, addBillingConfig } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -56,6 +56,7 @@ function CampaignDetail({ campaign, segments, canEdit, onReload }) {
   const tabs = [
     { id: "setup", label: "Setup" },
     { id: "sync", label: "Data Sync" },
+    { id: "billing", label: "Billing" },
     { id: "attribution", label: "Attribution" },
   ];
 
@@ -75,6 +76,7 @@ function CampaignDetail({ campaign, segments, canEdit, onReload }) {
 
       {activeTab === "setup" && <SetupTab campaign={campaign} segments={segments} canEdit={canEdit} onReload={onReload} />}
       {activeTab === "sync" && <SyncTab campaign={campaign} canEdit={canEdit} />}
+      {activeTab === "billing" && <BillingTab campaign={campaign} canEdit={canEdit} />}
       {activeTab === "attribution" && <AttributionTab campaign={campaign} />}
     </div>
   );
@@ -461,6 +463,127 @@ function SyncTab({ campaign, canEdit }) {
       </div>
       {syncResult && <div style={{ fontSize: 12, color: syncResult.error ? c.red : c.green, marginBottom: 10 }}>{syncResult.error ? `Error: ${syncResult.error}` : `✓ Synced ${syncResult.rows} rows`}</div>}
       <div style={{ fontSize: 12, color: c.muted }}>Data is automatically synced every 6 hours via scheduled job.</div>
+    </div>
+  );
+}
+
+// ── Billing Tab ─────────────────────────────────────────────────────────────
+const BILLING_MODELS = [
+  { value: "cpc", label: "CPC (Cost Per Click)" },
+  { value: "cpd", label: "CPD (Cost Per Day)" },
+  { value: "cpm", label: "CPM (Cost Per Mille)" },
+  { value: "roas", label: "ROAS (Return On Ad Spend)" },
+];
+
+function BillingTab({ campaign, canEdit }) {
+  const [configs, setConfigs] = useState([]);
+  const [spends, setSpends] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(null); // 'publisher' or 'advertiser'
+  const [formModel, setFormModel] = useState("cpc");
+  const [formRate, setFormRate] = useState("");
+  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    try {
+      const data = await getBillingConfig(campaign.campaign_id);
+      setConfigs(data.configs || []);
+      setSpends(data.spends || null);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [campaign.campaign_id]);
+
+  const handleSave = async () => {
+    if (!formRate || !showForm) return;
+    setSaving(true);
+    try {
+      await addBillingConfig(campaign.campaign_id, { side: showForm, billing_model: formModel, rate: parseFloat(formRate), start_date: formDate });
+      setShowForm(null); setFormRate(""); setFormModel("cpc");
+      await load();
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const fmtCurrency = (v) => {
+    if (!v && v !== 0) return "—";
+    return "₹" + Number(v).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  };
+
+  if (loading) return <div style={{ padding: 20, color: c.muted }}>Loading billing config…</div>;
+
+  const pubConfigs = configs.filter((x) => x.side === "publisher");
+  const advConfigs = configs.filter((x) => x.side === "advertiser");
+
+  const ConfigTable = ({ title, rows, side }) => (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 700, color: c.ink, margin: 0 }}>{title}</h4>
+        {canEdit && <button onClick={() => { setShowForm(side); setFormModel("cpc"); setFormRate(""); setFormDate(new Date().toISOString().split("T")[0]); }} style={{ fontSize: 11, fontWeight: 600, color: c.blue, background: "none", border: `1px solid ${c.blue}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>+ Add / Change</button>}
+      </div>
+      {rows.length === 0 && <div style={{ fontSize: 12, color: c.muted, padding: "10px 0" }}>No billing config set yet.</div>}
+      {rows.length > 0 && (
+        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${c.line}` }}>
+              <th style={{ textAlign: "left", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>Model</th>
+              <th style={{ textAlign: "right", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>Rate (₹)</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>From</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>To</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} style={{ borderBottom: `1px solid ${c.line}` }}>
+                <td style={{ padding: "7px 8px", fontWeight: 600 }}>{r.billing_model.toUpperCase()}</td>
+                <td style={{ padding: "7px 8px", textAlign: "right" }}>{r.rate}</td>
+                <td style={{ padding: "7px 8px" }}>{r.start_date}</td>
+                <td style={{ padding: "7px 8px", color: r.end_date ? c.ink : c.green }}>{r.end_date || "Active"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {showForm === side && (
+        <div style={{ background: c.bg, borderRadius: 8, padding: 14, marginTop: 8, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div>
+            <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Model</label>
+            <select value={formModel} onChange={(e) => setFormModel(e.target.value)} style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12 }}>
+              {BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Rate</label>
+            <input type="number" step="0.01" value={formRate} onChange={(e) => setFormRate(e.target.value)} placeholder="e.g. 5.00" style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12, width: 90 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Effective From</label>
+            <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12 }} />
+          </div>
+          <button onClick={handleSave} disabled={saving} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "Saving…" : "Save"}</button>
+          <button onClick={() => setShowForm(null)} style={{ background: "none", border: "none", color: c.muted, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      <ConfigTable title="Publisher Billing" rows={pubConfigs} side="publisher" />
+      <ConfigTable title="Advertiser Billing" rows={advConfigs} side="advertiser" />
+
+      {spends && (spends.publisher > 0 || spends.advertiser > 0) && (
+        <div style={{ background: c.bg, borderRadius: 10, padding: 16, marginTop: 10 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: c.ink, margin: "0 0 10px" }}>Calculated Spends (last 30 days)</h4>
+          <div style={{ display: "flex", gap: 24, fontSize: 13 }}>
+            <div><span style={{ color: c.muted }}>Publisher:</span> <b>{fmtCurrency(spends.publisher)}</b></div>
+            <div><span style={{ color: c.muted }}>Advertiser:</span> <b>{fmtCurrency(spends.advertiser)}</b></div>
+            <div><span style={{ color: c.muted }}>Margin:</span> <b style={{ color: spends.margin >= 0 ? c.green : c.red }}>{fmtCurrency(spends.margin)} ({spends.margin_pct}%)</b></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

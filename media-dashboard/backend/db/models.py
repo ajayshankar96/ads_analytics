@@ -241,6 +241,20 @@ class CampaignMetric(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BillingConfig(Base):
+    __tablename__ = "rmn_billing_config"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(String(32), index=True)
+    side: Mapped[str] = mapped_column(String(16))
+    billing_model: Mapped[str] = mapped_column(String(16))
+    rate: Mapped[float] = mapped_column(Float)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+
+
 class ColumnMapping(Base):
     __tablename__ = "rmn_column_mappings"
 

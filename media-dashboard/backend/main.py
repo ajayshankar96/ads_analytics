@@ -78,6 +78,7 @@ from reporting_logic import (
 import workflow_logic as wf
 import workflow_repo as repo
 from db.database import get_db, engine
+from db import models
 from auth import AuthMiddleware, auth_enabled, is_admin, router as auth_router
 from sqlalchemy import func, select, text
 
@@ -1672,6 +1673,115 @@ async def get_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_
             for r in rows[:60]  # last 60 days
         ],
     }
+
+
+@app.get("/api/workflow/campaigns/{campaign_id}/billing")
+async def get_billing_config(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    """Get billing config + computed spends for a campaign."""
+    result = await db.execute(
+        select(models.BillingConfig)
+        .where(models.BillingConfig.campaign_id == campaign_id)
+        .order_by(models.BillingConfig.side, models.BillingConfig.start_date.desc())
+    )
+    configs = result.scalars().all()
+
+    # Compute spends from metrics + billing config
+    from datetime import date as dt_date, timedelta
+    thirty_days_ago = dt_date.today() - timedelta(days=30)
+    metrics_result = await db.execute(
+        select(models.CampaignMetric)
+        .where(models.CampaignMetric.campaign_id == campaign_id)
+        .where(models.CampaignMetric.date >= thirty_days_ago)
+    )
+    metric_rows = metrics_result.scalars().all()
+
+    pub_total = 0.0
+    adv_total = 0.0
+    for m in metric_rows:
+        for cfg in configs:
+            if cfg.side == "publisher" and cfg.start_date <= m.date and (cfg.end_date is None or cfg.end_date >= m.date):
+                if cfg.billing_model == "cpc":
+                    pub_total += cfg.rate * (m.clicks or 0)
+                elif cfg.billing_model == "cpd":
+                    pub_total += cfg.rate
+                elif cfg.billing_model == "cpm":
+                    pub_total += cfg.rate * (m.impressions or 0) / 1000.0
+                elif cfg.billing_model == "roas":
+                    adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
+                    revenue = float(adv_metrics.get("revenue", adv_metrics.get("Revenue", 0)))
+                    pub_total += revenue / cfg.rate if cfg.rate else 0
+                break
+        for cfg in configs:
+            if cfg.side == "advertiser" and cfg.start_date <= m.date and (cfg.end_date is None or cfg.end_date >= m.date):
+                if cfg.billing_model == "cpc":
+                    adv_total += cfg.rate * (m.clicks or 0)
+                elif cfg.billing_model == "cpd":
+                    adv_total += cfg.rate
+                elif cfg.billing_model == "cpm":
+                    adv_total += cfg.rate * (m.impressions or 0) / 1000.0
+                elif cfg.billing_model == "roas":
+                    adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
+                    revenue = float(adv_metrics.get("revenue", adv_metrics.get("Revenue", 0)))
+                    adv_total += revenue / cfg.rate if cfg.rate else 0
+                break
+
+    return {
+        "configs": [
+            {
+                "id": c.id, "campaign_id": c.campaign_id, "side": c.side,
+                "billing_model": c.billing_model, "rate": c.rate,
+                "start_date": c.start_date.isoformat(), "end_date": c.end_date.isoformat() if c.end_date else None,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "created_by": c.created_by,
+            }
+            for c in configs
+        ],
+        "spends": {
+            "publisher": round(pub_total, 2),
+            "advertiser": round(adv_total, 2),
+            "margin": round(adv_total - pub_total, 2),
+            "margin_pct": round((adv_total - pub_total) / adv_total * 100, 1) if adv_total > 0 else 0,
+        },
+    }
+
+
+class BillingConfigRequest(BaseModel):
+    side: str
+    billing_model: str
+    rate: float
+    start_date: str
+
+
+@app.post("/api/workflow/campaigns/{campaign_id}/billing")
+async def add_billing_config(campaign_id: str, req: BillingConfigRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """Add or change billing config for a campaign side."""
+    from datetime import date as dt_date, timedelta
+    new_start = dt_date.fromisoformat(req.start_date)
+    user_email = getattr(request.state, "user_email", None)
+
+    # Close any open config for this side that starts before the new one
+    result = await db.execute(
+        select(models.BillingConfig)
+        .where(models.BillingConfig.campaign_id == campaign_id)
+        .where(models.BillingConfig.side == req.side)
+        .where(models.BillingConfig.end_date.is_(None))
+    )
+    open_configs = result.scalars().all()
+    for oc in open_configs:
+        if oc.start_date < new_start:
+            oc.end_date = new_start - timedelta(days=1)
+
+    new_config = models.BillingConfig(
+        campaign_id=campaign_id,
+        side=req.side,
+        billing_model=req.billing_model,
+        rate=req.rate,
+        start_date=new_start,
+        created_by=user_email,
+    )
+    db.add(new_config)
+    await db.commit()
+    return {"success": True}
 
 
 @app.get("/api/sheet-headers")

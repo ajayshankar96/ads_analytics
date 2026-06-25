@@ -289,6 +289,12 @@ export const syncAllCampaigns = () =>
 export const getCampaignMetrics = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/metrics`);
 
+export const getBillingConfig = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/billing`);
+
+export const addBillingConfig = (campaignId, data) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/billing`, { method: "POST", body: JSON.stringify(data) });
+
 export const markNotLive = (campaignId, reason) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/not-live`, {
     method: "POST",
