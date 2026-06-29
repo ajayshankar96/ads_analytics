@@ -346,6 +346,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const handleSubmit = async () => {
     if (!pubDataUrl.trim()) { alert("Publisher Data Sheet URL is required"); return; }
     if (advMetrics.length === 0) { alert("Select at least one advertiser metric"); return; }
+    if (!segmentPub.trim()) { alert("Segment (Publisher) is required"); return; }
+    if (!segmentAdv.trim()) { alert("Segment (Advertiser) is required"); return; }
     setSubmitting(true);
     // Build metrics_library from UI state
     const libObj = {};
@@ -406,7 +408,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           )}
           {pubDataUrl && <a href={pubDataUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: c.blue, marginTop: 3, display: "inline-block" }}>Open sheet ↗</a>}
         </div>
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><select style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)}><option value="">Select…</option>{segments.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)} placeholder="e.g. Razorpay_Boat" /></div>
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
       </div>
 
