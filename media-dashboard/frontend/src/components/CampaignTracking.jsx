@@ -314,13 +314,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const existingMetrics = (() => { try { return JSON.parse(campaign.metrics_json || "{}"); } catch { return {}; } })();
   const [pubMetrics, setPubMetrics] = useState(existingMetrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
   const [advMetrics, setAdvMetrics] = useState(existingMetrics.advertiser_metrics || []);
-  // Metrics library (computed metrics)
-  const [metricsLibrary, setMetricsLibrary] = useState(() => {
-    const lib = existingMetrics.metrics_library || {};
-    return Object.entries(lib).map(([id, def]) => ({ id, name: def.display_name, calculation: def.calculation || "" }));
-  });
-  const [newMetricName, setNewMetricName] = useState("");
-  const [newMetricCalc, setNewMetricCalc] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [advUrls, setAdvUrls] = useState([]);
   const [pubUrls, setPubUrls] = useState([]);
@@ -349,12 +342,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     if (!segmentPub.trim()) { alert("Segment (Publisher) is required"); return; }
     if (!segmentAdv.trim()) { alert("Segment (Advertiser) is required"); return; }
     setSubmitting(true);
-    // Build metrics_library from UI state
-    const libObj = {};
-    metricsLibrary.forEach((m, i) => { libObj[String(i + 1)] = { display_name: m.name, calculation: m.calculation }; });
     const metricsPayload = JSON.stringify({
       publisher_metrics: pubMetrics, advertiser_metrics: advMetrics,
-      metrics_library: libObj,
     });
     try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, metrics_json: metricsPayload, additional_context: "" }); onReload(); }
     catch (e) { alert("Failed: " + e.message); }
@@ -434,34 +423,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         </div>
       </div>
 
-      {/* Computed Metrics Library */}
-      <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Computed Metrics (Metrics Library)</div>
-        {metricsLibrary.length > 0 && (
-          <div style={{ marginBottom: 10 }}>
-            {metricsLibrary.map((m, idx) => (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: c.ink, minWidth: 80 }}>{m.name}</span>
-                <span style={{ fontSize: 12, color: c.muted }}>=</span>
-                <span style={{ fontSize: 12, color: c.sub, fontFamily: "monospace" }}>{m.calculation}</span>
-                <button onClick={() => setMetricsLibrary((prev) => prev.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: c.red, fontSize: 14, cursor: "pointer", padding: 0 }}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <div>
-            <label style={{ fontSize: 10, color: c.muted, display: "block", marginBottom: 2 }}>Name</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "6px 8px", fontSize: 12, width: 80 }} value={newMetricName} onChange={(e) => setNewMetricName(e.target.value)} placeholder="CPL" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 10, color: c.muted, display: "block", marginBottom: 2 }}>Formula</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "6px 8px", fontSize: 12, width: "100%", fontFamily: "monospace" }} value={newMetricCalc} onChange={(e) => setNewMetricCalc(e.target.value)} placeholder="Spends / Leads" />
-          </div>
-          <button onClick={() => { if (newMetricName && newMetricCalc) { setMetricsLibrary((prev) => [...prev, { id: String(prev.length + 1), name: newMetricName, calculation: newMetricCalc }]); setNewMetricName(""); setNewMetricCalc(""); } }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Add</button>
-        </div>
-        <div style={{ fontSize: 10, color: c.muted, marginTop: 6 }}>e.g., CPL = Spends / Leads, CPA = Advertiser_Spends / Orders</div>
-      </div>
 
       {/* Visual picker for advertiser sheet — shows when metrics are selected */}
       {advDataUrl && advMetrics.length > 0 && (

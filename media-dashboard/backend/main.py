@@ -1723,7 +1723,7 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
 
     pub_formula, adv_formula = etl_worker._resolve_spend_formulas(buy_type, rate)
     metrics_config = json.loads(campaign.metrics_json or '{}')
-    metrics_lib = metrics_config.get('metrics_library', {})
+    adv_metric_names = metrics_config.get('advertiser_metrics', [])
 
     result = await db.execute(
         select(models.CampaignMetric).where(models.CampaignMetric.campaign_id == campaign_id)
@@ -1751,9 +1751,8 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
         new_adv = etl_worker._evaluate_formula(adv_formula, row_data) if adv_formula else 0.0
         row_data['Publisher_Spends'] = new_pub
         row_data['Advertiser_Spends'] = new_adv
-        computed = etl_worker._compute_advertiser_metrics(metrics_lib, row_data) if metrics_lib else {}
-        if computed:
-            adv_metrics.update(computed)
+        computed = etl_worker._compute_advertiser_metrics(adv_metric_names, row_data)
+        adv_metrics.update(computed)
 
         m.publisher_spends = new_pub
         m.advertiser_spends = new_adv

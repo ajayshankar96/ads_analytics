@@ -182,13 +182,30 @@ def _resolve_spend_formulas(buy_type: str, rate: float) -> tuple:
     return pub_formula, adv_formula
 
 
-def _compute_advertiser_metrics(metrics_lib: Dict, row_data: Dict[str, float], goals: Optional[Dict] = None) -> Dict[str, float]:
-    """Evaluate computed metrics from metrics_library (e.g., CPL = Spends/Leads)."""
+def _compute_advertiser_metrics(adv_metric_names: List[str], row_data: Dict[str, float]) -> Dict[str, float]:
+    """Auto-derive standard computed metrics based on which advertiser metrics are selected."""
     computed = {}
-    for metric_id, metric_def in sorted(metrics_lib.items()):
-        calc = metric_def.get('calculation', '')
-        if calc:
-            computed[metric_def['display_name']] = _evaluate_formula(calc, row_data, goals)
+    pub_spends = row_data.get('Publisher_Spends', row_data.get('Spends', 0))
+
+    if pub_spends > 0:
+        if 'leads' in adv_metric_names or row_data.get('Leads', 0) > 0:
+            leads = row_data.get('Leads', 0)
+            if leads > 0:
+                computed['CPL'] = round(pub_spends / leads, 2)
+        if 'orders' in adv_metric_names or row_data.get('Orders', 0) > 0:
+            orders = row_data.get('Orders', 0)
+            if orders > 0:
+                computed['CPA'] = round(pub_spends / orders, 2)
+        if 'sessions' in adv_metric_names or row_data.get('Sessions', 0) > 0:
+            sessions = row_data.get('Sessions', 0)
+            if sessions > 0:
+                computed['CPS'] = round(pub_spends / sessions, 2)
+
+    if 'revenue' in adv_metric_names or row_data.get('Revenue', 0) > 0:
+        revenue = row_data.get('Revenue', 0)
+        if revenue > 0 and pub_spends > 0:
+            computed['ROAS'] = round(revenue / pub_spends, 2)
+
     return computed
 
 
@@ -466,14 +483,8 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     except Exception:
         pass
 
-    metrics_lib = metrics_config.get('metrics_library', {})
-    direct_metrics = []
-    computed_metrics = []
-    for _, mdef in sorted(metrics_lib.items()):
-        if mdef.get('calculation'):
-            computed_metrics.append(mdef)
-        else:
-            direct_metrics.append(mdef['display_name'])
+    adv_metric_names = metrics_config.get('advertiser_metrics', [])
+    direct_metrics = adv_metric_names
 
     service = _get_service()
 
@@ -614,13 +625,12 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         else:
             adv_spends = 0.0
 
-        # Compute advertiser metrics from metrics_library (computed ones like CPL)
+        # Auto-compute standard metrics (CPL, CPA, ROAS etc.) based on selected advertiser metrics
         adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
-        if metrics_lib:
-            row_data['Publisher_Spends'] = pub_spends
-            row_data['Advertiser_Spends'] = adv_spends
-            computed = _compute_advertiser_metrics(metrics_lib, row_data)
-            adv_metrics_dict.update(computed)
+        row_data['Publisher_Spends'] = pub_spends
+        row_data['Advertiser_Spends'] = adv_spends
+        computed = _compute_advertiser_metrics(adv_metric_names, row_data)
+        adv_metrics_dict.update(computed)
 
         # Upsert to DB
         await db.execute(text("""
