@@ -314,24 +314,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const existingMetrics = (() => { try { return JSON.parse(campaign.metrics_json || "{}"); } catch { return {}; } })();
   const [pubMetrics, setPubMetrics] = useState(existingMetrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
   const [advMetrics, setAdvMetrics] = useState(existingMetrics.advertiser_metrics || []);
-  // Formula configuration
-  const [committedKpi, setCommittedKpi] = useState(existingMetrics.committed_kpi || "");
-  const [kpiFormula, setKpiFormula] = useState(existingMetrics.committed_kpi_config?.formula || "");
-  const [pubSpendFormula, setPubSpendFormula] = useState(existingMetrics.publisher_spends_calc || "");
-  const [advSpendFormula, setAdvSpendFormula] = useState(existingMetrics.advertiser_spends_calc || "");
-  // Goals (key-value pairs)
-  const existingGoals = (() => { try { return JSON.parse(campaign.goals_json || "{}"); } catch { return {}; } })();
-  const [goals, setGoals] = useState(() => {
-    const all = {};
-    for (const period of ['daily', 'monthly', 'date_agnostic']) {
-      const pg = existingGoals?.goals?.[period] || {};
-      Object.entries(pg).forEach(([k, v]) => { all[k] = { value: v, period }; });
-    }
-    return all;
-  });
-  const [newGoalName, setNewGoalName] = useState("");
-  const [newGoalValue, setNewGoalValue] = useState("");
-  const [newGoalPeriod, setNewGoalPeriod] = useState("daily");
   // Metrics library (computed metrics)
   const [metricsLibrary, setMetricsLibrary] = useState(() => {
     const lib = existingMetrics.metrics_library || {};
@@ -370,17 +352,9 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     metricsLibrary.forEach((m, i) => { libObj[String(i + 1)] = { display_name: m.name, calculation: m.calculation }; });
     const metricsPayload = JSON.stringify({
       publisher_metrics: pubMetrics, advertiser_metrics: advMetrics,
-      publisher_spends_calc: pubSpendFormula,
-      advertiser_spends_calc: advSpendFormula,
-      committed_kpi: committedKpi,
-      committed_kpi_config: committedKpi === "YES" ? { formula: kpiFormula } : {},
       metrics_library: libObj,
     });
-    // Build goals_json
-    const goalsObj = { goals: { daily: {}, monthly: {}, date_agnostic: {} } };
-    Object.entries(goals).forEach(([name, { value, period }]) => { goalsObj.goals[period][name] = parseFloat(value) || 0; });
-    const goalsPayload = JSON.stringify(goalsObj);
-    try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, goals_json: goalsPayload, metrics_json: metricsPayload, additional_context: "" }); onReload(); }
+    try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, metrics_json: metricsPayload, additional_context: "" }); onReload(); }
     catch (e) { alert("Failed: " + e.message); }
     finally { setSubmitting(false); }
   };
@@ -455,76 +429,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
               {m.label}
             </label>
           ))}
-        </div>
-      </div>
-
-      {/* Spend Formula Configuration */}
-      <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Spend Formulas</div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Committed KPI</label>
-          <div style={{ display: "flex", gap: 12 }}>
-            {["YES", "NO", ""].map((val) => (
-              <label key={val || "none"} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}>
-                <input type="radio" name="committed_kpi" checked={committedKpi === val} onChange={() => setCommittedKpi(val)} style={{ accentColor: c.blue }} />
-                {val || "None"}
-              </label>
-            ))}
-          </div>
-        </div>
-        {committedKpi === "YES" && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Committed KPI Formula</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", fontFamily: "monospace" }} value={kpiFormula} onChange={(e) => setKpiFormula(e.target.value)} placeholder="e.g. Clicks * CPC_Target" />
-            <div style={{ fontSize: 10, color: c.muted, marginTop: 3 }}>This overrides Publisher Spends formula when committed KPI = YES</div>
-          </div>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Publisher Spends Formula</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", fontFamily: "monospace" }} value={pubSpendFormula} onChange={(e) => setPubSpendFormula(e.target.value)} placeholder="e.g. Spends * 0.8" />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser Spends Formula</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", fontFamily: "monospace" }} value={advSpendFormula} onChange={(e) => setAdvSpendFormula(e.target.value)} placeholder="e.g. Spends / 1.2" />
-          </div>
-        </div>
-        <div style={{ fontSize: 10, color: c.muted, marginTop: 6 }}>Available variables: Spends, Clicks, Impressions, Distribution, Orders_pub, CTR, CPM, CPC + any goal names</div>
-      </div>
-
-      {/* Goals Configuration */}
-      <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Goals (injected into formulas)</div>
-        {Object.entries(goals).length > 0 && (
-          <div style={{ marginBottom: 10 }}>
-            {Object.entries(goals).map(([name, { value, period }]) => (
-              <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: c.ink, minWidth: 120 }}>{name}</span>
-                <span style={{ fontSize: 12, color: c.sub }}>= {value}</span>
-                <span style={{ fontSize: 10, color: c.muted, background: c.bg, padding: "2px 6px", borderRadius: 4 }}>{period}</span>
-                <button onClick={() => setGoals((prev) => { const next = { ...prev }; delete next[name]; return next; })} style={{ background: "none", border: "none", color: c.red, fontSize: 14, cursor: "pointer", padding: 0 }}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <div>
-            <label style={{ fontSize: 10, color: c.muted, display: "block", marginBottom: 2 }}>Name</label>
-            <input style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "6px 8px", fontSize: 12, width: 120 }} value={newGoalName} onChange={(e) => setNewGoalName(e.target.value)} placeholder="CPC_Target" />
-          </div>
-          <div>
-            <label style={{ fontSize: 10, color: c.muted, display: "block", marginBottom: 2 }}>Value</label>
-            <input type="number" step="0.01" style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "6px 8px", fontSize: 12, width: 80 }} value={newGoalValue} onChange={(e) => setNewGoalValue(e.target.value)} placeholder="5.0" />
-          </div>
-          <div>
-            <label style={{ fontSize: 10, color: c.muted, display: "block", marginBottom: 2 }}>Period</label>
-            <select style={{ border: `1px solid ${c.line}`, borderRadius: 5, padding: "6px 8px", fontSize: 12 }} value={newGoalPeriod} onChange={(e) => setNewGoalPeriod(e.target.value)}>
-              <option value="daily">Daily</option>
-              <option value="monthly">Monthly</option>
-              <option value="date_agnostic">Fixed</option>
-            </select>
-          </div>
-          <button onClick={() => { if (newGoalName && newGoalValue) { setGoals((prev) => ({ ...prev, [newGoalName]: { value: newGoalValue, period: newGoalPeriod } })); setNewGoalName(""); setNewGoalValue(""); } }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Add</button>
         </div>
       </div>
 

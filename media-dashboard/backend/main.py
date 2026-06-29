@@ -1698,16 +1698,32 @@ async def sync_all_endpoint(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/workflow/campaigns/{campaign_id}/recompute")
 async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_db)):
-    """Re-evaluate formulas on existing metric rows without re-syncing from sheets."""
+    """Re-evaluate formulas on existing metric rows without re-syncing from sheets.
+    Derives formulas from Agreement buy_type + Campaign cpc_cpd (sales/ops pipeline)."""
     import etl_worker
     campaign = await repo.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
 
+    # Derive formulas from sales/ops pipeline data
+    buy_type = ''
+    rate = 0.0
+    if campaign.agreement_id:
+        ag_result = await db.execute(
+            select(models.Agreement.buy_type).where(models.Agreement.id == campaign.agreement_id)
+        )
+        ag_row = ag_result.scalar()
+        if ag_row:
+            buy_type = ag_row
+    if campaign.cpc_cpd:
+        try:
+            rate = float(str(campaign.cpc_cpd).replace(',', '').strip())
+        except (ValueError, TypeError):
+            pass
+
+    pub_formula, adv_formula = etl_worker._resolve_spend_formulas(buy_type, rate)
     metrics_config = json.loads(campaign.metrics_json or '{}')
-    goals_config = json.loads(campaign.goals_json or '{}')
     metrics_lib = metrics_config.get('metrics_library', {})
-    pub_formula, adv_formula = etl_worker._resolve_spend_formulas(metrics_config)
 
     result = await db.execute(
         select(models.CampaignMetric).where(models.CampaignMetric.campaign_id == campaign_id)
@@ -1731,11 +1747,11 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
             except (ValueError, TypeError):
                 pass
 
-        new_pub = etl_worker._evaluate_formula(pub_formula, row_data, goals_config) if pub_formula else row_data['Spends']
-        new_adv = etl_worker._evaluate_formula(adv_formula, row_data, goals_config) if adv_formula else 0.0
+        new_pub = etl_worker._evaluate_formula(pub_formula, row_data) if pub_formula else row_data['Spends']
+        new_adv = etl_worker._evaluate_formula(adv_formula, row_data) if adv_formula else 0.0
         row_data['Publisher_Spends'] = new_pub
         row_data['Advertiser_Spends'] = new_adv
-        computed = etl_worker._compute_advertiser_metrics(metrics_lib, row_data, goals_config) if metrics_lib else {}
+        computed = etl_worker._compute_advertiser_metrics(metrics_lib, row_data) if metrics_lib else {}
         if computed:
             adv_metrics.update(computed)
 
@@ -1745,7 +1761,7 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
         updated += 1
 
     await db.commit()
-    return {"success": True, "rows_updated": updated}
+    return {"success": True, "recomputed": updated}
 
 
 @app.get("/api/workflow/campaigns/{campaign_id}/metrics")
@@ -1921,7 +1937,13 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
 
     # Build campaign_details JSON from existing asset fields
     import json
-    metrics_cfg = json.loads(req.metrics_json) if req.metrics_json else {}
+    # Derive buy_type from agreement for campaign_details
+    buy_type_str = ""
+    if campaign.agreement_id:
+        ag_result = await db.execute(
+            select(models.Agreement.buy_type).where(models.Agreement.id == campaign.agreement_id)
+        )
+        buy_type_str = ag_result.scalar() or ""
     campaign_details = json.dumps({
         "campaign_details": {
             "brand_name": campaign.advertiser_name or campaign.name or "",
@@ -1934,10 +1956,8 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
             "assets": {"creative_url": campaign.creative_url or "", "logo_url": campaign.logo_url or ""},
             "targeting": {"Segment_link": "", "Segment_Description": campaign.targeting or "", "Size": "", "Cohort_Name": ""},
             "budget_and_metrics": {
-                "publisher_spends_calc": metrics_cfg.get("publisher_spends_calc", ""),
-                "advertiser_spends_calc": metrics_cfg.get("advertiser_spends_calc", ""),
-                "committed_kpi": metrics_cfg.get("committed_kpi", ""),
-                "committed_kpi_config": metrics_cfg.get("committed_kpi_config", {}),
+                "buy_type": buy_type_str,
+                "rate": campaign.cpc_cpd or "",
                 "total_budget": 0,
             },
             "Rzp_cut": 0,

@@ -151,27 +151,32 @@ def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optio
         return 0.0
 
 
-def _resolve_spend_formulas(metrics_config: Dict) -> tuple:
-    """Returns (publisher_formula, advertiser_formula) applying committed_kpi logic."""
-    pub_calc = metrics_config.get('publisher_spends_calc', '')
-    adv_calc = metrics_config.get('advertiser_spends_calc', '')
-    committed_kpi = metrics_config.get('committed_kpi', '').upper()
-    kpi_formula = metrics_config.get('committed_kpi_config', {}).get('formula', '')
+def _resolve_spend_formulas(buy_type: str, rate: float) -> tuple:
+    """Derive (publisher_formula, advertiser_formula) from Agreement buy_type + campaign rate.
+    buy_type comes from sales pipeline (Agreement), rate from campaign ops (Campaign.cpc_cpd)."""
+    if not buy_type or not rate:
+        return '', ''
 
-    if committed_kpi == 'YES' and kpi_formula:
-        pub_formula = kpi_formula
-    elif committed_kpi == 'NO':
-        pub_formula = pub_calc or 'Spends'
-    else:
-        pub_formula = pub_calc
+    buy = buy_type.upper().replace(' ', '_')
+    rate_str = str(rate)
 
-    if adv_calc:
-        adv_formula = adv_calc
-    elif committed_kpi == 'YES' and kpi_formula:
-        adv_formula = kpi_formula
-    elif committed_kpi == 'NO':
-        adv_formula = 'Spends'
+    if buy in ('CPC', 'CPC_COMMIT'):
+        pub_formula = f'Clicks * {rate_str}'
+        adv_formula = f'Clicks * {rate_str}'
+    elif buy in ('CPM', 'CPM_COMMIT'):
+        pub_formula = f'Impressions * {rate_str} / 1000'
+        adv_formula = f'Impressions * {rate_str} / 1000'
+    elif buy in ('CPD', 'CPD_COMMIT'):
+        pub_formula = rate_str
+        adv_formula = rate_str
+    elif buy in ('CPA', 'CPA_COMMIT'):
+        pub_formula = f'Orders_pub * {rate_str}'
+        adv_formula = f'Orders_pub * {rate_str}'
+    elif buy in ('ROAS', 'ROAS_COMMIT'):
+        pub_formula = f'Revenue / {rate_str}'
+        adv_formula = f'Revenue / {rate_str}'
     else:
+        pub_formula = 'Spends'
         adv_formula = ''
 
     return pub_formula, adv_formula
@@ -536,16 +541,26 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     )
     logger.info(f"  Publisher records: {len(pub_records)}")
 
-    # Parse goals and formula config
-    goals_config = {}
-    try:
-        goals_config = json.loads(campaign.goals_json or '{}')
-    except Exception:
-        pass
+    # Derive spend formulas from Agreement buy_type + Campaign rate (from sales/ops pipeline)
+    buy_type = ''
+    rate = 0.0
+    if campaign.agreement_id:
+        agreement_row = await db.execute(
+            text("SELECT buy_type FROM rmn_agreements WHERE id = :id"),
+            {"id": campaign.agreement_id}
+        )
+        ag = agreement_row.fetchone()
+        if ag:
+            buy_type = ag[0] or ''
+    if campaign.cpc_cpd:
+        try:
+            rate = float(str(campaign.cpc_cpd).replace(',', '').strip())
+        except (ValueError, TypeError):
+            pass
 
-    pub_formula, adv_formula = _resolve_spend_formulas(metrics_config)
+    pub_formula, adv_formula = _resolve_spend_formulas(buy_type, rate)
     if pub_formula:
-        logger.info(f"  Publisher spends formula: {pub_formula}")
+        logger.info(f"  Publisher spends formula: {pub_formula} (buy_type={buy_type}, rate={rate})")
     if adv_formula:
         logger.info(f"  Advertiser spends formula: {adv_formula}")
 
@@ -588,14 +603,14 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             if k != 'Date':
                 row_data[k] = _safe_float(v)
 
-        # Evaluate spend formulas
+        # Evaluate spend formulas (derived from buy_type + rate)
         if pub_formula:
-            pub_spends = _evaluate_formula(pub_formula, row_data, goals_config)
+            pub_spends = _evaluate_formula(pub_formula, row_data)
         else:
             pub_spends = row_data['Spends']
 
         if adv_formula:
-            adv_spends = _evaluate_formula(adv_formula, row_data, goals_config)
+            adv_spends = _evaluate_formula(adv_formula, row_data)
         else:
             adv_spends = 0.0
 
@@ -604,7 +619,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         if metrics_lib:
             row_data['Publisher_Spends'] = pub_spends
             row_data['Advertiser_Spends'] = adv_spends
-            computed = _compute_advertiser_metrics(metrics_lib, row_data, goals_config)
+            computed = _compute_advertiser_metrics(metrics_lib, row_data)
             adv_metrics_dict.update(computed)
 
         # Upsert to DB
