@@ -227,6 +227,103 @@ async def _load_column_mapping(db: AsyncSession, name: str, map_type: str) -> Op
     }
 
 
+def _extract_visual_format(service, sheet_url: str, sheet_id: str,
+                           col_mapping: Dict, segment_filter: str,
+                           is_publisher: bool, metric_names: List[str]) -> List[Dict]:
+    """Extract using visual format — direct column indices from the UI picker."""
+    records = []
+    mapping = col_mapping.get("mapping", {})
+    date_col = int(mapping.get("date_col_index", 0))
+    data_start = int(mapping.get("data_start_row", 1))
+    seg_col = mapping.get("segment_col_index")
+    if seg_col is not None:
+        seg_col = int(seg_col)
+    metrics_cfg = mapping.get("metrics", {})
+
+    tab_filter = col_mapping.get("tab_name", "")
+
+    try:
+        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
+
+        if tab_filter:
+            target_tabs = [t for t in tabs if tab_filter in t]
+        else:
+            target_tabs = [t for t in tabs if 'RZP' in t.upper()]
+        if not target_tabs:
+            target_tabs = tabs[:5]
+            logger.warning(f"Visual format: no matching tabs for '{tab_filter}', using {target_tabs}")
+
+        for tab_name in target_tabs:
+            year, month = _get_year_month_from_tab(tab_name)
+
+            try:
+                result = service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
+                ).execute()
+            except Exception as e:
+                if '429' in str(e):
+                    logger.warning("Rate limited, waiting 60s...")
+                    time.sleep(60)
+                    result = service.spreadsheets().values().get(
+                        spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
+                    ).execute()
+                else:
+                    logger.error(f"Error reading tab {tab_name}: {e}")
+                    continue
+
+            rows = result.get('values', [])
+            if len(rows) < data_start:
+                continue
+
+            data_rows = rows[data_start - 1:]
+            logger.info(f"  Visual format: tab={tab_name}, date_col={date_col}, data_start={data_start}, metrics={list(metrics_cfg.keys())}, rows={len(data_rows)}")
+
+            for row in data_rows:
+                if len(row) <= date_col or not row[date_col]:
+                    continue
+
+                # Segment filter
+                if seg_col is not None and segment_filter:
+                    seg_val = row[seg_col].strip() if len(row) > seg_col else ""
+                    if not _matches_segment(seg_val, segment_filter):
+                        continue
+
+                date_str = _parse_date_from_row(row[date_col].strip(), year, month)
+                if not date_str:
+                    continue
+
+                record = {'Date': date_str}
+
+                if is_publisher:
+                    # Map metric keys to standard publisher field names
+                    pub_metric_map = {
+                        'impressions': 'Impressions', 'distribution': 'Distribution',
+                        'clicks': 'Clicks', 'orders': 'Orders_pub', 'spends': 'Spends',
+                        'scratches': 'Scratches', 'coins_burned': 'Coins_Burned',
+                        'redirections': 'Redirections',
+                    }
+                    for metric_key, cfg in metrics_cfg.items():
+                        col_idx = int(cfg['col']) if isinstance(cfg, dict) else int(cfg)
+                        std_name = pub_metric_map.get(metric_key, metric_key.capitalize())
+                        record[std_name] = _safe_float(row[col_idx]) if len(row) > col_idx else 0
+                    # Ensure all standard publisher fields have a value
+                    for std in ['Impressions', 'Distribution', 'Clicks', 'Orders_pub', 'Spends', 'Scratches', 'Coins_Burned', 'Redirections']:
+                        if std not in record:
+                            record[std] = 0
+                else:
+                    for metric_key, cfg in metrics_cfg.items():
+                        col_idx = int(cfg['col']) if isinstance(cfg, dict) else int(cfg)
+                        record[metric_key.capitalize()] = _safe_float(row[col_idx]) if len(row) > col_idx else 0
+
+                records.append(record)
+
+    except Exception as e:
+        logger.error(f"Error extracting visual format from {sheet_url}: {e}")
+
+    return records
+
+
 def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                         offer_filter: str, metric_names: List[str],
                         is_publisher: bool, col_mapping: Optional[Dict] = None) -> List[Dict]:
@@ -239,6 +336,11 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
 
     sheet_id = match.group(1)
     records = []
+
+    # Handle "visual" format — direct column indices from visual picker
+    if col_mapping and col_mapping.get("format_type") == "visual":
+        return _extract_visual_format(service, sheet_url, sheet_id, col_mapping,
+                                      segment_filter, is_publisher, metric_names)
 
     try:
         meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
