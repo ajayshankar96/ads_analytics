@@ -113,19 +113,35 @@ def _matches_segment(row_segment: str, target_segments: str) -> bool:
     return False
 
 
-def _evaluate_formula(formula_str: str, row_data: Dict[str, float]) -> float:
+def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optional[Dict] = None) -> float:
     if not formula_str or not formula_str.strip():
         return 0.0
     try:
         eval_context = {}
+        text_columns = {'Advertiser', 'Publisher', 'Date', 'Segment', 'Brand', 'Offer'}
         for key, value in row_data.items():
+            if key in text_columns:
+                continue
             safe_key = key.replace(' ', '_').replace('-', '_')
             try:
                 eval_context[safe_key] = float(value) if value else 0.0
             except (ValueError, TypeError):
                 continue
+
+        if goals:
+            for period in ['daily', 'monthly', 'date_agnostic']:
+                period_goals = goals.get('goals', {}).get(period, {})
+                for goal_name, goal_value in period_goals.items():
+                    if goal_name in formula_str:
+                        try:
+                            eval_context[goal_name] = float(goal_value)
+                        except (ValueError, TypeError):
+                            pass
+
         formula = formula_str
         for key in row_data.keys():
+            if key in text_columns:
+                continue
             safe_key = key.replace(' ', '_').replace('-', '_')
             formula = formula.replace(key, safe_key)
         result = eval(formula, {"__builtins__": {}}, eval_context)
@@ -133,6 +149,42 @@ def _evaluate_formula(formula_str: str, row_data: Dict[str, float]) -> float:
     except Exception as e:
         logger.warning(f"Formula eval error: {formula_str} — {e}")
         return 0.0
+
+
+def _resolve_spend_formulas(metrics_config: Dict) -> tuple:
+    """Returns (publisher_formula, advertiser_formula) applying committed_kpi logic."""
+    pub_calc = metrics_config.get('publisher_spends_calc', '')
+    adv_calc = metrics_config.get('advertiser_spends_calc', '')
+    committed_kpi = metrics_config.get('committed_kpi', '').upper()
+    kpi_formula = metrics_config.get('committed_kpi_config', {}).get('formula', '')
+
+    if committed_kpi == 'YES' and kpi_formula:
+        pub_formula = kpi_formula
+    elif committed_kpi == 'NO':
+        pub_formula = pub_calc or 'Spends'
+    else:
+        pub_formula = pub_calc
+
+    if adv_calc:
+        adv_formula = adv_calc
+    elif committed_kpi == 'YES' and kpi_formula:
+        adv_formula = kpi_formula
+    elif committed_kpi == 'NO':
+        adv_formula = 'Spends'
+    else:
+        adv_formula = ''
+
+    return pub_formula, adv_formula
+
+
+def _compute_advertiser_metrics(metrics_lib: Dict, row_data: Dict[str, float], goals: Optional[Dict] = None) -> Dict[str, float]:
+    """Evaluate computed metrics from metrics_library (e.g., CPL = Spends/Leads)."""
+    computed = {}
+    for metric_id, metric_def in sorted(metrics_lib.items()):
+        calc = metric_def.get('calculation', '')
+        if calc:
+            computed[metric_def['display_name']] = _evaluate_formula(calc, row_data, goals)
+    return computed
 
 
 async def _load_column_mapping(db: AsyncSession, name: str, map_type: str) -> Optional[Dict]:
@@ -484,6 +536,19 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     )
     logger.info(f"  Publisher records: {len(pub_records)}")
 
+    # Parse goals and formula config
+    goals_config = {}
+    try:
+        goals_config = json.loads(campaign.goals_json or '{}')
+    except Exception:
+        pass
+
+    pub_formula, adv_formula = _resolve_spend_formulas(metrics_config)
+    if pub_formula:
+        logger.info(f"  Publisher spends formula: {pub_formula}")
+    if adv_formula:
+        logger.info(f"  Advertiser spends formula: {adv_formula}")
+
     # Merge on Date (full outer join)
     adv_by_date = {r['Date']: r for r in adv_records}
     pub_by_date = {r['Date']: r for r in pub_records}
@@ -501,13 +566,46 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         adv_row = adv_by_date.get(date_str, {})
         pub_row = pub_by_date.get(date_str, {})
 
-        # Store all advertiser metrics as JSONB (raw values, no formula computation)
-        adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
+        # Build merged row_data for formula evaluation (all numeric values)
+        row_data = {}
+        row_data['Impressions'] = _safe_float(pub_row.get('Impressions', 0))
+        row_data['Distribution'] = _safe_float(pub_row.get('Distribution', 0))
+        row_data['Clicks'] = _safe_float(pub_row.get('Clicks', 0))
+        row_data['Orders_pub'] = _safe_float(pub_row.get('Orders_pub', 0))
+        row_data['Scratches'] = _safe_float(pub_row.get('Scratches', 0))
+        row_data['Coins_Burned'] = _safe_float(pub_row.get('Coins_Burned', 0))
+        row_data['Redirections'] = _safe_float(pub_row.get('Redirections', 0))
+        row_data['Spends'] = _safe_float(pub_row.get('Spends', 0))
+        # Standard computed publisher metrics
+        clicks = row_data['Clicks']
+        spends = row_data['Spends']
+        distribution = row_data['Distribution']
+        row_data['CTR'] = (clicks / distribution * 100) if distribution > 0 else 0
+        row_data['CPM'] = (spends / distribution * 1000) if distribution > 0 else 0
+        row_data['CPC'] = (spends / clicks) if clicks > 0 else 0
+        # Advertiser raw metrics
+        for k, v in adv_row.items():
+            if k != 'Date':
+                row_data[k] = _safe_float(v)
 
-        # Spends: use publisher sheet value if available, otherwise 0
-        # (proper spend calculation will be done via billing config + query-time join later)
-        pub_spends = float(pub_row.get('Spends', 0))
-        adv_spends = 0.0
+        # Evaluate spend formulas
+        if pub_formula:
+            pub_spends = _evaluate_formula(pub_formula, row_data, goals_config)
+        else:
+            pub_spends = row_data['Spends']
+
+        if adv_formula:
+            adv_spends = _evaluate_formula(adv_formula, row_data, goals_config)
+        else:
+            adv_spends = 0.0
+
+        # Compute advertiser metrics from metrics_library (computed ones like CPL)
+        adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
+        if metrics_lib:
+            row_data['Publisher_Spends'] = pub_spends
+            row_data['Advertiser_Spends'] = adv_spends
+            computed = _compute_advertiser_metrics(metrics_lib, row_data, goals_config)
+            adv_metrics_dict.update(computed)
 
         # Upsert to DB
         await db.execute(text("""

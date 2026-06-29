@@ -329,3 +329,7 @@ export const saveAllocations = (advId, month, allocations) =>
     method: "POST",
     body: JSON.stringify({ month, allocations }),
   });
+
+// ── Metric Recompute ─────────────────────────────────────────────────────────
+export const recomputeMetrics = (campaignId) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/recompute`, { method: "POST" });
