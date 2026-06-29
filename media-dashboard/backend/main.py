@@ -235,25 +235,52 @@ async def add_sheet_url(request: Request, db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/sheet-preview")
 async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
-    """Read first 5 rows from a sheet to show column structure for mapping."""
-    from sheets_client import _get_service
+    """Read first 5 rows from a sheet to show column structure for mapping.
+    Supports both native Google Sheets and .xlsx files in Drive (auto-converts)."""
+    from sheets_client import _get_service, _get_credentials
+    from googleapiclient.discovery import build as _build
     import re as _re
     match = _re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url)
     if not match:
+        match = _re.search(r'/file/d/([a-zA-Z0-9-_]+)', url)
+    if not match:
         raise HTTPException(status_code=400, detail="Invalid sheet URL")
-    sheet_id = match.group(1)
+    file_id = match.group(1)
     service = _get_service()
+    converted_id = None
     try:
-        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        meta = service.spreadsheets().get(spreadsheetId=file_id).execute()
+    except Exception as e:
+        if "not supported" in str(e).lower() or "office file" in str(e).lower():
+            creds = _get_credentials()
+            drive = _build("drive", "v3", credentials=creds)
+            copy = drive.files().copy(
+                fileId=file_id,
+                body={"name": "_tmp_preview_conversion", "mimeType": "application/vnd.google-apps.spreadsheet"}
+            ).execute()
+            converted_id = copy["id"]
+            file_id = converted_id
+            meta = service.spreadsheets().get(spreadsheetId=file_id).execute()
+        else:
+            raise HTTPException(status_code=400, detail=str(e))
+    try:
         tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
         target_tab = tab or tabs[0]
         result = service.spreadsheets().values().get(
-            spreadsheetId=sheet_id, range=f"'{target_tab}'!A1:Z20"
+            spreadsheetId=file_id, range=f"'{target_tab}'!A1:Z20"
         ).execute()
         rows = result.get("values", [])
         return {"tabs": tabs, "selected_tab": target_tab, "rows": rows[:20]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if converted_id:
+            try:
+                creds = _get_credentials()
+                drive = _build("drive", "v3", credentials=creds)
+                drive.files().delete(fileId=converted_id).execute()
+            except Exception:
+                pass
 
 
 @app.get("/api/column-mappings")
