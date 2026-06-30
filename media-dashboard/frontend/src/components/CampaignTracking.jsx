@@ -642,16 +642,12 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
 
 
       {/* Visual picker for publisher sheet */}
-      {pubDataUrl && (
-        <PublisherSheetPicker
-          sheetUrl={pubDataUrl}
-          name={campaign.publisher_name}
-          metrics={[{ key: "spends", label: "Spends" }, { key: "impressions", label: "Impressions" }, { key: "clicks", label: "Clicks" }].concat(
-            PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key) && m.key !== "impressions" && m.key !== "clicks")
-          )}
-          onSaved={() => {}}
-        />
-      )}
+      <PublisherSheetPicker
+        sheetUrl={pubDataUrl || ""}
+        name={campaign.publisher_name || ""}
+        metrics={[{ key: "spends", label: "Spends" }, { key: "impressions", label: "Impressions" }, { key: "clicks", label: "Clicks" }]}
+        onSaved={() => {}}
+      />
 
       {/* Visual picker for advertiser sheet — shows when metrics are selected */}
       {advDataUrl && advMetrics.length > 0 && (
