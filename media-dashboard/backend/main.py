@@ -1559,7 +1559,7 @@ async def pg_aggregates(
 ):
     params = {}
     where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
-    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM(advertiser_spends),0) as adv_spends, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM(advertiser_spends),0) as adv_spends, COALESCE(SUM((CASE WHEN advertiser_metrics IS NOT NULL AND advertiser_metrics != '' THEN (advertiser_metrics::jsonb->>'revenue')::float ELSE 0 END)),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
     # Count distinct advertisers/publishers
@@ -1574,6 +1574,7 @@ async def pg_aggregates(
         "cpc": round((spends / clicks) if clicks > 0 else 0, 2),
         "publisher_spends": round(float(row.pub_spends), 2),
         "advertiser_spends": round(float(row.adv_spends), 2),
+        "advertiser_revenue": round(float(row.adv_revenue), 2),
         "redirections": int(counts.redirections),
         "advertiserCount": int(counts.adv_count), "publisherCount": int(counts.pub_count),
         "totalRows": int(counts.total_rows), "cacheAge": 0,
