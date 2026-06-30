@@ -642,21 +642,27 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
 
 
       {/* Visual picker for publisher sheet */}
-      <PublisherSheetPicker
-        sheetUrl={pubDataUrl || ""}
-        name={campaign.publisher_name || ""}
-        metrics={[{ key: "spends", label: "Spends" }, { key: "impressions", label: "Impressions" }, { key: "clicks", label: "Clicks" }]}
-        onSaved={() => {}}
-      />
+      <div style={{ border: `1px solid ${c.blue}`, borderRadius: 10, padding: "14px", marginBottom: 14, background: "#F0F6FF" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: c.blue, marginBottom: 8 }}>Publisher Sheet Configuration</div>
+        <PublisherSheetPicker
+          sheetUrl={pubDataUrl || ""}
+          name={campaign.publisher_name || ""}
+          metrics={[{ key: "spends", label: "Spends" }, { key: "impressions", label: "Impressions" }, { key: "clicks", label: "Clicks" }]}
+          onSaved={() => {}}
+        />
+      </div>
 
       {/* Visual picker for advertiser sheet — shows when metrics are selected */}
       {advDataUrl && advMetrics.length > 0 && (
-        <VisualSheetPicker
-          sheetUrl={advDataUrl}
-          name={campaign.advertiser_name}
-          metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
-          onSaved={() => {}}
-        />
+        <div style={{ border: `1px solid ${c.green}`, borderRadius: 10, padding: "14px", marginBottom: 14, background: "#F0FFF8" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: c.green, marginBottom: 8 }}>Advertiser Sheet Configuration</div>
+          <VisualSheetPicker
+            sheetUrl={advDataUrl}
+            name={campaign.advertiser_name}
+            metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
+            onSaved={() => {}}
+          />
+        </div>
       )}
 
       <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 14 }}>{submitting ? "Submitting…" : "Submit Tracking & Complete ✓"}</button>
