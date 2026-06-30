@@ -209,8 +209,8 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
     );
   }
 
-  const maxCols = rows.length > 0 ? Math.min(15, Math.max(...rows.map((r) => r.length))) : 0;
-  const colLetters = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + i));
+  const maxCols = rows.length > 0 ? Math.max(...rows.map((r) => r.length)) : 0;
+  const colLetters = Array.from({ length: maxCols }, (_, i) => { let s = "", n = i; do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0); return s; });
   const allModes = [{ key: "date", label: "Date", color: c.blue }]
     .concat(isPub ? [{ key: "segment", label: "Segment (optional)", color: c.amber }] : [])
     .concat(metrics.map((m, i) => ({ key: m.key, label: m.label, color: METRIC_COLORS[i % METRIC_COLORS.length] })));
