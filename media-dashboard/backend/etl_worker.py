@@ -255,11 +255,11 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
 
         if tab_filter:
             target_tabs = [t for t in tabs if tab_filter in t]
+            if not target_tabs:
+                target_tabs = tabs
+                logger.warning(f"Visual format: no matching tabs for '{tab_filter}', using all tabs")
         else:
-            target_tabs = [t for t in tabs if 'RZP' in t.upper()]
-        if not target_tabs:
-            target_tabs = tabs[:5]
-            logger.warning(f"Visual format: no matching tabs for '{tab_filter}', using {target_tabs}")
+            target_tabs = tabs
 
         for tab_name in target_tabs:
             year, month = _get_year_month_from_tab(tab_name)
