@@ -69,12 +69,19 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
                 if day_part.isdigit() and mon_part.lower()[:3] in MONTH_MAP:
                     m_num = MONTH_MAP[mon_part.lower()[:3]]
                     return f"{year}-{m_num}-{day_part.zfill(2)}"
-            # DD-MM-YYYY
-            if len(parts) == 3 and all(p.isdigit() for p in parts):
+            if len(parts) == 3:
                 d, m, y = parts
-                if len(y) == 2:
-                    y = '20' + y
-                return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+                # DD-MM-YYYY (all digits)
+                if all(p.isdigit() for p in parts):
+                    if len(y) == 2:
+                        y = '20' + y
+                    return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+                # DD-Mon-YYYY (e.g. 23-Jun-2026)
+                if d.isdigit() and m.lower()[:3] in MONTH_MAP and y.isdigit():
+                    if len(y) == 2:
+                        y = '20' + y
+                    m_num = MONTH_MAP[m.lower()[:3]]
+                    return f"{y}-{m_num}-{d.zfill(2)}"
         # YYYYMMDD
         if len(date_str) == 8 and date_str.isdigit():
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
