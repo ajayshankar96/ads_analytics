@@ -6,11 +6,13 @@ const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", mu
 const PUBLISHER_METRICS = [
   { key: "impressions", label: "Impressions", default: true },
   { key: "clicks", label: "Clicks", default: true },
+  { key: "spends", label: "Spends" },
   { key: "distribution", label: "Distribution" },
   { key: "scratches", label: "Scratches" },
   { key: "redirections", label: "Redirections" },
 ];
 const ADVERTISER_METRICS = [
+  { key: "spends", label: "Spends" },
   { key: "sessions", label: "Sessions" },
   { key: "orders", label: "Orders" },
   { key: "revenue", label: "Revenue" },

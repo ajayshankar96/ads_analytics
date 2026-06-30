@@ -725,7 +725,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         if adv_formula:
             adv_spends = _evaluate_formula(adv_formula, row_data)
         else:
-            adv_spends = 0.0
+            adv_spends = _safe_float(adv_row.get('Spends', 0))
 
         # Auto-compute standard metrics (CPL, CPA, ROAS etc.) based on selected advertiser metrics
         adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
