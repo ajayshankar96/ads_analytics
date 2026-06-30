@@ -97,216 +97,9 @@ const STANDARD_FIELDS = [
   { key: "cpc", label: "CPC" },
 ];
 
-// ── Visual Sheet Picker (multi-metric support) ──────────────────────────────
-function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
-  const [tabs, setTabs] = useState([]);
-  const [selectedTab, setSelectedTab] = useState("");
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState("date"); // "date" or metric key
-  const [dateCell, setDateCell] = useState(null);
-  const [metricCells, setMetricCells] = useState({}); // { orders: {row, col}, revenue: {row, col} }
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [open, setOpen] = useState(false);
-  const [existingConfig, setExistingConfig] = useState(null);
-
-  // Load existing mapping on mount
-  useEffect(() => {
-    if (name) {
-      getColumnMappings(name, "advertiser").then((d) => {
-        if (d.mappings && d.mappings.length > 0) {
-          const m = d.mappings[0];
-          setExistingConfig(m);
-          setSelectedTab(m.tab_name || "");
-          // Pre-populate selections from saved mapping
-          const mapping = m.mapping || {};
-          if (mapping.date_col_index != null && mapping.date_start_row) {
-            setDateCell({ row: mapping.date_start_row - 1, col: mapping.date_col_index });
-          }
-          if (mapping.metrics) {
-            const restored = {};
-            Object.entries(mapping.metrics).forEach(([key, val]) => {
-              if (val && val.col != null && val.start_row) {
-                restored[key] = { row: val.start_row - 1, col: val.col };
-              }
-            });
-            setMetricCells(restored);
-          }
-        }
-      }).catch(() => {});
-    }
-  }, [name]);
-
-  const loadSheet = async (tab) => {
-    setLoading(true);
-    try {
-      const d = await getSheetPreview(sheetUrl, tab || undefined);
-      setRows(d.rows || []);
-      setTabs(d.tabs || []);
-      if (!selectedTab && d.selected_tab) setSelectedTab(d.selected_tab);
-    } catch (e) { alert("Failed to read sheet: " + e.message); }
-    finally { setLoading(false); }
-  };
-
-  const handleTabChange = (t) => { setSelectedTab(t); loadSheet(t); };
-
-  const handleCellClick = (rowIdx, colIdx) => {
-    if (mode === "date") setDateCell({ row: rowIdx, col: colIdx });
-    else setMetricCells((prev) => ({ ...prev, [mode]: { row: rowIdx, col: colIdx } }));
-  };
-
-  const handleSave = async () => {
-    if (!dateCell) { alert("Please select where dates start"); return; }
-    const mappedMetrics = Object.keys(metricCells);
-    if (mappedMetrics.length === 0) { alert("Please select at least one metric column"); return; }
-    setSaving(true);
-    try {
-      const metricsMapping = {};
-      mappedMetrics.forEach((key) => {
-        const cell = metricCells[key];
-        const cellContent = rows[cell.row] && rows[cell.row][cell.col] ? rows[cell.row][cell.col].trim() : `col_${cell.col}`;
-        metricsMapping[key] = { col: cell.col, start_row: cell.row + 1, header: cellContent };
-      });
-      await saveColumnMapping({
-        name, type: "advertiser", sheet_url: sheetUrl, tab_name: selectedTab,
-        header_row: Object.values(metricCells)[0].row + 1,
-        data_start_row: dateCell.row + 1,
-        mapping: { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping },
-        format_type: "promo_pivot",
-      });
-      setSaved(true);
-      if (onSaved) onSaved();
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) { alert("Save failed: " + e.message); }
-    finally { setSaving(false); }
-  };
-
-  if (!open) {
-    return (
-      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => { setOpen(true); if (!rows.length) loadSheet(selectedTab || undefined); }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-          {existingConfig ? "Edit Sheet Configuration" : "Configure Advertiser Sheet"}
-        </button>
-        {existingConfig && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Configured — {Object.keys(existingConfig.mapping?.metrics || {}).length || 1} metric(s) mapped</span>}
-      </div>
-    );
-  }
-
-  const maxCols = Math.min(15, Math.max(...rows.map((r) => r.length), 0));
-  const colLetters = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + i));
-  const allModes = [{ key: "date", label: "Date", color: c.blue }].concat(
-    metrics.map((m, i) => ({ key: m.key, label: m.label, color: METRIC_COLORS[i % METRIC_COLORS.length] }))
-  );
-  const getMetricColor = (key) => {
-    const idx = metrics.findIndex((m) => m.key === key);
-    return idx >= 0 ? METRIC_COLORS[idx % METRIC_COLORS.length] : c.green;
-  };
-  const hasAllSelections = dateCell && metrics.length > 0 && metrics.every((m) => metricCells[m.key]);
-
-  return (
-    <div style={{ border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px", marginTop: 10, background: "#fff" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: c.ink }}>Configure Advertiser Sheet — {name}</div>
-        <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: c.muted }}>✕</button>
-      </div>
-
-      {/* Tab selector */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-        {tabs.length > 0 && (
-          <select style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12 }} value={selectedTab} onChange={(e) => handleTabChange(e.target.value)}>
-            {tabs.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        )}
-        <button onClick={() => loadSheet(selectedTab)} disabled={loading} style={{ background: c.bg, border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-          {loading ? "Loading…" : "Refresh"}
-        </button>
-      </div>
-
-      {rows.length > 0 && (
-        <>
-          {/* Mode buttons — Date + one per metric */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-            {allModes.map((m) => {
-              const active = mode === m.key;
-              const selected = m.key === "date" ? dateCell : metricCells[m.key];
-              return (
-                <button key={m.key} onClick={() => setMode(m.key)} style={{ background: active ? `${m.color}15` : "#fff", border: `2px solid ${active ? m.color : c.line}`, borderRadius: 7, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: active ? m.color : c.muted, cursor: "pointer" }}>
-                  {m.label} {selected ? "✓" : ""}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
-            {mode === "date" ? "Click the first cell that has a date" : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
-          </div>
-
-          {/* Spreadsheet grid */}
-          <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12, maxHeight: 400, overflowY: "auto" }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: 600 }}>
-              <thead>
-                <tr>
-                  <th style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, position: "sticky", top: 0, zIndex: 1 }}>#</th>
-                  {colLetters.map((letter, colIdx) => (
-                    <th key={colIdx} style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: c.muted, minWidth: 60, position: "sticky", top: 0, zIndex: 1 }}>{letter}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, rowIdx) => (
-                  <tr key={rowIdx}>
-                    <td style={{ padding: "4px 8px", background: "#F9FAFB", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, fontWeight: 600 }}>{rowIdx + 1}</td>
-                    {colLetters.map((_, colIdx) => {
-                      const cellVal = row[colIdx] || "";
-                      const isDateCell = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
-                      const isDateCol = dateCell && dateCell.col === colIdx && rowIdx >= dateCell.row;
-                      let metricMatch = null;
-                      let metricColMatch = null;
-                      for (const [mk, mc] of Object.entries(metricCells)) {
-                        if (mc.row === rowIdx && mc.col === colIdx) { metricMatch = mk; break; }
-                        if (mc.col === colIdx && rowIdx >= mc.row) metricColMatch = mk;
-                      }
-                      let bg = "transparent";
-                      let fontW = 400;
-                      let color = c.ink;
-                      if (isDateCell) { bg = "#BFDBFE"; fontW = 700; color = c.blue; }
-                      else if (metricMatch) { bg = `${getMetricColor(metricMatch)}20`; fontW = 700; color = getMetricColor(metricMatch); }
-                      else if (isDateCol) { bg = "#EFF6FF"; }
-                      else if (metricColMatch) { bg = `${getMetricColor(metricColMatch)}08`; }
-                      return (
-                        <td key={colIdx} onClick={() => handleCellClick(rowIdx, colIdx)}
-                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: bg, fontWeight: fontW, color, transition: "background 0.1s" }}>
-                          {String(cellVal).substring(0, 15)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Summary */}
-          <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <span>Date: <strong style={{ color: dateCell ? c.blue : c.muted }}>{dateCell ? `${colLetters[dateCell.col]}${dateCell.row + 1}` : "—"}</strong></span>
-            {metrics.map((m, i) => {
-              const cell = metricCells[m.key];
-              const col = METRIC_COLORS[i % METRIC_COLORS.length];
-              return <span key={m.key}>{m.label}: <strong style={{ color: cell ? col : c.muted }}>{cell ? `${colLetters[cell.col]}${cell.row + 1} "${(rows[cell.row] && rows[cell.row][cell.col]) || ""}"` : "—"}</strong></span>;
-            })}
-          </div>
-
-          <button onClick={handleSave} disabled={saving || !hasAllSelections} style={{ background: hasAllSelections ? c.green : c.line, color: hasAllSelections ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: hasAllSelections ? "pointer" : "not-allowed" }}>
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Visual Publisher Sheet Picker ─────────────────────────────────────────────
-function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
+// ── Visual Sheet Picker (works for both publisher and advertiser) ─────────────
+function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType = "advertiser" }) {
+  const isPub = pickerType === "publisher";
   const [tabs, setTabs] = useState([]);
   const [selectedTab, setSelectedTab] = useState("");
   const [rows, setRows] = useState([]);
@@ -322,23 +115,25 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
 
   useEffect(() => {
     if (name) {
-      getColumnMappings(name, "publisher").then((d) => {
+      getColumnMappings(name, pickerType).then((d) => {
         if (d.mappings && d.mappings.length > 0) {
           const m = d.mappings[0];
           setExistingConfig(m);
           setSelectedTab(m.tab_name || "");
           const mapping = m.mapping || {};
-          if (mapping.date_col_index != null && mapping.data_start_row) {
-            setDateCell({ row: mapping.data_start_row - 1, col: mapping.date_col_index });
+          if (mapping.date_col_index != null) {
+            const startRow = mapping.date_start_row || mapping.data_start_row || 1;
+            setDateCell({ row: startRow - 1, col: mapping.date_col_index });
           }
-          if (mapping.segment_col_index != null) {
+          if (isPub && mapping.segment_col_index != null) {
             setSegCell({ col: mapping.segment_col_index });
           }
           if (mapping.metrics) {
             const restored = {};
             Object.entries(mapping.metrics).forEach(([key, val]) => {
               if (val && val.col != null) {
-                restored[key] = { row: (mapping.data_start_row || 1) - 1, col: val.col };
+                const r = val.start_row || mapping.data_start_row || 1;
+                restored[key] = { row: r - 1, col: val.col };
               }
             });
             setMetricCells(restored);
@@ -346,7 +141,7 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
         }
       }).catch(() => {});
     }
-  }, [name]);
+  }, [name, pickerType, isPub]);
 
   const loadSheet = async (tab) => {
     setLoading(true);
@@ -377,19 +172,19 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
       mappedMetrics.forEach((key) => {
         const cell = metricCells[key];
         const cellContent = rows[cell.row] && rows[cell.row][cell.col] ? rows[cell.row][cell.col].trim() : `col_${cell.col}`;
-        metricsMapping[key] = { col: cell.col, header: cellContent };
+        metricsMapping[key] = isPub
+          ? { col: cell.col, header: cellContent }
+          : { col: cell.col, start_row: cell.row + 1, header: cellContent };
       });
+      const mapping = isPub
+        ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segCell ? segCell.col : null, metrics: metricsMapping }
+        : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
       await saveColumnMapping({
-        name, type: "publisher", sheet_url: sheetUrl, tab_name: selectedTab,
+        name, type: pickerType, sheet_url: sheetUrl, tab_name: selectedTab,
         header_row: dateCell.row + 1,
         data_start_row: dateCell.row + 1,
-        mapping: {
-          date_col_index: dateCell.col,
-          data_start_row: dateCell.row + 1,
-          segment_col_index: segCell ? segCell.col : null,
-          metrics: metricsMapping,
-        },
-        format_type: "visual",
+        mapping,
+        format_type: isPub ? "visual" : "promo_pivot",
       });
       setSaved(true);
       if (onSaved) onSaved();
@@ -398,23 +193,25 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
     finally { setSaving(false); }
   };
 
+  const label = isPub ? "Publisher" : "Advertiser";
+  const accentColor = isPub ? c.blue : c.blue;
+
   if (!open) {
     return (
       <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => { setOpen(true); if (!rows.length) loadSheet(selectedTab || undefined); }} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-          {existingConfig ? "Edit Publisher Sheet Config" : "Configure Publisher Sheet"}
+        <button onClick={() => { setOpen(true); if (!rows.length) loadSheet(selectedTab || undefined); }} style={{ background: accentColor, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          {existingConfig ? `Edit ${label} Sheet Config` : `Configure ${label} Sheet`}
         </button>
-        {existingConfig && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Configured — {Object.keys(existingConfig.mapping?.metrics || {}).length} metric(s) mapped</span>}
+        {existingConfig && <span style={{ fontSize: 11, color: c.green, fontWeight: 600 }}>✓ Configured — {Object.keys(existingConfig.mapping?.metrics || {}).length || 1} metric(s) mapped</span>}
       </div>
     );
   }
 
-  const maxCols = Math.min(15, Math.max(...rows.map((r) => r.length), 0));
+  const maxCols = rows.length > 0 ? Math.min(15, Math.max(...rows.map((r) => r.length))) : 0;
   const colLetters = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + i));
-  const allModes = [
-    { key: "date", label: "Date", color: c.blue },
-    { key: "segment", label: "Segment (optional)", color: c.amber },
-  ].concat(metrics.map((m, i) => ({ key: m.key, label: m.label, color: METRIC_COLORS[i % METRIC_COLORS.length] })));
+  const allModes = [{ key: "date", label: "Date", color: c.blue }]
+    .concat(isPub ? [{ key: "segment", label: "Segment (optional)", color: c.amber }] : [])
+    .concat(metrics.map((m, i) => ({ key: m.key, label: m.label, color: METRIC_COLORS[i % METRIC_COLORS.length] })));
 
   const getMetricColor = (key) => {
     const idx = metrics.findIndex((m) => m.key === key);
@@ -425,7 +222,7 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
   return (
     <div style={{ border: `1px solid ${c.line}`, borderRadius: 12, padding: "16px", marginTop: 10, background: "#fff" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: c.ink }}>Configure Publisher Sheet — {name}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: c.ink }}>Configure {label} Sheet — {name}</div>
         <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: c.muted }}>✕</button>
       </div>
 
@@ -454,7 +251,7 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
             })}
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
-            {mode === "date" ? "Click the first cell that has a date value" : mode === "segment" ? "Click any cell in the Segment column (optional)" : `Click any cell in the "${metrics.find((m) => m.key === mode)?.label || mode}" column`}
+            {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click any cell in the Segment column (optional)" : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
           </div>
 
           <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12, maxHeight: 400, overflowY: "auto" }}>
@@ -473,7 +270,7 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
                     <td style={{ padding: "4px 8px", background: "#F9FAFB", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, fontWeight: 600 }}>{rowIdx + 1}</td>
                     {colLetters.map((_, colIdx) => {
                       const cellVal = row[colIdx] || "";
-                      const isDateCell2 = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
+                      const isDateSel = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
                       const isDateCol = dateCell && dateCell.col === colIdx && rowIdx >= dateCell.row;
                       const isSegCol = segCell && segCell.col === colIdx;
                       let metricMatch = null;
@@ -485,7 +282,7 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
                       let bg = "transparent";
                       let fontW = 400;
                       let color = c.ink;
-                      if (isDateCell2) { bg = "#BFDBFE"; fontW = 700; color = c.blue; }
+                      if (isDateSel) { bg = "#BFDBFE"; fontW = 700; color = c.blue; }
                       else if (metricMatch) { bg = `${getMetricColor(metricMatch)}20`; fontW = 700; color = getMetricColor(metricMatch); }
                       else if (isSegCol) { bg = "#FEF3E2"; }
                       else if (isDateCol) { bg = "#EFF6FF"; }
@@ -505,11 +302,11 @@ function PublisherSheetPicker({ sheetUrl, name, metrics = [], onSaved }) {
 
           <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <span>Date: <strong style={{ color: dateCell ? c.blue : c.muted }}>{dateCell ? `${colLetters[dateCell.col]}${dateCell.row + 1}` : "—"}</strong></span>
-            {segCell && <span>Segment: <strong style={{ color: c.amber }}>Col {colLetters[segCell.col]}</strong></span>}
+            {isPub && segCell && <span>Segment: <strong style={{ color: c.amber }}>Col {colLetters[segCell.col]}</strong></span>}
             {metrics.map((m, i) => {
               const cell = metricCells[m.key];
               const col = METRIC_COLORS[i % METRIC_COLORS.length];
-              return <span key={m.key}>{m.label}: <strong style={{ color: cell ? col : c.muted }}>{cell ? `Col ${colLetters[cell.col]}` : "—"}</strong></span>;
+              return <span key={m.key}>{m.label}: <strong style={{ color: cell ? col : c.muted }}>{cell ? `${colLetters[cell.col]}${cell.row + 1}` : "—"}</strong></span>;
             })}
           </div>
 
@@ -641,28 +438,26 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
       </div>
 
 
-      {/* Visual picker for publisher sheet */}
-      <div style={{ border: `1px solid ${c.blue}`, borderRadius: 10, padding: "14px", marginBottom: 14, background: "#F0F6FF" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: c.blue, marginBottom: 8 }}>Publisher Sheet Configuration</div>
-        <PublisherSheetPicker
-          sheetUrl={pubDataUrl || ""}
+      {/* Publisher sheet config — always visible */}
+      {pubDataUrl && (
+        <VisualSheetPicker
+          pickerType="publisher"
+          sheetUrl={pubDataUrl}
           name={campaign.publisher_name || ""}
-          metrics={[{ key: "spends", label: "Spends" }, { key: "impressions", label: "Impressions" }, { key: "clicks", label: "Clicks" }]}
+          metrics={PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label }))}
           onSaved={() => {}}
         />
-      </div>
+      )}
 
-      {/* Visual picker for advertiser sheet — shows when metrics are selected */}
+      {/* Advertiser sheet config — shows when metrics are selected */}
       {advDataUrl && advMetrics.length > 0 && (
-        <div style={{ border: `1px solid ${c.green}`, borderRadius: 10, padding: "14px", marginBottom: 14, background: "#F0FFF8" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: c.green, marginBottom: 8 }}>Advertiser Sheet Configuration</div>
-          <VisualSheetPicker
-            sheetUrl={advDataUrl}
-            name={campaign.advertiser_name}
-            metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
-            onSaved={() => {}}
-          />
-        </div>
+        <VisualSheetPicker
+          pickerType="advertiser"
+          sheetUrl={advDataUrl}
+          name={campaign.advertiser_name || ""}
+          metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
+          onSaved={() => {}}
+        />
       )}
 
       <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 14 }}>{submitting ? "Submitting…" : "Submit Tracking & Complete ✓"}</button>
