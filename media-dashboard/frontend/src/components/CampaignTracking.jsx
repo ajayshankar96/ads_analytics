@@ -186,7 +186,7 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
         header_row: dateCell.row + 1,
         data_start_row: dateCell.row + 1,
         mapping,
-        format_type: isPub ? "visual" : "promo_pivot",
+        format_type: "visual",
       });
       setSaved(true);
       if (onSaved) onSaved();

@@ -85,8 +85,16 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
         # YYYYMMDD
         if len(date_str) == 8 and date_str.isdigit():
             return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
-        # Just a day number (legacy format — needs year/month from tab name)
+        # "D Month YYYY" or "D Month" (e.g. "1 June 2026", "15 March 2026")
         parts = date_str.split()
+        if len(parts) >= 2 and parts[0].isdigit() and parts[1].lower()[:3] in MONTH_MAP:
+            day = parts[0].zfill(2)
+            m_num = MONTH_MAP[parts[1].lower()[:3]]
+            y = parts[2] if len(parts) >= 3 and parts[2].isdigit() else year
+            if len(y) == 2:
+                y = '20' + y
+            return f"{y}-{m_num}-{day}"
+        # Just a day number (legacy format — needs year/month from tab name)
         day = parts[0].zfill(2)
         if day.isdigit() and 1 <= int(day) <= 31:
             return f"{year}-{month}-{day}"
