@@ -322,7 +322,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    getFilters().then(setFilterOptions).catch(console.error);
+    getFilters({}, dataSource).then(setFilterOptions).catch(console.error);
   }, [dataSource]);
 
   useEffect(() => {

@@ -1564,6 +1564,14 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment=None):
     return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
 
+@app.get("/api/dashboard/pg/filters")
+async def pg_filters(db: AsyncSession = Depends(get_db)):
+    advertisers = [r[0] for r in (await db.execute(text("SELECT DISTINCT advertiser FROM rmn_campaign_metrics WHERE advertiser IS NOT NULL ORDER BY advertiser"))).all()]
+    publishers = [r[0] for r in (await db.execute(text("SELECT DISTINCT publisher FROM rmn_campaign_metrics WHERE publisher IS NOT NULL ORDER BY publisher"))).all()]
+    segments = [r[0] for r in (await db.execute(text("SELECT DISTINCT segment FROM rmn_campaign_metrics WHERE segment IS NOT NULL AND segment != '' ORDER BY segment"))).all()]
+    return {"advertisers": advertisers, "publishers": publishers, "segments": segments}
+
+
 @app.get("/api/dashboard/pg/aggregates")
 async def pg_aggregates(
     advertiser: Optional[List[str]] = Query(None),

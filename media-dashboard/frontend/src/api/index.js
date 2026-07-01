@@ -36,8 +36,10 @@ function buildQuery(params = {}) {
 export const getHealth = () => apiFetch("/health");
 
 // Filters
-export const getFilters = (params = {}) =>
-  apiFetch(`/api/filters${buildQuery(params)}`);
+export const getFilters = (params = {}, dataSource = "sheet") =>
+  dataSource === "postgres"
+    ? apiFetch("/api/dashboard/pg/filters")
+    : apiFetch(`/api/filters${buildQuery(params)}`);
 
 export const getFilterRelationships = () =>
   apiFetch("/api/filter-relationships");
