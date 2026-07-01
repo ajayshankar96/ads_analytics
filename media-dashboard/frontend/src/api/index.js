@@ -249,8 +249,8 @@ export const addSheetUrl = (type, name, url) =>
 export const getSheetPreview = (url, tab) =>
   apiFetch(`/api/sheet-preview${buildQuery({ url, tab })}`);
 
-export const getColumnMappings = (name, type) =>
-  apiFetch(`/api/column-mappings${buildQuery({ name, type })}`);
+export const getColumnMappings = (name, type, sheetUrl, campaignId) =>
+  apiFetch(`/api/column-mappings${buildQuery({ name, type, sheet_url: sheetUrl, campaign_id: campaignId })}`);
 
 export const saveColumnMapping = (payload) =>
   apiFetch("/api/column-mappings", { method: "POST", body: JSON.stringify(payload) });

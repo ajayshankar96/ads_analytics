@@ -100,7 +100,7 @@ const STANDARD_FIELDS = [
 ];
 
 // ── Visual Sheet Picker (works for both publisher and advertiser) ─────────────
-function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType = "advertiser" }) {
+function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, pickerType = "advertiser" }) {
   const isPub = pickerType === "publisher";
   const [tabs, setTabs] = useState([]);
   const [selectedTab, setSelectedTab] = useState("");
@@ -117,7 +117,14 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
 
   useEffect(() => {
     if (name) {
-      getColumnMappings(name, pickerType).then((d) => {
+      setExistingConfig(null);
+      setSelectedTab("");
+      setRows([]);
+      setTabs([]);
+      setDateCell(null);
+      setMetricCells({});
+      setSegCell(null);
+      getColumnMappings(name, pickerType, sheetUrl, campaignId).then((d) => {
         if (d.mappings && d.mappings.length > 0) {
           const m = d.mappings[0];
           setExistingConfig(m);
@@ -143,7 +150,7 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
         }
       }).catch(() => {});
     }
-  }, [name, pickerType, isPub]);
+  }, [name, pickerType, sheetUrl, campaignId, isPub]);
 
   const loadSheet = async (tab) => {
     setLoading(true);
@@ -182,7 +189,7 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
         ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segCell ? segCell.col : null, metrics: metricsMapping }
         : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
       await saveColumnMapping({
-        name, type: pickerType, sheet_url: sheetUrl, tab_name: selectedTab || "",
+        name, type: pickerType, campaign_id: campaignId, sheet_url: sheetUrl, tab_name: selectedTab || "",
         header_row: dateCell.row + 1,
         data_start_row: dateCell.row + 1,
         mapping,
@@ -493,6 +500,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           pickerType="publisher"
           sheetUrl={pubDataUrl}
           name={campaign.publisher_name || ""}
+          campaignId={campaign.campaign_id}
           metrics={PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label }))}
           onSaved={() => {}}
         />
@@ -504,6 +512,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           pickerType="advertiser"
           sheetUrl={advDataUrl}
           name={campaign.advertiser_name || ""}
+          campaignId={campaign.campaign_id}
           metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
           onSaved={() => {}}
         />

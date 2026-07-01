@@ -267,21 +267,52 @@ def _compute_advertiser_metrics(adv_metric_names: List[str], row_data: Dict[str,
     return computed
 
 
-async def _load_column_mapping(db: AsyncSession, name: str, map_type: str) -> Optional[Dict]:
-    """Load a saved column mapping from DB."""
+async def _load_column_mapping(
+    db: AsyncSession,
+    name: str,
+    map_type: str,
+    sheet_url: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+) -> Optional[Dict]:
+    """Load the best saved column mapping from DB.
+
+    Prefer campaign-scoped mappings, then mappings saved for the same sheet URL,
+    then legacy name/type mappings.
+    """
+    params = {"type": map_type}
+    clauses = ["type = :type"]
+    scope_clauses = []
+    order_parts = []
+    if campaign_id:
+        params["campaign_id"] = campaign_id
+        scope_clauses.append("campaign_id = :campaign_id")
+        order_parts.append("WHEN campaign_id = :campaign_id THEN 0")
+    if sheet_url:
+        params["sheet_url"] = sheet_url
+        scope_clauses.append("(campaign_id IS NULL AND sheet_url = :sheet_url)")
+        order_parts.append("WHEN campaign_id IS NULL AND sheet_url = :sheet_url THEN 1")
+    if name:
+        params["name"] = name
+        scope_clauses.append("(campaign_id IS NULL AND name = :name)")
+    if not scope_clauses:
+        return None
+    clauses.append("(" + " OR ".join(scope_clauses) + ")")
+    order_sql = "CASE " + " ".join(order_parts + ["ELSE 2"]) + " END, updated_at DESC"
     result = await db.execute(text(
-        "SELECT tab_name, header_row, data_start_row, mapping, format_type "
-        "FROM rmn_column_mappings WHERE name = :name AND type = :type ORDER BY updated_at DESC LIMIT 1"
-    ), {"name": name, "type": map_type})
+        "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type "
+        f"FROM rmn_column_mappings WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 1"
+    ), params)
     row = result.fetchone()
     if not row:
         return None
     return {
-        "tab_name": row[0],
-        "header_row": row[1],
-        "data_start_row": row[2],
-        "mapping": json.loads(row[3]) if row[3] else {},
-        "format_type": row[4],
+        "campaign_id": row[0],
+        "sheet_url": row[1],
+        "tab_name": row[2],
+        "header_row": row[3],
+        "data_start_row": row[4],
+        "mapping": json.loads(row[5]) if row[5] else {},
+        "format_type": row[6],
     }
 
 
@@ -678,8 +709,14 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     service = _get_service()
 
     # Load configurable column mappings from DB (if saved via Column Mapper UI)
-    pub_col_mapping = await _load_column_mapping(db, campaign.publisher_name or "", "publisher")
-    adv_col_mapping = await _load_column_mapping(db, campaign.advertiser_name or "", "advertiser")
+    pub_col_mapping = await _load_column_mapping(
+        db, campaign.publisher_name or "", "publisher",
+        sheet_url=campaign.publisher_data_url, campaign_id=campaign.id,
+    )
+    adv_col_mapping = await _load_column_mapping(
+        db, campaign.advertiser_name or "", "advertiser",
+        sheet_url=campaign.advertiser_data_url, campaign_id=campaign.id,
+    )
     if pub_col_mapping:
         logger.info(f"  Using saved column mapping for publisher '{campaign.publisher_name}'")
     if adv_col_mapping:

@@ -292,24 +292,52 @@ async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
 
 
 @app.get("/api/column-mappings")
-async def get_column_mappings(name: Optional[str] = None, type: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def get_column_mappings(
+    name: Optional[str] = None,
+    type: Optional[str] = None,
+    sheet_url: Optional[str] = None,
+    campaign_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
     """Get saved column mappings."""
-    sql = "SELECT id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at FROM rmn_column_mappings"
+    sql = "SELECT id, campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at FROM rmn_column_mappings"
     params = {}
     clauses = []
-    if name:
-        clauses.append("name = :name"); params["name"] = name
     if type:
         clauses.append("type = :type"); params["type"] = type
+    if campaign_id and type:
+        params["campaign_id"] = campaign_id
+        scope_clauses = ["campaign_id = :campaign_id"]
+        if sheet_url:
+            scope_clauses.append("(campaign_id IS NULL AND sheet_url = :sheet_url)")
+            params["sheet_url"] = sheet_url
+        if name:
+            scope_clauses.append("(campaign_id IS NULL AND name = :name)")
+            params["name"] = name
+        clauses.append("(" + " OR ".join(scope_clauses) + ")")
+    else:
+        if name:
+            clauses.append("name = :name"); params["name"] = name
+        if sheet_url:
+            clauses.append("sheet_url = :sheet_url"); params["sheet_url"] = sheet_url
+        if campaign_id:
+            clauses.append("campaign_id = :campaign_id"); params["campaign_id"] = campaign_id
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY updated_at DESC"
+    if campaign_id and type:
+        order_parts = ["WHEN campaign_id = :campaign_id THEN 0"]
+        if sheet_url:
+            order_parts.append("WHEN campaign_id IS NULL AND sheet_url = :sheet_url THEN 1")
+        order_parts.append("ELSE 2")
+        sql += " ORDER BY CASE " + " ".join(order_parts) + " END, updated_at DESC"
+    else:
+        sql += " ORDER BY updated_at DESC"
     result = await db.execute(text(sql), params)
     rows = result.fetchall()
     return {"mappings": [
-        {"id": r[0], "name": r[1], "type": r[2], "sheet_url": r[3], "tab_name": r[4],
-         "header_row": r[5], "data_start_row": r[6], "mapping": json.loads(r[7]) if r[7] else {},
-         "format_type": r[8], "created_at": r[9].isoformat() if r[9] else None}
+        {"id": r[0], "campaign_id": r[1], "name": r[2], "type": r[3], "sheet_url": r[4], "tab_name": r[5],
+         "header_row": r[6], "data_start_row": r[7], "mapping": json.loads(r[8]) if r[8] else {},
+         "format_type": r[9], "created_at": r[10].isoformat() if r[10] else None}
         for r in rows
     ]}
 
@@ -320,20 +348,31 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
     body = await request.json()
     name = body.get("name", "")
     map_type = body.get("type", "")
+    campaign_id = body.get("campaign_id") or None
+    sheet_url = body.get("sheet_url", "")
     if not name or not map_type:
         raise HTTPException(status_code=400, detail="name and type are required")
 
     mapping_json = json.dumps(body.get("mapping", {}))
 
-    # Upsert: delete existing for this name+type, insert new
-    await db.execute(text("DELETE FROM rmn_column_mappings WHERE name = :name AND type = :type"),
-                     {"name": name, "type": map_type})
+    # Upsert by the narrowest available scope. New Campaign Tracking mappings
+    # are campaign-scoped; legacy callers can still save sheet- or name-scoped rows.
+    if campaign_id:
+        await db.execute(text("DELETE FROM rmn_column_mappings WHERE campaign_id = :campaign_id AND type = :type"),
+                         {"campaign_id": campaign_id, "type": map_type})
+    elif sheet_url:
+        await db.execute(text("DELETE FROM rmn_column_mappings WHERE campaign_id IS NULL AND name = :name AND type = :type AND sheet_url = :sheet_url"),
+                         {"name": name, "type": map_type, "sheet_url": sheet_url})
+    else:
+        await db.execute(text("DELETE FROM rmn_column_mappings WHERE campaign_id IS NULL AND name = :name AND type = :type"),
+                         {"name": name, "type": map_type})
     await db.execute(text("""
-        INSERT INTO rmn_column_mappings (name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, updated_at)
-        VALUES (:name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, NOW())
+        INSERT INTO rmn_column_mappings (campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, updated_at)
+        VALUES (:campaign_id, :name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, NOW())
     """), {
+        "campaign_id": campaign_id,
         "name": name, "type": map_type,
-        "sheet_url": body.get("sheet_url", ""),
+        "sheet_url": sheet_url,
         "tab_name": body.get("tab_name", ""),
         "header_row": body.get("header_row", 1),
         "data_start_row": body.get("data_start_row", 2),

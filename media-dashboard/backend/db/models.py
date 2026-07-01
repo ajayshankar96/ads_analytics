@@ -271,6 +271,7 @@ class ColumnMapping(Base):
     __tablename__ = "rmn_column_mappings"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(32), index=True, default=None)
     name: Mapped[str] = mapped_column(String(255))
     type: Mapped[str] = mapped_column(String(16))  # publisher or advertiser
     sheet_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
