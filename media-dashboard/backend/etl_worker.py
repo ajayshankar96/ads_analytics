@@ -290,12 +290,30 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
 
     tab_filter = col_mapping.get("tab_name", "")
 
+    converted_id = None
     try:
-        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        try:
+            meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        except Exception as e:
+            if "office file" in str(e).lower() or "not supported" in str(e).lower():
+                from sheets_client import _get_credentials
+                from googleapiclient.discovery import build as _build
+                creds = _get_credentials()
+                drive = _build("drive", "v3", credentials=creds)
+                copy = drive.files().copy(
+                    fileId=sheet_id,
+                    body={"name": "_tmp_etl_conversion", "mimeType": "application/vnd.google-apps.spreadsheet"}
+                ).execute()
+                converted_id = copy["id"]
+                sheet_id = converted_id
+                meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+                logger.info(f"  Converted Office file to Google Sheet for ETL: {converted_id}")
+            else:
+                raise
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
 
         if tab_filter:
-            target_tabs = [t for t in tabs if tab_filter in t]
+            target_tabs = [t for t in tabs if tab_filter.lower() in t.lower()]
             if not target_tabs:
                 target_tabs = tabs
                 logger.warning(f"Visual format: no matching tabs for '{tab_filter}', using all tabs")
@@ -368,6 +386,17 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
 
     except Exception as e:
         logger.error(f"Error extracting visual format from {sheet_url}: {e}")
+    finally:
+        if converted_id:
+            try:
+                from sheets_client import _get_credentials
+                from googleapiclient.discovery import build as _build
+                creds = _get_credentials()
+                drive = _build("drive", "v3", credentials=creds)
+                drive.files().delete(fileId=converted_id).execute()
+                logger.info(f"  Deleted temporary converted sheet: {converted_id}")
+            except Exception:
+                pass
 
     return records
 
