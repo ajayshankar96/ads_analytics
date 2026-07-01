@@ -124,6 +124,12 @@ def load_from_postgres():
 
         full_rows = []
         for row, metrics in parsed_rows:
+            try:
+                current_adv_spend = float(str(row[23]).replace(",", "").strip() or 0)
+            except (ValueError, TypeError):
+                current_adv_spend = 0.0
+            if current_adv_spend == 0:
+                row[23] = metrics.get("Revenue", metrics.get("revenue", row[23]))
             for col in adv_metric_cols:
                 row.append(str(metrics.get(col, "-")))
             full_rows.append([str(v) for v in row])
@@ -1559,7 +1565,9 @@ async def pg_aggregates(
 ):
     params = {}
     where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
-    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM(advertiser_spends),0) as adv_spends, COALESCE(SUM(COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, 0)),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    revenue_expr = "COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, (advertiser_metrics::jsonb->>'revenue')::float, 0)"
+    adv_spends_expr = f"CASE WHEN COALESCE(advertiser_spends, 0) != 0 THEN advertiser_spends ELSE {revenue_expr} END"
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
     # Count distinct advertisers/publishers
@@ -1743,13 +1751,13 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
         row_data['CPC'] = (row_data['Spends'] / row_data['Clicks']) if row_data['Clicks'] > 0 else 0
         adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
         for k, v in adv_metrics.items():
-            try:
-                row_data[k] = float(v)
-            except (ValueError, TypeError):
-                pass
+            etl_worker._add_metric_alias(row_data, k, v)
 
         new_pub = etl_worker._evaluate_formula(pub_formula, row_data) if pub_formula else row_data['Spends']
-        new_adv = etl_worker._evaluate_formula(adv_formula, row_data) if adv_formula else 0.0
+        if adv_formula:
+            new_adv = etl_worker._evaluate_formula(adv_formula, row_data)
+        else:
+            new_adv = etl_worker._fallback_advertiser_spends(row_data)
         row_data['Publisher_Spends'] = new_pub
         row_data['Advertiser_Spends'] = new_adv
         computed = etl_worker._compute_advertiser_metrics(adv_metric_names, row_data)

@@ -7,6 +7,9 @@ import {
   getDashboardAggregates,
   getDashboardTimeSeries,
   getDashboardBreakdowns,
+  getPgAggregates,
+  getPgTimeseries,
+  getPgBreakdowns,
 } from "../api";
 
 const COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
@@ -81,10 +84,13 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
 
   useEffect(() => {
     setLoading(true);
+    const readAggregates = dataSource === "postgres" ? getPgAggregates : getDashboardAggregates;
+    const readTimeSeries = dataSource === "postgres" ? getPgTimeseries : getDashboardTimeSeries;
+    const readBreakdowns = dataSource === "postgres" ? getPgBreakdowns : getDashboardBreakdowns;
     Promise.all([
-      getDashboardAggregates(filters),
-      getDashboardTimeSeries({ ...filters, groupBy }),
-      getDashboardBreakdowns(filters),
+      readAggregates(filters),
+      readTimeSeries({ ...filters, groupBy }),
+      readBreakdowns(filters),
     ])
       .then(([a, ts, bd]) => {
         setAggs(a);

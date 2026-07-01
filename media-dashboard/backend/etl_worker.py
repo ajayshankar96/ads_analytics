@@ -30,6 +30,14 @@ PUBLISHER_METRIC_COLS = [
     "Coins Burned", "Coins_Burned", "Redirections", "Spends",
 ]
 
+METRIC_ALIASES = {
+    "revenue": "Revenue",
+    "orders": "Orders",
+    "leads": "Leads",
+    "sessions": "Sessions",
+    "spends": "Spends",
+}
+
 
 def _safe_float(value) -> float:
     if value is None or value == '':
@@ -128,6 +136,30 @@ def _matches_segment(row_segment: str, target_segments: str) -> bool:
     return False
 
 
+def _add_metric_alias(row_data: Dict[str, float], key: str, value) -> None:
+    """Store advertiser metrics under both configured and formula-friendly names."""
+    numeric_value = _safe_float(value)
+    row_data[key] = numeric_value
+    canonical = METRIC_ALIASES.get(str(key).strip().lower())
+    if canonical:
+        row_data[canonical] = numeric_value
+
+
+def _get_metric_value(row_data: Dict[str, float], *names: str) -> float:
+    wanted = {name.strip().lower() for name in names}
+    for key, value in row_data.items():
+        if str(key).strip().lower() in wanted:
+            return _safe_float(value)
+    return 0.0
+
+
+def _fallback_advertiser_spends(row_data: Dict[str, float]) -> float:
+    spends = _get_metric_value(row_data, "Advertiser_Spends", "Spends")
+    if spends > 0:
+        return spends
+    return _get_metric_value(row_data, "Revenue")
+
+
 def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optional[Dict] = None) -> float:
     if not formula_str or not formula_str.strip():
         return 0.0
@@ -201,23 +233,24 @@ def _compute_advertiser_metrics(adv_metric_names: List[str], row_data: Dict[str,
     """Auto-derive standard computed metrics based on which advertiser metrics are selected."""
     computed = {}
     pub_spends = row_data.get('Publisher_Spends', row_data.get('Spends', 0))
+    selected_metrics = {str(name).strip().lower() for name in adv_metric_names}
 
     if pub_spends > 0:
-        if 'leads' in adv_metric_names or row_data.get('Leads', 0) > 0:
-            leads = row_data.get('Leads', 0)
+        if 'leads' in selected_metrics or _get_metric_value(row_data, 'Leads') > 0:
+            leads = _get_metric_value(row_data, 'Leads')
             if leads > 0:
                 computed['CPL'] = round(pub_spends / leads, 2)
-        if 'orders' in adv_metric_names or row_data.get('Orders', 0) > 0:
-            orders = row_data.get('Orders', 0)
+        if 'orders' in selected_metrics or _get_metric_value(row_data, 'Orders') > 0:
+            orders = _get_metric_value(row_data, 'Orders')
             if orders > 0:
                 computed['CPA'] = round(pub_spends / orders, 2)
-        if 'sessions' in adv_metric_names or row_data.get('Sessions', 0) > 0:
-            sessions = row_data.get('Sessions', 0)
+        if 'sessions' in selected_metrics or _get_metric_value(row_data, 'Sessions') > 0:
+            sessions = _get_metric_value(row_data, 'Sessions')
             if sessions > 0:
                 computed['CPS'] = round(pub_spends / sessions, 2)
 
-    if 'revenue' in adv_metric_names or row_data.get('Revenue', 0) > 0:
-        revenue = row_data.get('Revenue', 0)
+    if 'revenue' in selected_metrics or _get_metric_value(row_data, 'Revenue') > 0:
+        revenue = _get_metric_value(row_data, 'Revenue')
         if revenue > 0 and pub_spends > 0:
             computed['ROAS'] = round(revenue / pub_spends, 2)
 
@@ -729,7 +762,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         # Advertiser raw metrics
         for k, v in adv_row.items():
             if k != 'Date':
-                row_data[k] = _safe_float(v)
+                _add_metric_alias(row_data, k, v)
 
         # Evaluate spend formulas (derived from buy_type + rate)
         if pub_formula:
@@ -740,7 +773,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         if adv_formula:
             adv_spends = _evaluate_formula(adv_formula, row_data)
         else:
-            adv_spends = _safe_float(adv_row.get('Spends', 0))
+            adv_spends = _fallback_advertiser_spends(row_data)
 
         # Auto-compute standard metrics (CPL, CPA, ROAS etc.) based on selected advertiser metrics
         adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
