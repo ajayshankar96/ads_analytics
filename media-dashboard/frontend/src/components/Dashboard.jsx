@@ -83,6 +83,7 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
   ];
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     const readAggregates = dataSource === "postgres" ? getPgAggregates : getDashboardAggregates;
     const readTimeSeries = dataSource === "postgres" ? getPgTimeseries : getDashboardTimeSeries;
@@ -93,12 +94,14 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
       readBreakdowns(filters),
     ])
       .then(([a, ts, bd]) => {
+        if (cancelled) return;
         setAggs(a);
         setSeries(ts.timeSeries || []);
         setBreakdowns(bd.breakdowns || {});
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!cancelled) console.error(e); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [filters, groupBy, dataSource]);
 
   // Filter series to selected date range
