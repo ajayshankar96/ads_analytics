@@ -321,18 +321,40 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
   );
 }
 
+function parseTrackingMetrics(raw) {
+  try { return JSON.parse(raw || "{}"); } catch { return {}; }
+}
+
 function SetupTab({ campaign, segments, canEdit, onReload }) {
+  const initialMetrics = parseTrackingMetrics(campaign.metrics_json);
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
   const [pubDataUrl, setPubDataUrl] = useState(campaign.publisher_data_url || "");
   const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
   const [segmentAdv, setSegmentAdv] = useState(campaign.segment_adv || "");
-  // Metric selections
-  const existingMetrics = (() => { try { return JSON.parse(campaign.metrics_json || "{}"); } catch { return {}; } })();
-  const [pubMetrics, setPubMetrics] = useState(existingMetrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
-  const [advMetrics, setAdvMetrics] = useState(existingMetrics.advertiser_metrics || []);
+  const [pubMetrics, setPubMetrics] = useState(initialMetrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
+  const [advMetrics, setAdvMetrics] = useState(initialMetrics.advertiser_metrics || []);
   const [submitting, setSubmitting] = useState(false);
   const [advUrls, setAdvUrls] = useState([]);
   const [pubUrls, setPubUrls] = useState([]);
+  const [isEditingSubmitted, setIsEditingSubmitted] = useState(false);
+
+  useEffect(() => {
+    const metrics = parseTrackingMetrics(campaign.metrics_json);
+    setAdvDataUrl(campaign.advertiser_data_url || "");
+    setPubDataUrl(campaign.publisher_data_url || "");
+    setSegmentPub(campaign.segment_pub || "");
+    setSegmentAdv(campaign.segment_adv || "");
+    setPubMetrics(metrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
+    setAdvMetrics(metrics.advertiser_metrics || []);
+    setIsEditingSubmitted(false);
+  }, [
+    campaign.campaign_id,
+    campaign.advertiser_data_url,
+    campaign.publisher_data_url,
+    campaign.segment_pub,
+    campaign.segment_adv,
+    campaign.metrics_json,
+  ]);
 
   // Auto-populate URLs from sheet_urls table + check mappings
   useEffect(() => {
@@ -361,19 +383,33 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     const metricsPayload = JSON.stringify({
       publisher_metrics: pubMetrics, advertiser_metrics: advMetrics,
     });
-    try { await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, metrics_json: metricsPayload, additional_context: "" }); onReload(); }
+    try {
+      await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, metrics_json: metricsPayload, additional_context: "" });
+      setIsEditingSubmitted(false);
+      onReload();
+    }
     catch (e) { alert("Failed: " + e.message); }
     finally { setSubmitting(false); }
   };
 
-  if (campaign.tracking_submitted) {
+  if (campaign.tracking_submitted && !isEditingSubmitted) {
+    const selectedPubMetrics = (initialMetrics.publisher_metrics || []).map((key) => PUBLISHER_METRICS.find((m) => m.key === key)?.label || key).join(", ");
+    const selectedAdvMetrics = (initialMetrics.advertiser_metrics || []).map((key) => ADVERTISER_METRICS.find((m) => m.key === key)?.label || key).join(", ");
     return (
       <div>
-        <div style={{ background: "#E3F6EE", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: c.green }}>✅ Tracking submitted</div>
+        <div style={{ background: "#E3F6EE", borderRadius: 10, padding: "12px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: c.green }}>✅ Tracking submitted</div>
+            <div style={{ fontSize: 12, color: c.sub, marginTop: 3 }}>Current setup is active for sync and reporting.</div>
+          </div>
+          {canEdit && (
+            <button onClick={() => setIsEditingSubmitted(true)} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              Edit Setup
+            </button>
+          )}
         </div>
         <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px" }}>
-          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Segment (Advertiser)", campaign.segment_adv]].map(([label, val]) => (
+          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Segment (Advertiser)", campaign.segment_adv], ["Publisher Metrics", selectedPubMetrics], ["Advertiser Metrics", selectedAdvMetrics]].map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 12 }}>
               <span style={{ color: c.muted, minWidth: 140 }}>{label}</span>
               <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>{val && val.startsWith && val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : (val || "—")}</span>
@@ -388,6 +424,17 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
 
   return (
     <div>
+      {campaign.tracking_submitted && (
+        <div style={{ background: "#F0F4FF", border: `1px solid ${c.blue}22`, borderRadius: 10, padding: "12px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: c.blue }}>Editing tracking setup</div>
+            <div style={{ fontSize: 12, color: c.sub, marginTop: 3 }}>Saving will update this campaign's active tracking configuration.</div>
+          </div>
+          <button onClick={() => setIsEditingSubmitted(false)} style={{ background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 7, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Cancel
+          </button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <div>
           <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Advertiser Data Sheet URL</label>
@@ -462,7 +509,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
         />
       )}
 
-      <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 14 }}>{submitting ? "Submitting…" : "Submit Tracking & Complete ✓"}</button>
+      <button onClick={handleSubmit} disabled={submitting} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 14 }}>{submitting ? "Saving…" : campaign.tracking_submitted ? "Save Setup Changes ✓" : "Submit Tracking & Complete ✓"}</button>
     </div>
   );
 }
