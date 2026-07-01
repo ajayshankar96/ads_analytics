@@ -1812,6 +1812,7 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
             pass
 
     pub_formula, adv_formula = etl_worker._resolve_spend_formulas(buy_type, rate)
+    billing_configs = await etl_worker._load_billing_configs(db, campaign_id)
     metrics_config = json.loads(campaign.metrics_json or '{}')
     adv_metric_names = metrics_config.get('advertiser_metrics', [])
 
@@ -1834,9 +1835,18 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
         for k, v in adv_metrics.items():
             etl_worker._add_metric_alias(row_data, k, v)
 
-        new_pub = etl_worker._evaluate_formula(pub_formula, row_data) if pub_formula else row_data['Spends']
+        pub_billing_config = etl_worker._active_billing_config(billing_configs, "publisher", m.date)
+        adv_billing_config = etl_worker._active_billing_config(billing_configs, "advertiser", m.date)
+        if pub_billing_config:
+            new_pub = etl_worker._billing_spend_from_config(pub_billing_config, row_data)
+        elif pub_formula:
+            new_pub = etl_worker._evaluate_formula(pub_formula, row_data)
+        else:
+            new_pub = row_data['Spends']
         if etl_worker._has_metric(adv_metrics, "Spends", "spends", "Advertiser_Spends", "advertiser_spends"):
             new_adv = etl_worker._get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
+        elif adv_billing_config:
+            new_adv = etl_worker._billing_spend_from_config(adv_billing_config, row_data)
         elif adv_formula:
             new_adv = etl_worker._evaluate_formula(adv_formula, row_data)
         else:
@@ -1985,7 +1995,8 @@ async def add_billing_config(campaign_id: str, req: BillingConfigRequest, reques
     )
     db.add(new_config)
     await db.commit()
-    return {"success": True}
+    recompute_result = await recompute_campaign_metrics(campaign_id, db)
+    return {"success": True, "recomputed": recompute_result.get("recomputed", 0)}
 
 
 @app.get("/api/sheet-headers")

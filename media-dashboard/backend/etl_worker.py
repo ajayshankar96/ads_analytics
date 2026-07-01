@@ -239,6 +239,54 @@ def _resolve_spend_formulas(buy_type: str, rate: float) -> tuple:
     return pub_formula, adv_formula
 
 
+async def _load_billing_configs(db: AsyncSession, campaign_id: str) -> List[Dict[str, Any]]:
+    """Load billing configs newest-first so date matching can pick the latest active row."""
+    result = await db.execute(text("""
+        SELECT side, billing_model, rate, start_date, end_date
+        FROM rmn_billing_config
+        WHERE campaign_id = :campaign_id
+        ORDER BY side, start_date DESC
+    """), {"campaign_id": campaign_id})
+    return [
+        {
+            "side": row[0],
+            "billing_model": row[1],
+            "rate": row[2],
+            "start_date": row[3],
+            "end_date": row[4],
+        }
+        for row in result.fetchall()
+    ]
+
+
+def _active_billing_config(configs: List[Dict[str, Any]], side: str, date_obj) -> Optional[Dict[str, Any]]:
+    for cfg in configs:
+        if cfg.get("side") != side:
+            continue
+        start_date = cfg.get("start_date")
+        end_date = cfg.get("end_date")
+        if start_date and start_date <= date_obj and (end_date is None or end_date >= date_obj):
+            return cfg
+    return None
+
+
+def _billing_spend_from_config(config: Dict[str, Any], row_data: Dict[str, float]) -> float:
+    model = str(config.get("billing_model") or "").strip().lower()
+    rate = _safe_float(config.get("rate", 0))
+    if model == "cpc":
+        return _get_metric_value(row_data, "Clicks") * rate
+    if model == "cpd":
+        return rate
+    if model == "cpm":
+        return _get_metric_value(row_data, "Impressions") * rate / 1000.0
+    if model == "cpa":
+        return _get_metric_value(row_data, "Orders_pub", "Orders") * rate
+    if model == "roas":
+        revenue = _get_metric_value(row_data, "Revenue")
+        return revenue / rate if rate else 0.0
+    return 0.0
+
+
 def _compute_advertiser_metrics(adv_metric_names: List[str], row_data: Dict[str, float]) -> Dict[str, float]:
     """Auto-derive standard computed metrics based on which advertiser metrics are selected."""
     computed = {}
@@ -796,6 +844,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             pass
 
     pub_formula, adv_formula = _resolve_spend_formulas(buy_type, rate)
+    billing_configs = await _load_billing_configs(db, campaign.id)
+    has_pub_billing = any(cfg.get("side") == "publisher" for cfg in billing_configs)
+    has_adv_billing = any(cfg.get("side") == "advertiser" for cfg in billing_configs)
+    if has_pub_billing:
+        logger.info("  Publisher billing config found; it will override sales-pipeline spend formula when active")
+    if has_adv_billing:
+        logger.info("  Advertiser billing config found; it will be used when direct advertiser spend is absent")
     if pub_formula:
         logger.info(f"  Publisher spends formula: {pub_formula} (buy_type={buy_type}, rate={rate})")
     if adv_formula:
@@ -840,8 +895,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             if k != 'Date':
                 _add_metric_alias(row_data, k, v)
 
-        # Evaluate spend formulas (derived from buy_type + rate)
-        if pub_formula:
+        # Evaluate spend formulas. Billing-tab configs are campaign/date-specific
+        # and override sales-pipeline defaults when active.
+        pub_billing_config = _active_billing_config(billing_configs, "publisher", date_obj)
+        adv_billing_config = _active_billing_config(billing_configs, "advertiser", date_obj)
+        if pub_billing_config:
+            pub_spends = _billing_spend_from_config(pub_billing_config, row_data)
+        elif pub_formula:
             pub_spends = _evaluate_formula(pub_formula, row_data)
         else:
             pub_spends = row_data['Spends']
@@ -849,6 +909,8 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         has_direct_adv_spends = _has_metric(adv_row, "Spends", "spends", "Advertiser_Spends", "advertiser_spends")
         if has_direct_adv_spends:
             adv_spends = _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
+        elif adv_billing_config:
+            adv_spends = _billing_spend_from_config(adv_billing_config, row_data)
         elif adv_formula:
             adv_spends = _evaluate_formula(adv_formula, row_data)
         else:
