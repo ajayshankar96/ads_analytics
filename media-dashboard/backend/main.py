@@ -271,7 +271,7 @@ async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
             raise HTTPException(status_code=400, detail=str(e))
     try:
         tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
-        target_tab = tab or tabs[0]
+        target_tab = tab if tab and tab in tabs else tabs[0]
         result = service.spreadsheets().values().get(
             spreadsheetId=file_id, range=f"'{target_tab}'!A1:Z20"
         ).execute()
