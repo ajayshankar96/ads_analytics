@@ -128,7 +128,9 @@ def load_from_postgres():
                 current_adv_spend = float(str(row[23]).replace(",", "").strip() or 0)
             except (ValueError, TypeError):
                 current_adv_spend = 0.0
-            if current_adv_spend == 0:
+            if "Spends" in metrics or "spends" in metrics:
+                row[23] = metrics.get("Spends", metrics.get("spends", row[23]))
+            elif current_adv_spend == 0:
                 row[23] = metrics.get("Revenue", metrics.get("revenue", row[23]))
             for col in adv_metric_cols:
                 row.append(str(metrics.get(col, "-")))
@@ -1584,7 +1586,8 @@ async def pg_aggregates(
     params = {}
     where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
     revenue_expr = "COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, (advertiser_metrics::jsonb->>'revenue')::float, 0)"
-    adv_spends_expr = f"CASE WHEN COALESCE(advertiser_spends, 0) != 0 THEN advertiser_spends ELSE {revenue_expr} END"
+    direct_adv_spends_expr = "NULLIF(COALESCE(advertiser_metrics::jsonb->>'Spends', advertiser_metrics::jsonb->>'spends'), '')::float"
+    adv_spends_expr = f"COALESCE({direct_adv_spends_expr}, NULLIF(advertiser_spends, 0), {revenue_expr})"
     sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
@@ -1790,7 +1793,9 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
             etl_worker._add_metric_alias(row_data, k, v)
 
         new_pub = etl_worker._evaluate_formula(pub_formula, row_data) if pub_formula else row_data['Spends']
-        if adv_formula:
+        if etl_worker._has_metric(adv_metrics, "Spends", "spends", "Advertiser_Spends", "advertiser_spends"):
+            new_adv = etl_worker._get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
+        elif adv_formula:
             new_adv = etl_worker._evaluate_formula(adv_formula, row_data)
         else:
             new_adv = etl_worker._fallback_advertiser_spends(row_data)

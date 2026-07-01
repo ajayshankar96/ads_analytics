@@ -35,7 +35,7 @@ METRIC_ALIASES = {
     "orders": "Orders",
     "leads": "Leads",
     "sessions": "Sessions",
-    "spends": "Spends",
+    "spends": "Advertiser_Spends",
 }
 
 
@@ -139,10 +139,20 @@ def _matches_segment(row_segment: str, target_segments: str) -> bool:
 def _add_metric_alias(row_data: Dict[str, float], key: str, value) -> None:
     """Store advertiser metrics under both configured and formula-friendly names."""
     numeric_value = _safe_float(value)
+    normalized_key = str(key).strip().lower()
+    if normalized_key in {"spends", "advertiser_spends"}:
+        row_data["Advertiser_Spends"] = numeric_value
+        row_data["advertiser_spends"] = numeric_value
+        return
     row_data[key] = numeric_value
-    canonical = METRIC_ALIASES.get(str(key).strip().lower())
+    canonical = METRIC_ALIASES.get(normalized_key)
     if canonical:
         row_data[canonical] = numeric_value
+
+
+def _has_metric(mapping: Dict[str, float], *names: str) -> bool:
+    wanted = {name.strip().lower() for name in names}
+    return any(str(key).strip().lower() in wanted for key in mapping.keys())
 
 
 def _get_metric_value(row_data: Dict[str, float], *names: str) -> float:
@@ -154,7 +164,7 @@ def _get_metric_value(row_data: Dict[str, float], *names: str) -> float:
 
 
 def _fallback_advertiser_spends(row_data: Dict[str, float]) -> float:
-    spends = _get_metric_value(row_data, "Advertiser_Spends", "Spends")
+    spends = _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
     if spends > 0:
         return spends
     return _get_metric_value(row_data, "Revenue")
@@ -799,7 +809,10 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         else:
             pub_spends = row_data['Spends']
 
-        if adv_formula:
+        has_direct_adv_spends = _has_metric(adv_row, "Spends", "spends", "Advertiser_Spends", "advertiser_spends")
+        if has_direct_adv_spends:
+            adv_spends = _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
+        elif adv_formula:
             adv_spends = _evaluate_formula(adv_formula, row_data)
         else:
             adv_spends = _fallback_advertiser_spends(row_data)
