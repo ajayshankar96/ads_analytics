@@ -1539,6 +1539,7 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
 # ── Postgres-backed Dashboard (Phase 4) — raw SQL for reliability ──────────────
 
 def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
+    from datetime import datetime as _dt
     clauses = []
     if advertiser:
         placeholders = ",".join(f":adv_{i}" for i in range(len(advertiser)))
@@ -1549,9 +1550,13 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
         clauses.append(f"publisher IN ({placeholders})")
         for i, p in enumerate(publisher): params[f"pub_{i}"] = p
     if dateFrom:
-        clauses.append("date >= :dateFrom"); params["dateFrom"] = dateFrom
+        clauses.append("date >= :dateFrom")
+        try: params["dateFrom"] = _dt.strptime(dateFrom, "%Y-%m-%d").date()
+        except Exception: params["dateFrom"] = dateFrom
     if dateTo:
-        clauses.append("date <= :dateTo"); params["dateTo"] = dateTo
+        clauses.append("date <= :dateTo")
+        try: params["dateTo"] = _dt.strptime(dateTo, "%Y-%m-%d").date()
+        except Exception: params["dateTo"] = dateTo
     return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
 
