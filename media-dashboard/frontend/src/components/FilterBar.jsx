@@ -42,21 +42,18 @@ const s = {
   },
 };
 
-function MultiSelect({ label, options = [], value = [], onChange, placeholder }) {
+function FilterSelect({ label, options = [], value = [], onChange, placeholder }) {
+  const selectedValue = Array.isArray(value) && value.length > 0 ? value[0] : "";
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
       <span style={s.label}>{label}</span>
       <select
-        multiple
-        value={value}
-        style={{ ...s.select, height: 34, overflow: "hidden" }}
-        onChange={(e) => {
-          const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-          onChange(selected);
-        }}
-        size={1}
+        value={selectedValue}
+        style={s.select}
+        onChange={(e) => onChange(e.target.value ? [e.target.value] : [])}
       >
-        <option value="" disabled hidden>{placeholder || `All ${label}`}</option>
+        <option value="">{placeholder || `All ${label}`}</option>
         {options.map((o) => (
           <option key={o} value={o}>{o}</option>
         ))}
@@ -75,22 +72,23 @@ function MultiSelect({ label, options = [], value = [], onChange, placeholder })
 
 export default function FilterBar({ options = {}, filters = {}, onChange }) {
   const update = (key, val) => onChange({ ...filters, [key]: val });
+  const updateMany = (changes) => onChange({ ...filters, ...changes });
 
   return (
     <div style={s.bar}>
-      <MultiSelect
+      <FilterSelect
         label="Advertiser"
         options={options.advertisers || []}
         value={filters.advertiser || []}
         onChange={(v) => update("advertiser", v)}
       />
-      <MultiSelect
+      <FilterSelect
         label="Publisher"
         options={options.publishers || []}
         value={filters.publisher || []}
         onChange={(v) => update("publisher", v)}
       />
-      <MultiSelect
+      <FilterSelect
         label="Segment"
         options={options.segments || []}
         value={filters.segment || []}
@@ -108,11 +106,9 @@ export default function FilterBar({ options = {}, filters = {}, onChange }) {
             if (v) {
               const [y, m] = v.split("-");
               const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-              update("dateFrom", `${v}-01`);
-              update("dateTo", `${v}-${lastDay}`);
+              updateMany({ dateFrom: `${v}-01`, dateTo: `${v}-${lastDay}` });
             } else {
-              update("dateFrom", "");
-              update("dateTo", "");
+              updateMany({ dateFrom: "", dateTo: "" });
             }
           }}
         />

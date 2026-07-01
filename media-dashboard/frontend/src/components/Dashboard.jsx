@@ -88,16 +88,28 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
     const readAggregates = dataSource === "postgres" ? getPgAggregates : getDashboardAggregates;
     const readTimeSeries = dataSource === "postgres" ? getPgTimeseries : getDashboardTimeSeries;
     const readBreakdowns = dataSource === "postgres" ? getPgBreakdowns : getDashboardBreakdowns;
-    Promise.all([
+    Promise.allSettled([
       readAggregates(filters),
       readTimeSeries({ ...filters, groupBy }),
       readBreakdowns(filters),
     ])
-      .then(([a, ts, bd]) => {
+      .then(([aggResult, seriesResult, breakdownResult]) => {
         if (cancelled) return;
-        setAggs(a);
-        setSeries(ts.timeSeries || []);
-        setBreakdowns(bd.breakdowns || {});
+        if (aggResult.status === "fulfilled") {
+          setAggs(aggResult.value);
+        } else {
+          console.error(aggResult.reason);
+        }
+        if (seriesResult.status === "fulfilled") {
+          setSeries(seriesResult.value.timeSeries || []);
+        } else {
+          console.error(seriesResult.reason);
+        }
+        if (breakdownResult.status === "fulfilled") {
+          setBreakdowns(breakdownResult.value.breakdowns || {});
+        } else {
+          console.error(breakdownResult.reason);
+        }
       })
       .catch((e) => { if (!cancelled) console.error(e); })
       .finally(() => { if (!cancelled) setLoading(false); });

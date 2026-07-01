@@ -1656,7 +1656,9 @@ async def pg_breakdowns(
 
     params_seg = {}
     where_seg = _pg_where(params_seg, advertiser, publisher, dateFrom, dateTo, segment)
-    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_seg} WHERE segment IS NOT NULL AND segment != '' GROUP BY segment ORDER BY impressions DESC"
+    segment_filter = "segment IS NOT NULL AND segment != ''"
+    where_seg = f"{where_seg} AND {segment_filter}" if where_seg else f" WHERE {segment_filter}"
+    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_seg} GROUP BY segment ORDER BY impressions DESC"
     seg_rows = (await db.execute(text(sql_seg), params_seg)).all()
 
     return {
