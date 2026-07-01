@@ -1538,7 +1538,7 @@ async def workflow_mark_not_live(campaign_id: str, req: NotLiveRequest, db: Asyn
 
 # ── Postgres-backed Dashboard (Phase 4) — raw SQL for reliability ──────────────
 
-def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
+def _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment=None):
     from datetime import datetime as _dt
     clauses = []
     if advertiser:
@@ -1549,6 +1549,10 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
         placeholders = ",".join(f":pub_{i}" for i in range(len(publisher)))
         clauses.append(f"publisher IN ({placeholders})")
         for i, p in enumerate(publisher): params[f"pub_{i}"] = p
+    if segment:
+        placeholders = ",".join(f":seg_{i}" for i in range(len(segment)))
+        clauses.append(f"segment IN ({placeholders})")
+        for i, s in enumerate(segment): params[f"seg_{i}"] = s
     if dateFrom:
         clauses.append("date >= :dateFrom")
         try: params["dateFrom"] = _dt.strptime(dateFrom, "%Y-%m-%d").date()
@@ -1564,12 +1568,13 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo):
 async def pg_aggregates(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     params = {}
-    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
     revenue_expr = "COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, (advertiser_metrics::jsonb->>'revenue')::float, 0)"
     adv_spends_expr = f"CASE WHEN COALESCE(advertiser_spends, 0) != 0 THEN advertiser_spends ELSE {revenue_expr} END"
     sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
@@ -1600,13 +1605,21 @@ async def pg_aggregates(
 async def pg_timeseries(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
+    groupBy: Optional[str] = "day",
     db: AsyncSession = Depends(get_db),
 ):
     params = {}
-    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
-    sql = f"SELECT date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY date ORDER BY date"
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
+    if groupBy == "week":
+        date_expr = "DATE_TRUNC('week', date)::date"
+    elif groupBy == "month":
+        date_expr = "DATE_TRUNC('month', date)::date"
+    else:
+        date_expr = "date"
+    sql = f"SELECT {date_expr} as date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY {date_expr} ORDER BY {date_expr}"
     rows = (await db.execute(text(sql), params)).all()
     return {
         "timeSeries": [{"date": r.date.isoformat(), "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2), "orders": int(r.orders or 0)} for r in rows],
@@ -1618,24 +1631,31 @@ async def pg_timeseries(
 async def pg_breakdowns(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
     params_adv = {}
-    where_adv = _pg_where(params_adv, advertiser, publisher, dateFrom, dateTo)
+    where_adv = _pg_where(params_adv, advertiser, publisher, dateFrom, dateTo, segment)
     sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
     adv_rows = (await db.execute(text(sql_adv), params_adv)).all()
 
     params_pub = {}
-    where_pub = _pg_where(params_pub, advertiser, publisher, dateFrom, dateTo)
+    where_pub = _pg_where(params_pub, advertiser, publisher, dateFrom, dateTo, segment)
     sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
     pub_rows = (await db.execute(text(sql_pub), params_pub)).all()
 
+    params_seg = {}
+    where_seg = _pg_where(params_seg, advertiser, publisher, dateFrom, dateTo, segment)
+    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_seg} WHERE segment IS NOT NULL AND segment != '' GROUP BY segment ORDER BY impressions DESC"
+    seg_rows = (await db.execute(text(sql_seg), params_seg)).all()
+
     return {
         "breakdowns": {
-            "by_advertiser": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in adv_rows],
-            "by_publisher": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in pub_rows],
+            "byAdvertiser": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in adv_rows],
+            "byPublisher": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in pub_rows],
+            "bySegment": [{"name": r.name, "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2)} for r in seg_rows],
         },
         "source": "postgres",
     }
@@ -1645,6 +1665,7 @@ async def pg_breakdowns(
 async def pg_table(
     advertiser: Optional[List[str]] = Query(None),
     publisher: Optional[List[str]] = Query(None),
+    segment: Optional[List[str]] = Query(None),
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
     offset: int = 0,
@@ -1652,7 +1673,7 @@ async def pg_table(
     db: AsyncSession = Depends(get_db),
 ):
     params = {}
-    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo)
+    where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
     count_sql = f"SELECT COUNT(*) as cnt FROM rmn_campaign_metrics{where}"
     total = (await db.execute(text(count_sql), params)).scalar() or 0
 
