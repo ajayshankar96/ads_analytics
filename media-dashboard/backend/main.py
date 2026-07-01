@@ -1605,6 +1605,9 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment=None):
     return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
 
+PG_PUBLISHER_SPENDS_EXPR = "COALESCE(NULLIF(publisher_spends, 0), spends, 0)"
+
+
 @app.get("/api/dashboard/pg/filters")
 async def pg_filters(db: AsyncSession = Depends(get_db)):
     advertisers = [r[0] for r in (await db.execute(text("SELECT DISTINCT advertiser FROM rmn_campaign_metrics WHERE advertiser IS NOT NULL ORDER BY advertiser"))).all()]
@@ -1627,20 +1630,20 @@ async def pg_aggregates(
     revenue_expr = "COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, (advertiser_metrics::jsonb->>'revenue')::float, 0)"
     direct_adv_spends_expr = "NULLIF(COALESCE(advertiser_metrics::jsonb->>'Spends', advertiser_metrics::jsonb->>'spends'), '')::float"
     adv_spends_expr = f"COALESCE({direct_adv_spends_expr}, NULLIF(advertiser_spends, 0), {revenue_expr})"
-    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM(publisher_spends),0) as pub_spends, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
-    imp, clicks, spends, orders = int(row.impressions), int(row.clicks), float(row.spends), int(row.orders)
+    imp, clicks, pub_spends, orders = int(row.impressions), int(row.clicks), float(row.pub_spends), int(row.orders)
     # Count distinct advertisers/publishers
     count_sql = f"SELECT COUNT(DISTINCT advertiser) as adv_count, COUNT(DISTINCT publisher) as pub_count, COALESCE(SUM(distribution),0) as distribution, COALESCE(SUM(redirections),0) as redirections, COUNT(*) as total_rows FROM rmn_campaign_metrics{where}"
     counts = (await db.execute(text(count_sql), params)).one()
     dist = int(counts.distribution)
     return {
         "impressions": imp, "distribution": dist, "impressionsAndDistribution": imp + dist,
-        "clicks": clicks, "spends": round(spends, 2), "orders": orders,
+        "clicks": clicks, "spends": round(pub_spends, 2), "raw_spends": round(float(row.raw_spends), 2), "orders": orders,
         "ctr": round((clicks / imp * 100) if imp > 0 else 0, 2),
-        "cpm": round((spends / imp * 1000) if imp > 0 else 0, 2),
-        "cpc": round((spends / clicks) if clicks > 0 else 0, 2),
-        "publisher_spends": round(float(row.pub_spends), 2),
+        "cpm": round((pub_spends / imp * 1000) if imp > 0 else 0, 2),
+        "cpc": round((pub_spends / clicks) if clicks > 0 else 0, 2),
+        "publisher_spends": round(pub_spends, 2),
         "advertiser_spends": round(float(row.adv_spends), 2),
         "advertiser_revenue": round(float(row.adv_revenue), 2),
         "redirections": int(counts.redirections),
@@ -1669,7 +1672,7 @@ async def pg_timeseries(
         date_expr = "DATE_TRUNC('month', date)::date"
     else:
         date_expr = "date"
-    sql = f"SELECT {date_expr} as date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY {date_expr} ORDER BY {date_expr}"
+    sql = f"SELECT {date_expr} as date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY {date_expr} ORDER BY {date_expr}"
     rows = (await db.execute(text(sql), params)).all()
     return {
         "timeSeries": [{"date": r.date.isoformat(), "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2), "orders": int(r.orders or 0)} for r in rows],
@@ -1688,19 +1691,19 @@ async def pg_breakdowns(
 ):
     params_adv = {}
     where_adv = _pg_where(params_adv, advertiser, publisher, dateFrom, dateTo, segment)
-    sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
+    sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
     adv_rows = (await db.execute(text(sql_adv), params_adv)).all()
 
     params_pub = {}
     where_pub = _pg_where(params_pub, advertiser, publisher, dateFrom, dateTo, segment)
-    sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
+    sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
     pub_rows = (await db.execute(text(sql_pub), params_pub)).all()
 
     params_seg = {}
     where_seg = _pg_where(params_seg, advertiser, publisher, dateFrom, dateTo, segment)
     segment_filter = "segment IS NOT NULL AND segment != ''"
     where_seg = f"{where_seg} AND {segment_filter}" if where_seg else f" WHERE {segment_filter}"
-    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM(spends) as spends FROM rmn_campaign_metrics{where_seg} GROUP BY segment ORDER BY impressions DESC"
+    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_seg} GROUP BY segment ORDER BY impressions DESC"
     seg_rows = (await db.execute(text(sql_seg), params_seg)).all()
 
     return {
