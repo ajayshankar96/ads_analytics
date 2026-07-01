@@ -182,7 +182,7 @@ function VisualSheetPicker({ sheetUrl, name, metrics = [], onSaved, pickerType =
         ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segCell ? segCell.col : null, metrics: metricsMapping }
         : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
       await saveColumnMapping({
-        name, type: pickerType, sheet_url: sheetUrl, tab_name: "",
+        name, type: pickerType, sheet_url: sheetUrl, tab_name: selectedTab || "",
         header_row: dateCell.row + 1,
         data_start_row: dateCell.row + 1,
         mapping,
