@@ -24,12 +24,15 @@ apt-get update -qq && apt-get install -y -qq git &&
 git clone --depth 1 https://github.com/ajayshankar96/ads_analytics.git /app &&
 cd /app/media-dashboard/backend &&
 pip install --no-cache-dir -q -r requirements.txt &&
+python3 -c "import main" &&
+alembic upgrade head &&
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 Implication: **deploying = pushing to `main` + restarting the pod** (so it
-re-clones). The committed `backend/static/` is what's served, so the frontend
-**must be built and committed** as part of any frontend change.
+re-clones and applies migrations). The committed `backend/static/` is what's
+served, so the frontend **must be built and committed** as part of any frontend
+change.
 
 ---
 

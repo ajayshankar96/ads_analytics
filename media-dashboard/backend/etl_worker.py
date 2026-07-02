@@ -38,6 +38,8 @@ METRIC_ALIASES = {
     "spends": "Advertiser_Spends",
 }
 
+SHEET_SPENDS_FLAG = "_has_sheet_spends"
+
 
 def _safe_float(value) -> float:
     if value is None or value == '':
@@ -164,10 +166,7 @@ def _get_metric_value(row_data: Dict[str, float], *names: str) -> float:
 
 
 def _fallback_advertiser_spends(row_data: Dict[str, float]) -> float:
-    spends = _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
-    if spends > 0:
-        return spends
-    return _get_metric_value(row_data, "Revenue")
+    return _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
 
 
 def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optional[Dict] = None) -> float:
@@ -285,6 +284,50 @@ def _billing_spend_from_config(config: Dict[str, Any], row_data: Dict[str, float
         revenue = _get_metric_value(row_data, "Revenue")
         return revenue / rate if rate else 0.0
     return 0.0
+
+
+def _has_sheet_spends(record: Dict[str, Any]) -> bool:
+    return bool(record.get(SHEET_SPENDS_FLAG))
+
+
+def _mapping_has_publisher_spends(col_mapping: Optional[Dict]) -> bool:
+    if not col_mapping:
+        return False
+    mapping = col_mapping.get("mapping") or {}
+    if col_mapping.get("format_type") == "visual":
+        return "spends" in (mapping.get("metrics") or {})
+    return bool(mapping.get("spends"))
+
+
+def _choose_publisher_spends(
+    row_data: Dict[str, float],
+    pub_row: Dict[str, Any],
+    billing_config: Optional[Dict[str, Any]],
+    fallback_formula: str,
+) -> tuple:
+    if _has_sheet_spends(pub_row):
+        return row_data['Spends'], 'sheet'
+    if billing_config:
+        return _billing_spend_from_config(billing_config, row_data), 'calculated'
+    if fallback_formula:
+        return _evaluate_formula(fallback_formula, row_data), 'calculated'
+    return row_data['Spends'], ('sheet' if row_data['Spends'] else None)
+
+
+def _choose_advertiser_spends(
+    row_data: Dict[str, float],
+    adv_metrics: Dict[str, Any],
+    billing_config: Optional[Dict[str, Any]],
+    fallback_formula: str,
+) -> tuple:
+    if _has_metric(adv_metrics, "Spends", "spends", "Advertiser_Spends", "advertiser_spends"):
+        return _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends"), 'sheet'
+    if billing_config:
+        return _billing_spend_from_config(billing_config, row_data), 'calculated'
+    if fallback_formula:
+        return _evaluate_formula(fallback_formula, row_data), 'calculated'
+    fallback = _fallback_advertiser_spends(row_data)
+    return fallback, ('calculated' if fallback else None)
 
 
 def _compute_advertiser_metrics(adv_metric_names: List[str], row_data: Dict[str, float]) -> Dict[str, float]:
@@ -451,6 +494,7 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                 record = {'Date': date_str}
 
                 if is_publisher:
+                    record[SHEET_SPENDS_FLAG] = 'spends' in metrics_cfg
                     # Map metric keys to standard publisher field names
                     pub_metric_map = {
                         'impressions': 'Impressions', 'distribution': 'Distribution',
@@ -616,6 +660,7 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
 
                 if is_publisher:
                     if resolved:
+                        record[SHEET_SPENDS_FLAG] = 'spends' in resolved
                         record['Impressions'] = _safe_float(row[resolved['impressions']]) if 'impressions' in resolved and len(row) > resolved['impressions'] else 0
                         record['Distribution'] = _safe_float(row[resolved['distribution']]) if 'distribution' in resolved and len(row) > resolved['distribution'] else 0
                         record['Clicks'] = _safe_float(row[resolved['clicks']]) if 'clicks' in resolved and len(row) > resolved['clicks'] else 0
@@ -625,6 +670,7 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                         record['Redirections'] = _safe_float(row[resolved['redirections']]) if 'redirections' in resolved and len(row) > resolved['redirections'] else 0
                         record['Spends'] = _safe_float(row[resolved['spends']]) if 'spends' in resolved and len(row) > resolved['spends'] else 0
                     else:
+                        record[SHEET_SPENDS_FLAG] = 'Spends' in col_map
                         record['Impressions'] = _safe_float(row[col_map['Impressions']]) if 'Impressions' in col_map and len(row) > col_map['Impressions'] else 0
                         record['Distribution'] = _safe_float(row[col_map['Distribution']]) if 'Distribution' in col_map and len(row) > col_map['Distribution'] else 0
                         record['Clicks'] = _safe_float(row[col_map['Clicks']]) if 'Clicks' in col_map and len(row) > col_map['Clicks'] else 0
@@ -895,26 +941,10 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             if k != 'Date':
                 _add_metric_alias(row_data, k, v)
 
-        # Evaluate spend formulas. Billing-tab configs are campaign/date-specific
-        # and override sales-pipeline defaults when active.
         pub_billing_config = _active_billing_config(billing_configs, "publisher", date_obj)
         adv_billing_config = _active_billing_config(billing_configs, "advertiser", date_obj)
-        if pub_billing_config:
-            pub_spends = _billing_spend_from_config(pub_billing_config, row_data)
-        elif pub_formula:
-            pub_spends = _evaluate_formula(pub_formula, row_data)
-        else:
-            pub_spends = row_data['Spends']
-
-        has_direct_adv_spends = _has_metric(adv_row, "Spends", "spends", "Advertiser_Spends", "advertiser_spends")
-        if has_direct_adv_spends:
-            adv_spends = _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
-        elif adv_billing_config:
-            adv_spends = _billing_spend_from_config(adv_billing_config, row_data)
-        elif adv_formula:
-            adv_spends = _evaluate_formula(adv_formula, row_data)
-        else:
-            adv_spends = _fallback_advertiser_spends(row_data)
+        pub_spends, pub_spends_source = _choose_publisher_spends(row_data, pub_row, pub_billing_config, pub_formula)
+        adv_spends, adv_spends_source = _choose_advertiser_spends(row_data, adv_row, adv_billing_config, adv_formula)
 
         # Auto-compute standard metrics (CPL, CPA, ROAS etc.) based on selected advertiser metrics
         adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
@@ -929,12 +959,14 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
                 (campaign_id, date, advertiser, publisher, segment,
                  impressions, distribution, clicks, orders_pub, scratches,
                  coins_burned, redirections, spends, publisher_spends,
-                 advertiser_spends, advertiser_metrics, synced_at)
+                 advertiser_spends, publisher_spends_source, advertiser_spends_source,
+                 advertiser_metrics, synced_at)
             VALUES
                 (:campaign_id, :date, :advertiser, :publisher, :segment,
                  :impressions, :distribution, :clicks, :orders_pub, :scratches,
                  :coins_burned, :redirections, :spends, :publisher_spends,
-                 :advertiser_spends, :advertiser_metrics, :synced_at)
+                 :advertiser_spends, :publisher_spends_source, :advertiser_spends_source,
+                 :advertiser_metrics, :synced_at)
             ON CONFLICT (campaign_id, date) DO UPDATE SET
                 impressions = EXCLUDED.impressions,
                 distribution = EXCLUDED.distribution,
@@ -946,6 +978,8 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
                 spends = EXCLUDED.spends,
                 publisher_spends = EXCLUDED.publisher_spends,
                 advertiser_spends = EXCLUDED.advertiser_spends,
+                publisher_spends_source = EXCLUDED.publisher_spends_source,
+                advertiser_spends_source = EXCLUDED.advertiser_spends_source,
                 advertiser_metrics = EXCLUDED.advertiser_metrics,
                 synced_at = EXCLUDED.synced_at
         """), {
@@ -964,6 +998,8 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             "spends": float(pub_row.get('Spends', 0)),
             "publisher_spends": pub_spends,
             "advertiser_spends": adv_spends,
+            "publisher_spends_source": pub_spends_source,
+            "advertiser_spends_source": adv_spends_source,
             "advertiser_metrics": json.dumps(adv_metrics_dict),
             "synced_at": now,
         })

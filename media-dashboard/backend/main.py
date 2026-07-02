@@ -100,9 +100,35 @@ def load_from_postgres():
     if not db_url:
         return load_master_report_cache()
     try:
+        metrics_json_expr = "COALESCE(NULLIF(advertiser_metrics, ''), '{}')::jsonb"
+        direct_adv_spends_expr = f"NULLIF(COALESCE({metrics_json_expr}->>'Spends', {metrics_json_expr}->>'spends'), '')::float"
+        publisher_spends_expr = (
+            "CASE "
+            "WHEN publisher_spends_source IN ('sheet', 'calculated') THEN COALESCE(publisher_spends, 0) "
+            "WHEN publisher_spends != 0 THEN publisher_spends "
+            "ELSE COALESCE(spends, 0) END"
+        )
+        advertiser_spends_expr = (
+            "CASE "
+            "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
+            f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
+        )
         eng = create_engine(db_url, pool_pre_ping=True)
         with eng.connect() as conn:
-            rows_raw = conn.execute(text("SELECT advertiser, publisher, '' as industry, date::text, '' as week, '' as month_start, segment, '' as adv_segment, '' as cohort, advertiser as brand, '' as offer, impressions, distribution, clicks, CASE WHEN impressions > 0 THEN clicks::float/impressions*100 ELSE 0 END as ctr, orders_pub, scratches, coins_burned, redirections, spends, CASE WHEN impressions > 0 THEN spends/impressions*1000 ELSE 0 END as cpm, CASE WHEN clicks > 0 THEN spends/clicks ELSE 0 END as cpc, publisher_spends, advertiser_spends, advertiser_metrics FROM rmn_campaign_metrics ORDER BY date")).fetchall()
+            rows_raw = conn.execute(text(f"""
+                SELECT advertiser, publisher, '' as industry, date::text, '' as week, '' as month_start,
+                       segment, '' as adv_segment, '' as cohort, advertiser as brand, '' as offer,
+                       impressions, distribution, clicks,
+                       CASE WHEN impressions > 0 THEN clicks::float/impressions*100 ELSE 0 END as ctr,
+                       orders_pub, scratches, coins_burned, redirections, spends,
+                       CASE WHEN impressions > 0 THEN ({publisher_spends_expr})/impressions*1000 ELSE 0 END as cpm,
+                       CASE WHEN clicks > 0 THEN ({publisher_spends_expr})/clicks ELSE 0 END as cpc,
+                       {publisher_spends_expr} as publisher_spends,
+                       {advertiser_spends_expr} as advertiser_spends,
+                       advertiser_metrics
+                FROM rmn_campaign_metrics
+                ORDER BY date
+            """)).fetchall()
 
         headers = ["Advertiser", "Publisher", "Advertiser_Industry", "Date", "Week_Start_Date", "Month_Start_Date", "Segment", "Advertiser_Segment", "Cohort_Name", "Brand", "Offer", "Impressions", "Distribution", "Clicks", "CTR", "Orders_pub", "Scratches", "Coins_Burned", "Redirections", "Spends", "CPM", "CPC", "Publisher_Spends", "Advertiser_Spends"]
 
@@ -124,14 +150,6 @@ def load_from_postgres():
 
         full_rows = []
         for row, metrics in parsed_rows:
-            try:
-                current_adv_spend = float(str(row[23]).replace(",", "").strip() or 0)
-            except (ValueError, TypeError):
-                current_adv_spend = 0.0
-            if "Spends" in metrics or "spends" in metrics:
-                row[23] = metrics.get("Spends", metrics.get("spends", row[23]))
-            elif current_adv_spend == 0:
-                row[23] = metrics.get("Revenue", metrics.get("revenue", row[23]))
             for col in adv_metric_cols:
                 row.append(str(metrics.get(col, "-")))
             full_rows.append([str(v) for v in row])
@@ -1605,7 +1623,13 @@ def _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment=None):
     return (" WHERE " + " AND ".join(clauses)) if clauses else ""
 
 
-PG_PUBLISHER_SPENDS_EXPR = "COALESCE(NULLIF(publisher_spends, 0), spends, 0)"
+PG_PUBLISHER_SPENDS_EXPR = (
+    "CASE "
+    "WHEN publisher_spends_source IN ('sheet', 'calculated') THEN COALESCE(publisher_spends, 0) "
+    "WHEN publisher_spends != 0 THEN publisher_spends "
+    "ELSE COALESCE(spends, 0) END"
+)
+PG_ADVERTISER_METRICS_EXPR = "COALESCE(NULLIF(advertiser_metrics, ''), '{}')::jsonb"
 
 
 @app.get("/api/dashboard/pg/filters")
@@ -1627,9 +1651,13 @@ async def pg_aggregates(
 ):
     params = {}
     where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
-    revenue_expr = "COALESCE((advertiser_metrics::jsonb->>'Revenue')::float, (advertiser_metrics::jsonb->>'revenue')::float, 0)"
-    direct_adv_spends_expr = "NULLIF(COALESCE(advertiser_metrics::jsonb->>'Spends', advertiser_metrics::jsonb->>'spends'), '')::float"
-    adv_spends_expr = f"COALESCE({direct_adv_spends_expr}, NULLIF(advertiser_spends, 0), {revenue_expr})"
+    revenue_expr = f"COALESCE(NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Revenue', {PG_ADVERTISER_METRICS_EXPR}->>'revenue'), '')::float, 0)"
+    direct_adv_spends_expr = f"NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Spends', {PG_ADVERTISER_METRICS_EXPR}->>'spends'), '')::float"
+    adv_spends_expr = (
+        "CASE "
+        "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
+        f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
+    )
     sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, pub_spends, orders = int(row.impressions), int(row.clicks), float(row.pub_spends), int(row.orders)
@@ -1735,10 +1763,16 @@ async def pg_table(
     params2 = dict(params)
     params2["lim"] = limit
     params2["off"] = offset
-    sql = f"SELECT date, advertiser, publisher, segment, impressions, clicks, spends, orders_pub, publisher_spends, advertiser_spends, advertiser_metrics FROM rmn_campaign_metrics{where} ORDER BY date DESC LIMIT :lim OFFSET :off"
+    direct_adv_spends_expr = f"NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Spends', {PG_ADVERTISER_METRICS_EXPR}->>'spends'), '')::float"
+    adv_spends_expr = (
+        "CASE "
+        "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
+        f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
+    )
+    sql = f"SELECT date, advertiser, publisher, segment, impressions, clicks, spends, orders_pub, {PG_PUBLISHER_SPENDS_EXPR} as publisher_spends, {adv_spends_expr} as advertiser_spends, publisher_spends_source, advertiser_spends_source, advertiser_metrics FROM rmn_campaign_metrics{where} ORDER BY date DESC LIMIT :lim OFFSET :off"
     rows = (await db.execute(text(sql), params2)).all()
     return {
-        "rows": [{"date": r.date.isoformat(), "advertiser": r.advertiser, "publisher": r.publisher, "segment": r.segment, "impressions": r.impressions, "clicks": r.clicks, "spends": r.spends, "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends, "advertiser_spends": r.advertiser_spends, "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {}} for r in rows],
+        "rows": [{"date": r.date.isoformat(), "advertiser": r.advertiser, "publisher": r.publisher, "segment": r.segment, "impressions": r.impressions, "clicks": r.clicks, "spends": r.spends, "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends, "advertiser_spends": r.advertiser_spends, "publisher_spends_source": r.publisher_spends_source, "advertiser_spends_source": r.advertiser_spends_source, "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {}} for r in rows],
         "total": total, "source": "postgres",
     }
 
@@ -1815,6 +1849,11 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
     billing_configs = await etl_worker._load_billing_configs(db, campaign_id)
     metrics_config = json.loads(campaign.metrics_json or '{}')
     adv_metric_names = metrics_config.get('advertiser_metrics', [])
+    pub_col_mapping = await etl_worker._load_column_mapping(
+        db, campaign.publisher_name or "", "publisher",
+        sheet_url=campaign.publisher_data_url, campaign_id=campaign.id,
+    )
+    publisher_mapping_has_spends = etl_worker._mapping_has_publisher_spends(pub_col_mapping)
 
     result = await db.execute(
         select(models.CampaignMetric).where(models.CampaignMetric.campaign_id == campaign_id)
@@ -1837,20 +1876,25 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
 
         pub_billing_config = etl_worker._active_billing_config(billing_configs, "publisher", m.date)
         adv_billing_config = etl_worker._active_billing_config(billing_configs, "advertiser", m.date)
-        if pub_billing_config:
-            new_pub = etl_worker._billing_spend_from_config(pub_billing_config, row_data)
-        elif pub_formula:
-            new_pub = etl_worker._evaluate_formula(pub_formula, row_data)
+        pub_row_meta = {
+            etl_worker.SHEET_SPENDS_FLAG: (
+                m.publisher_spends_source == "sheet"
+                or publisher_mapping_has_spends
+                or (m.publisher_spends_source is None and float(m.spends or 0) != 0)
+            )
+        }
+        new_pub, new_pub_source = etl_worker._choose_publisher_spends(
+            row_data, pub_row_meta, pub_billing_config, pub_formula
+        )
+        if m.advertiser_spends_source == "sheet" and not etl_worker._has_metric(
+            adv_metrics, "Spends", "spends", "Advertiser_Spends", "advertiser_spends"
+        ):
+            new_adv = float(m.advertiser_spends or 0)
+            new_adv_source = "sheet"
         else:
-            new_pub = row_data['Spends']
-        if etl_worker._has_metric(adv_metrics, "Spends", "spends", "Advertiser_Spends", "advertiser_spends"):
-            new_adv = etl_worker._get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
-        elif adv_billing_config:
-            new_adv = etl_worker._billing_spend_from_config(adv_billing_config, row_data)
-        elif adv_formula:
-            new_adv = etl_worker._evaluate_formula(adv_formula, row_data)
-        else:
-            new_adv = etl_worker._fallback_advertiser_spends(row_data)
+            new_adv, new_adv_source = etl_worker._choose_advertiser_spends(
+                row_data, adv_metrics, adv_billing_config, adv_formula
+            )
         row_data['Publisher_Spends'] = new_pub
         row_data['Advertiser_Spends'] = new_adv
         computed = etl_worker._compute_advertiser_metrics(adv_metric_names, row_data)
@@ -1858,6 +1902,8 @@ async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depend
 
         m.publisher_spends = new_pub
         m.advertiser_spends = new_adv
+        m.publisher_spends_source = new_pub_source
+        m.advertiser_spends_source = new_adv_source
         m.advertiser_metrics = json.dumps(adv_metrics)
         updated += 1
 
@@ -1882,6 +1928,8 @@ async def get_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_
                 "impressions": r.impressions, "clicks": r.clicks, "spends": r.spends,
                 "orders_pub": r.orders_pub, "publisher_spends": r.publisher_spends,
                 "advertiser_spends": r.advertiser_spends,
+                "publisher_spends_source": r.publisher_spends_source,
+                "advertiser_spends_source": r.advertiser_spends_source,
                 "advertiser_metrics": json.loads(r.advertiser_metrics) if r.advertiser_metrics else {},
             }
             for r in rows[:60]  # last 60 days
@@ -1909,35 +1957,35 @@ async def get_billing_config(campaign_id: str, db: AsyncSession = Depends(get_db
     )
     metric_rows = metrics_result.scalars().all()
 
+    import etl_worker
+    billing_configs = [
+        {
+            "side": c.side,
+            "billing_model": c.billing_model,
+            "rate": c.rate,
+            "start_date": c.start_date,
+            "end_date": c.end_date,
+        }
+        for c in configs
+    ]
     pub_total = 0.0
     adv_total = 0.0
     for m in metric_rows:
-        for cfg in configs:
-            if cfg.side == "publisher" and cfg.start_date <= m.date and (cfg.end_date is None or cfg.end_date >= m.date):
-                if cfg.billing_model == "cpc":
-                    pub_total += cfg.rate * (m.clicks or 0)
-                elif cfg.billing_model == "cpd":
-                    pub_total += cfg.rate
-                elif cfg.billing_model == "cpm":
-                    pub_total += cfg.rate * (m.impressions or 0) / 1000.0
-                elif cfg.billing_model == "roas":
-                    adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
-                    revenue = float(adv_metrics.get("revenue", adv_metrics.get("Revenue", 0)))
-                    pub_total += revenue / cfg.rate if cfg.rate else 0
-                break
-        for cfg in configs:
-            if cfg.side == "advertiser" and cfg.start_date <= m.date and (cfg.end_date is None or cfg.end_date >= m.date):
-                if cfg.billing_model == "cpc":
-                    adv_total += cfg.rate * (m.clicks or 0)
-                elif cfg.billing_model == "cpd":
-                    adv_total += cfg.rate
-                elif cfg.billing_model == "cpm":
-                    adv_total += cfg.rate * (m.impressions or 0) / 1000.0
-                elif cfg.billing_model == "roas":
-                    adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
-                    revenue = float(adv_metrics.get("revenue", adv_metrics.get("Revenue", 0)))
-                    adv_total += revenue / cfg.rate if cfg.rate else 0
-                break
+        row_data = {
+            "Impressions": float(m.impressions or 0),
+            "Clicks": float(m.clicks or 0),
+            "Orders_pub": float(m.orders_pub or 0),
+            "Spends": float(m.spends or 0),
+        }
+        adv_metrics = json.loads(m.advertiser_metrics) if m.advertiser_metrics else {}
+        for k, v in adv_metrics.items():
+            etl_worker._add_metric_alias(row_data, k, v)
+        pub_cfg = etl_worker._active_billing_config(billing_configs, "publisher", m.date)
+        adv_cfg = etl_worker._active_billing_config(billing_configs, "advertiser", m.date)
+        if pub_cfg:
+            pub_total += etl_worker._billing_spend_from_config(pub_cfg, row_data)
+        if adv_cfg:
+            adv_total += etl_worker._billing_spend_from_config(adv_cfg, row_data)
 
     return {
         "configs": [
@@ -1970,30 +2018,75 @@ class BillingConfigRequest(BaseModel):
 async def add_billing_config(campaign_id: str, req: BillingConfigRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Add or change billing config for a campaign side."""
     from datetime import date as dt_date, timedelta
-    new_start = dt_date.fromisoformat(req.start_date)
+    side = (req.side or "").strip().lower()
+    billing_model = (req.billing_model or "").strip().lower()
+    allowed_models = {"publisher": {"cpc", "cpm"}, "advertiser": {"roas", "cpc"}}
+    if side not in allowed_models:
+        raise HTTPException(status_code=400, detail="side must be publisher or advertiser")
+    if billing_model not in allowed_models[side]:
+        allowed = ", ".join(sorted(allowed_models[side])).upper()
+        raise HTTPException(status_code=400, detail=f"{side} billing supports only {allowed}")
+    if req.rate <= 0:
+        raise HTTPException(status_code=400, detail="rate must be greater than 0")
+
+    campaign = await repo.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
+    try:
+        metrics_config = json.loads(campaign.metrics_json or "{}")
+    except Exception:
+        metrics_config = {}
+    publisher_metrics = {str(m).strip().lower() for m in metrics_config.get("publisher_metrics", [])}
+    advertiser_metrics = {str(m).strip().lower() for m in metrics_config.get("advertiser_metrics", [])}
+    if side == "publisher" and billing_model == "cpc" and "clicks" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks in publisher metrics")
+    if side == "publisher" and billing_model == "cpm" and "impressions" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Publisher CPM requires Impressions in publisher metrics")
+    if side == "advertiser" and billing_model == "roas" and "revenue" not in advertiser_metrics:
+        raise HTTPException(status_code=400, detail="Advertiser ROAS requires Revenue in advertiser metrics")
+    if side == "advertiser" and billing_model == "cpc" and "clicks" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Advertiser CPC requires Clicks in publisher metrics")
+
+    try:
+        new_start = dt_date.fromisoformat(req.start_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
     user_email = getattr(request.state, "user_email", None)
 
-    # Close any open config for this side that starts before the new one
     result = await db.execute(
         select(models.BillingConfig)
         .where(models.BillingConfig.campaign_id == campaign_id)
-        .where(models.BillingConfig.side == req.side)
-        .where(models.BillingConfig.end_date.is_(None))
+        .where(models.BillingConfig.side == side)
+        .order_by(models.BillingConfig.start_date.asc(), models.BillingConfig.id.asc())
     )
-    open_configs = result.scalars().all()
-    for oc in open_configs:
-        if oc.start_date < new_start:
-            oc.end_date = new_start - timedelta(days=1)
+    configs = result.scalars().all()
+    same_start = [cfg for cfg in configs if cfg.start_date == new_start]
+    if same_start:
+        new_config = same_start[0]
+        new_config.billing_model = billing_model
+        new_config.rate = req.rate
+        new_config.created_by = user_email
+        for duplicate in same_start[1:]:
+            await db.delete(duplicate)
+        configs = [cfg for cfg in configs if cfg not in same_start[1:]]
+    else:
+        new_config = models.BillingConfig(
+            campaign_id=campaign_id,
+            side=side,
+            billing_model=billing_model,
+            rate=req.rate,
+            start_date=new_start,
+            created_by=user_email,
+        )
+        db.add(new_config)
+        configs.append(new_config)
+        await db.flush()
 
-    new_config = models.BillingConfig(
-        campaign_id=campaign_id,
-        side=req.side,
-        billing_model=req.billing_model,
-        rate=req.rate,
-        start_date=new_start,
-        created_by=user_email,
-    )
-    db.add(new_config)
+    configs.sort(key=lambda cfg: (cfg.start_date, cfg.id or 0))
+    for idx, cfg in enumerate(configs):
+        next_cfg = configs[idx + 1] if idx + 1 < len(configs) else None
+        cfg.end_date = (next_cfg.start_date - timedelta(days=1)) if next_cfg else None
+
     await db.commit()
     recompute_result = await recompute_campaign_metrics(campaign_id, db)
     return {"success": True, "recomputed": recompute_result.get("recomputed", 0)}

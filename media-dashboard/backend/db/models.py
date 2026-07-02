@@ -235,6 +235,8 @@ class CampaignMetric(Base):
     # Computed
     publisher_spends: Mapped[float] = mapped_column(Float, default=0)
     advertiser_spends: Mapped[float] = mapped_column(Float, default=0)
+    publisher_spends_source: Mapped[Optional[str]] = mapped_column(String(16), default=None)
+    advertiser_spends_source: Mapped[Optional[str]] = mapped_column(String(16), default=None)
     # Dynamic advertiser metrics
     advertiser_metrics: Mapped[Optional[str]] = mapped_column(Text, default=None)  # JSON
     # Sync tracking

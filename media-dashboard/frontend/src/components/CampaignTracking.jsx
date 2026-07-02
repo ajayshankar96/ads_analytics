@@ -570,12 +570,21 @@ function SyncTab({ campaign, canEdit }) {
 }
 
 // ── Billing Tab ─────────────────────────────────────────────────────────────
-const BILLING_MODELS = [
+const PUBLISHER_BILLING_MODELS = [
   { value: "cpc", label: "CPC (Cost Per Click)" },
-  { value: "cpd", label: "CPD (Cost Per Day)" },
   { value: "cpm", label: "CPM (Cost Per Mille)" },
-  { value: "roas", label: "ROAS (Return On Ad Spend)" },
 ];
+const ADVERTISER_BILLING_MODELS = [
+  { value: "roas", label: "ROAS (Revenue / ROAS)" },
+  { value: "cpc", label: "CPC (Cost Per Click)" },
+];
+const BILLING_MODEL_LABELS = { cpc: "CPC", cpm: "CPM", roas: "ROAS" };
+const BILLING_RATE_LABELS = {
+  cpc: "Rate (₹ per click)",
+  cpm: "Rate (₹ per 1000 impressions)",
+  roas: "ROAS multiplier",
+};
+const billingModelsForSide = (side) => side === "advertiser" ? ADVERTISER_BILLING_MODELS : PUBLISHER_BILLING_MODELS;
 
 function BillingTab({ campaign, canEdit }) {
   const [configs, setConfigs] = useState([]);
@@ -623,7 +632,7 @@ function BillingTab({ campaign, canEdit }) {
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h4 style={{ fontSize: 14, fontWeight: 700, color: c.ink, margin: 0 }}>{title}</h4>
-        {canEdit && <button onClick={() => { setShowForm(side); setFormModel("cpc"); setFormRate(""); setFormDate(new Date().toISOString().split("T")[0]); }} style={{ fontSize: 11, fontWeight: 600, color: c.blue, background: "none", border: `1px solid ${c.blue}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>+ Add / Change</button>}
+        {canEdit && <button onClick={() => { setShowForm(side); setFormModel(billingModelsForSide(side)[0].value); setFormRate(""); setFormDate(new Date().toISOString().split("T")[0]); }} style={{ fontSize: 11, fontWeight: 600, color: c.blue, background: "none", border: `1px solid ${c.blue}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>+ Add / Change</button>}
       </div>
       {rows.length === 0 && <div style={{ fontSize: 12, color: c.muted, padding: "10px 0" }}>No billing config set yet.</div>}
       {rows.length > 0 && (
@@ -639,7 +648,7 @@ function BillingTab({ campaign, canEdit }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} style={{ borderBottom: `1px solid ${c.line}` }}>
-                <td style={{ padding: "7px 8px", fontWeight: 600 }}>{r.billing_model.toUpperCase()}</td>
+                <td style={{ padding: "7px 8px", fontWeight: 600 }}>{BILLING_MODEL_LABELS[r.billing_model] || r.billing_model.toUpperCase()}</td>
                 <td style={{ padding: "7px 8px", textAlign: "right" }}>{r.rate}</td>
                 <td style={{ padding: "7px 8px" }}>{r.start_date}</td>
                 <td style={{ padding: "7px 8px", color: r.end_date ? c.ink : c.green }}>{r.end_date || "Active"}</td>
@@ -653,11 +662,11 @@ function BillingTab({ campaign, canEdit }) {
           <div>
             <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Model</label>
             <select value={formModel} onChange={(e) => setFormModel(e.target.value)} style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12 }}>
-              {BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              {billingModelsForSide(side).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Rate</label>
+            <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>{BILLING_RATE_LABELS[formModel] || "Rate"}</label>
             <input type="number" step="0.01" value={formRate} onChange={(e) => setFormRate(e.target.value)} placeholder="e.g. 5.00" style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12, width: 90 }} />
           </div>
           <div>
