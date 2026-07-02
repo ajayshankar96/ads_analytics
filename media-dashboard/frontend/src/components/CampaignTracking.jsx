@@ -594,6 +594,7 @@ function BillingTab({ campaign, canEdit }) {
   const [formModel, setFormModel] = useState("cpc");
   const [formRate, setFormRate] = useState("");
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+  const [editingConfigId, setEditingConfigId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -611,8 +612,8 @@ function BillingTab({ campaign, canEdit }) {
     if (!formRate || !showForm) return;
     setSaving(true);
     try {
-      await addBillingConfig(campaign.campaign_id, { side: showForm, billing_model: formModel, rate: parseFloat(formRate), start_date: formDate });
-      setShowForm(null); setFormRate(""); setFormModel("cpc");
+      await addBillingConfig(campaign.campaign_id, { side: showForm, billing_model: formModel, rate: parseFloat(formRate), start_date: formDate, replace_config_id: editingConfigId });
+      setShowForm(null); setFormRate(""); setFormModel("cpc"); setEditingConfigId(null);
       await load();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
@@ -632,7 +633,7 @@ function BillingTab({ campaign, canEdit }) {
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h4 style={{ fontSize: 14, fontWeight: 700, color: c.ink, margin: 0 }}>{title}</h4>
-        {canEdit && <button onClick={() => { setShowForm(side); setFormModel(billingModelsForSide(side)[0].value); setFormRate(""); setFormDate(new Date().toISOString().split("T")[0]); }} style={{ fontSize: 11, fontWeight: 600, color: c.blue, background: "none", border: `1px solid ${c.blue}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>+ Add / Change</button>}
+        {canEdit && <button onClick={() => { setShowForm(side); setFormModel(billingModelsForSide(side)[0].value); setFormRate(""); setFormDate(new Date().toISOString().split("T")[0]); setEditingConfigId(null); }} style={{ fontSize: 11, fontWeight: 600, color: c.blue, background: "none", border: `1px solid ${c.blue}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>+ Add / Change</button>}
       </div>
       {rows.length === 0 && <div style={{ fontSize: 12, color: c.muted, padding: "10px 0" }}>No billing config set yet.</div>}
       {rows.length > 0 && (
@@ -643,6 +644,7 @@ function BillingTab({ campaign, canEdit }) {
               <th style={{ textAlign: "right", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>Rate (₹)</th>
               <th style={{ textAlign: "left", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>From</th>
               <th style={{ textAlign: "left", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>To</th>
+              {canEdit && <th style={{ textAlign: "right", padding: "6px 8px", color: c.muted, fontWeight: 600 }}>Edit</th>}
             </tr>
           </thead>
           <tbody>
@@ -652,6 +654,11 @@ function BillingTab({ campaign, canEdit }) {
                 <td style={{ padding: "7px 8px", textAlign: "right" }}>{r.rate}</td>
                 <td style={{ padding: "7px 8px" }}>{r.start_date}</td>
                 <td style={{ padding: "7px 8px", color: r.end_date ? c.ink : c.green }}>{r.end_date || "Active"}</td>
+                {canEdit && (
+                  <td style={{ padding: "7px 8px", textAlign: "right" }}>
+                    <button onClick={() => { setShowForm(side); setFormModel(r.billing_model); setFormRate(String(r.rate)); setFormDate(r.start_date); setEditingConfigId(r.id); }} style={{ background: "none", border: "none", color: c.blue, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -673,8 +680,8 @@ function BillingTab({ campaign, canEdit }) {
             <label style={{ fontSize: 11, color: c.muted, display: "block", marginBottom: 3 }}>Effective From</label>
             <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)} style={{ padding: "6px 8px", borderRadius: 5, border: `1px solid ${c.line}`, fontSize: 12 }} />
           </div>
-          <button onClick={handleSave} disabled={saving} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "Saving…" : "Save"}</button>
-          <button onClick={() => setShowForm(null)} style={{ background: "none", border: "none", color: c.muted, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "Saving…" : editingConfigId ? "Update" : "Save"}</button>
+          <button onClick={() => { setShowForm(null); setEditingConfigId(null); }} style={{ background: "none", border: "none", color: c.muted, fontSize: 12, cursor: "pointer" }}>Cancel</button>
         </div>
       )}
     </div>

@@ -30,8 +30,20 @@ const ASSET_FIELDS = [
   { key: "logo_url", label: "Logo URL (300×300)", type: "input" },
   { key: "targeting", label: "Targeting / Persona", type: "textarea" },
   { key: "daily_budget", label: "Daily Budget (₹)", type: "input" },
-  { key: "cpc_cpd", label: "CPC / CPD", type: "input" },
+  { key: "publisher_billing_rate", label: "Publisher Billing", type: "publisher_billing" },
 ];
+
+const PUBLISHER_BILLING_MODELS = [
+  { value: "cpc", label: "CPC" },
+  { value: "cpm", label: "CPM" },
+];
+
+function publisherBillingText(campaign) {
+  const model = (campaign.publisher_billing_model || (campaign.cpc_cpd ? "cpc" : "")).toUpperCase();
+  const rate = campaign.publisher_billing_rate || campaign.cpc_cpd;
+  if (!model || !rate) return "—";
+  return `${model} ₹${rate}`;
+}
 
 function buildEmailDraft(campaign) {
   const lines = ["Hi,", "", "Please find below the campaign details for your reference.", "",
@@ -59,7 +71,7 @@ function buildEmailDraft(campaign) {
 
   lines.push(`Creative: ${campaign.creative_url || "—"}`, `Logo: ${campaign.logo_url || "—"}`, "",
     `Targeting: ${campaign.targeting || "—"}`, "", `Daily Budget: ${campaign.daily_budget || "—"}`,
-    `CPC/CPD: ${campaign.cpc_cpd || "—"}`, "", "Regards,", "AdOps Team | Razorpay");
+    `Publisher Billing: ${publisherBillingText(campaign)}`, "", "Regards,", "AdOps Team | Razorpay");
   return lines.join("\n");
 }
 
@@ -217,6 +229,8 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   useEffect(() => {
     const a = {};
     ASSET_FIELDS.forEach((f) => { a[f.key] = campaign[f.key] || ""; });
+    a.publisher_billing_model = campaign.publisher_billing_model || "cpc";
+    a.publisher_billing_rate = campaign.publisher_billing_rate || campaign.cpc_cpd || "";
     setAssets(a);
   }, [campaign.campaign_id, campaign.current_stage]);
 
@@ -299,7 +313,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
       const curIdx = STAGE_PATH.indexOf(stage);
       const targetIdx = STAGE_PATH.indexOf("LIVE");
       for (let i = curIdx + 1; i <= targetIdx; i++) {
-        await transitionCampaign(campaign.campaign_id, { to_stage: STAGE_PATH[i] }).catch(() => {});
+        await transitionCampaign(campaign.campaign_id, { to_stage: STAGE_PATH[i] });
       }
       onReload();
     } catch (e) { alert("Failed: " + e.message); }
@@ -344,8 +358,10 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
         {ASSET_FIELDS.filter((f) => f.type !== "hidden" && f.type !== "codes").map((f) => {
-          const val = assets[f.key] || "";
-          const filled = !!val.trim();
+          const rawVal = assets[f.key];
+          const val = rawVal === null || rawVal === undefined ? "" : String(rawVal);
+          const model = assets.publisher_billing_model || "cpc";
+          const filled = f.type === "publisher_billing" ? !!model && !!val.trim() : !!val.trim();
           return (
             <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
               <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? "#E3F6EE" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -353,10 +369,28 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>{f.label}</div>
-                {filled && <div style={{ fontSize: 12, color: c.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 400 }}>{val}</div>}
+                {filled && <div style={{ fontSize: 12, color: c.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 400 }}>{f.type === "publisher_billing" ? `${model.toUpperCase()} ₹${val}` : val}</div>}
               </div>
               {isAssetStage && canEdit && (
-                f.type === "textarea" ? (
+                f.type === "publisher_billing" ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select
+                      value={model}
+                      onChange={(e) => setAssets({ ...assets, publisher_billing_model: e.target.value })}
+                      style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, outline: "none" }}
+                    >
+                      {PUBLISHER_BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                    <input
+                      style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 120, outline: "none" }}
+                      type="number"
+                      step="0.01"
+                      value={val}
+                      onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })}
+                      placeholder="Rate"
+                    />
+                  </div>
+                ) : f.type === "textarea" ? (
                   <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 300, minHeight: 40, resize: "vertical", outline: "none" }}
                     value={val} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
                 ) : (
@@ -487,6 +521,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
                   <span style={{ color: c.ink, fontWeight: 600 }}>{(entry.changed_by || "").split("@")[0]}</span>
                   {" changed "}
                   <span style={{ fontWeight: 600 }}>{entry.field}</span>
+                  {entry.source && <span style={{ color: c.muted }}> · {entry.source.split("_").join(" ")}</span>}
                   {entry.old_value && <span style={{ color: c.red }}> from "{entry.old_value.substring(0, 40)}"</span>}
                   <span style={{ color: c.green }}> to "{(entry.new_value || "").substring(0, 40)}"</span>
                 </div>

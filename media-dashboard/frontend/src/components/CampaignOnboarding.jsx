@@ -199,7 +199,7 @@ function buildEmailDraft(basic, cd) {
   if (targeting) P.push(`<p><b>Targeting:</b> ${esc(targeting)}</p>`);
   const budget = [];
   if (v(cd.total_budget)) budget.push(`<b>Daily Budget:</b> Rs ${esc(v(cd.total_budget))} per day`);
-  if (v(cd.cpc) || v(cd.cpm)) budget.push(`<b>CPC/CPD:</b> ${esc(v(cd.cpc) || v(cd.cpm))}`);
+  if (v(cd.cpc) || v(cd.cpm)) budget.push(`<b>Publisher Billing:</b> ${esc(v(cd.cpc) || v(cd.cpm))}`);
   if (budget.length) P.push("<p>" + budget.join("<br>") + "</p>");
   P.push("<p>Regards,<br>AdOps Team | Razorpay</p>");
   return P.join("\n");

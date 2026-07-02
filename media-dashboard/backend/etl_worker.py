@@ -207,35 +207,34 @@ def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optio
         return 0.0
 
 
-def _resolve_spend_formulas(buy_type: str, rate: float) -> tuple:
-    """Derive (publisher_formula, advertiser_formula) from Agreement buy_type + campaign rate.
-    buy_type comes from sales pipeline (Agreement), rate from campaign ops (Campaign.cpc_cpd)."""
-    if not buy_type or not rate:
-        return '', ''
-
-    buy = buy_type.upper().replace(' ', '_')
+def _publisher_formula_from_terms(model: str, rate: float) -> str:
+    if not model or not rate:
+        return ''
+    billing_model = str(model).strip().lower()
     rate_str = str(rate)
+    if billing_model == 'cpc':
+        return f'Clicks * {rate_str}'
+    if billing_model == 'cpm':
+        return f'Impressions * {rate_str} / 1000'
+    return ''
 
-    if buy in ('CPC', 'CPC_COMMIT'):
-        pub_formula = f'Clicks * {rate_str}'
-        adv_formula = f'Clicks * {rate_str}'
-    elif buy in ('CPM', 'CPM_COMMIT'):
-        pub_formula = f'Impressions * {rate_str} / 1000'
-        adv_formula = f'Impressions * {rate_str} / 1000'
-    elif buy in ('CPD', 'CPD_COMMIT'):
-        pub_formula = rate_str
-        adv_formula = rate_str
-    elif buy in ('CPA', 'CPA_COMMIT'):
-        pub_formula = f'Orders_pub * {rate_str}'
-        adv_formula = f'Orders_pub * {rate_str}'
-    elif buy in ('ROAS', 'ROAS_COMMIT'):
-        pub_formula = f'Revenue / {rate_str}'
-        adv_formula = f'Revenue / {rate_str}'
-    else:
-        pub_formula = 'Spends'
-        adv_formula = ''
 
-    return pub_formula, adv_formula
+def _advertiser_formula_from_terms(model: str, rate: float) -> str:
+    if not model or not rate:
+        return ''
+    billing_model = str(model).strip().lower().replace('_commit', '')
+    rate_str = str(rate)
+    if billing_model == 'cpc':
+        return f'Clicks * {rate_str}'
+    if billing_model == 'roas':
+        return f'Revenue / {rate_str}'
+    return ''
+
+
+def _resolve_spend_formulas(buy_type: str, rate: float) -> tuple:
+    """Legacy formula resolver retained for old campaigns without billing rows."""
+    model = str(buy_type or "").strip().lower().replace("_commit", "")
+    return _publisher_formula_from_terms(model, rate), _advertiser_formula_from_terms(model, rate)
 
 
 async def _load_billing_configs(db: AsyncSession, campaign_id: str) -> List[Dict[str, Any]]:
@@ -872,24 +871,21 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     )
     logger.info(f"  Publisher records: {len(pub_records)}")
 
-    # Derive spend formulas from Agreement buy_type + Campaign rate (from sales/ops pipeline)
-    buy_type = ''
-    rate = 0.0
-    if campaign.agreement_id:
-        agreement_row = await db.execute(
-            text("SELECT buy_type FROM rmn_agreements WHERE id = :id"),
-            {"id": campaign.agreement_id}
+    pub_model = getattr(campaign, "publisher_billing_model", None) or ("cpc" if campaign.cpc_cpd else "")
+    pub_rate = _safe_float(getattr(campaign, "publisher_billing_rate", None) or campaign.cpc_cpd)
+    pub_formula = _publisher_formula_from_terms(pub_model, pub_rate)
+    adv_model = ''
+    adv_rate = 0.0
+    if campaign.advertiser_ref_id:
+        adv_result = await db.execute(
+            text("SELECT buy_type, roas_multiplier, cpc_rate FROM rmn_advertisers WHERE id = :id"),
+            {"id": campaign.advertiser_ref_id}
         )
-        ag = agreement_row.fetchone()
-        if ag:
-            buy_type = ag[0] or ''
-    if campaign.cpc_cpd:
-        try:
-            rate = float(str(campaign.cpc_cpd).replace(',', '').strip())
-        except (ValueError, TypeError):
-            pass
-
-    pub_formula, adv_formula = _resolve_spend_formulas(buy_type, rate)
+        adv = adv_result.fetchone()
+        if adv:
+            adv_model = (adv[0] or '').lower()
+            adv_rate = _safe_float(adv[1] if adv_model == 'roas' else adv[2])
+    adv_formula = _advertiser_formula_from_terms(adv_model, adv_rate)
     billing_configs = await _load_billing_configs(db, campaign.id)
     has_pub_billing = any(cfg.get("side") == "publisher" for cfg in billing_configs)
     has_adv_billing = any(cfg.get("side") == "advertiser" for cfg in billing_configs)
@@ -898,9 +894,9 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     if has_adv_billing:
         logger.info("  Advertiser billing config found; it will be used when direct advertiser spend is absent")
     if pub_formula:
-        logger.info(f"  Publisher spends formula: {pub_formula} (buy_type={buy_type}, rate={rate})")
+        logger.info(f"  Publisher spends formula: {pub_formula} (billing_model={pub_model}, rate={pub_rate})")
     if adv_formula:
-        logger.info(f"  Advertiser spends formula: {adv_formula}")
+        logger.info(f"  Advertiser spends formula: {adv_formula} (billing_model={adv_model}, rate={adv_rate})")
 
     # Merge on Date (full outer join)
     adv_by_date = {r['Date']: r for r in adv_records}

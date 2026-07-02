@@ -56,6 +56,8 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "promo_codes": c.promo_codes, "code_validity": c.code_validity,
         "creative_url": c.creative_url, "logo_url": c.logo_url,
         "targeting": c.targeting, "daily_budget": c.daily_budget, "cpc_cpd": c.cpc_cpd,
+        "publisher_billing_model": c.publisher_billing_model,
+        "publisher_billing_rate": c.publisher_billing_rate,
         "publisher_email_to": c.publisher_email_to,
         "publisher_email_subject": c.publisher_email_subject,
         "publisher_email_body": c.publisher_email_body,
@@ -303,8 +305,23 @@ async def get_campaign(db: AsyncSession, campaign_id: str) -> Optional[models.Ca
 _ASSET_FIELDS = [
     "landing_link", "offer_title", "details_tc", "how_to_redeem",
     "promo_codes", "creative_url", "logo_url",
-    "targeting", "daily_budget", "cpc_cpd",
+    "targeting", "daily_budget", "publisher_billing_model", "publisher_billing_rate",
 ]
+_ASSET_FLOAT = {"publisher_billing_rate"}
+
+
+def _coerce_campaign_asset(field: str, value: Any) -> Any:
+    if value == "" or value is None:
+        return None
+    if field == "publisher_billing_model":
+        model = str(value).strip().lower()
+        return model if model in {"cpc", "cpm"} else None
+    if field in _ASSET_FLOAT:
+        try:
+            return float(str(value).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+    return value
 
 
 async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, payload: Dict[str, Any], changed_by: str = None) -> tuple:
@@ -313,17 +330,19 @@ async def update_campaign_assets(db: AsyncSession, campaign: models.Campaign, pa
     for f in _ASSET_FIELDS:
         if f in payload:
             old_val = getattr(campaign, f, None) or ""
-            new_val = payload[f] or ""
+            new_val = _coerce_campaign_asset(f, payload[f])
+            log_new_val = new_val or ""
             if str(old_val) != str(new_val):
-                changes.append({"field": f, "old": old_val, "new": new_val})
+                changes.append({"field": f, "old": old_val, "new": log_new_val})
                 db.add(models.CampaignChangelog(
                     campaign_id=campaign.id,
                     field_name=f,
                     old_value=str(old_val) if old_val else None,
-                    new_value=str(new_val) if new_val else None,
+                    new_value=str(log_new_val) if log_new_val else None,
                     changed_by=changed_by,
+                    source="campaign_ops",
                 ))
-            setattr(campaign, f, payload[f] or None)
+            setattr(campaign, f, new_val)
     campaign.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(campaign)
@@ -420,6 +439,8 @@ async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Ca
         targeting=source.targeting,
         daily_budget=source.daily_budget,
         cpc_cpd=source.cpc_cpd,
+        publisher_billing_model=source.publisher_billing_model,
+        publisher_billing_rate=source.publisher_billing_rate,
         # Carry email info so the clone can reply-all on the same thread
         publisher_email_to=source.publisher_email_to,
         publisher_email_subject=source.publisher_email_subject,

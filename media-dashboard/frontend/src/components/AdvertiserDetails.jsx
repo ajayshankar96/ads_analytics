@@ -70,13 +70,26 @@ function EditableRow({ label, value, fieldKey, advertiser, onUpdate, canEdit }) 
       <div style={s.row}>
         <span style={s.key}>{label}</span>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <input
-            autoFocus
-            value={editVal}
-            onChange={(e) => setEditVal(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 180, textAlign: "right", outline: "none" }}
-          />
+          {fieldKey === "buy_type" ? (
+            <select
+              autoFocus
+              value={editVal || "ROAS"}
+              onChange={(e) => setEditVal(e.target.value)}
+              onKeyDown={handleKeyDown}
+              style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 180, textAlign: "right", outline: "none" }}
+            >
+              <option value="ROAS">ROAS</option>
+              <option value="CPC">CPC</option>
+            </select>
+          ) : (
+            <input
+              autoFocus
+              value={editVal}
+              onChange={(e) => setEditVal(e.target.value)}
+              onKeyDown={handleKeyDown}
+              style={{ border: `1px solid ${c.blue}`, borderRadius: 6, padding: "4px 8px", fontSize: 13, fontWeight: 600, width: 180, textAlign: "right", outline: "none" }}
+            />
+          )}
           <button onClick={save} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 5, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
             {saving ? "..." : "Save"}
           </button>

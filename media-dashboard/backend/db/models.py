@@ -124,6 +124,8 @@ class Campaign(Base):
     targeting: Mapped[Optional[str]] = mapped_column(Text, default=None)
     daily_budget: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     cpc_cpd: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    publisher_billing_model: Mapped[Optional[str]] = mapped_column(String(16), default=None)
+    publisher_billing_rate: Mapped[Optional[float]] = mapped_column(Float, default=None)
     not_live_reason: Mapped[Optional[str]] = mapped_column(Text, default=None)
     # Campaign tracking setup (written to Automation Tracker sheet on go-live)
     advertiser_data_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
@@ -266,6 +268,7 @@ class CampaignChangelog(Base):
     old_value: Mapped[Optional[str]] = mapped_column(Text, default=None)
     new_value: Mapped[Optional[str]] = mapped_column(Text, default=None)
     changed_by: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    source: Mapped[Optional[str]] = mapped_column(String(32), default=None)
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

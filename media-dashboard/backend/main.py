@@ -9,6 +9,7 @@ Run locally:
 import json
 import logging
 import os
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -1275,6 +1276,230 @@ async def admin_query(req: QueryRequest, request: Request):
 # ── Advertisers (6-step onboarding wizard) — Postgres-backed ─────────────────
 # Drafts autosave as the user moves through the wizard; id is ADV-<3 letters>-NNNN.
 
+def _today_ist():
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    return _dt.now(_tz(_td(hours=5, minutes=30))).date()
+
+
+def _normalize_billing_model(side: str, model: str) -> str:
+    side = (side or "").strip().lower()
+    model = (model or "").strip().lower()
+    allowed_models = {"publisher": {"cpc", "cpm"}, "advertiser": {"roas", "cpc"}}
+    if side not in allowed_models:
+        raise HTTPException(status_code=400, detail="side must be publisher or advertiser")
+    if model not in allowed_models[side]:
+        allowed = ", ".join(sorted(allowed_models[side])).upper()
+        raise HTTPException(status_code=400, detail=f"{side} billing supports only {allowed}")
+    return model
+
+
+def _safe_billing_rate(value) -> float:
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _billing_summary(side: str, model: str, rate: float, start_date, source: str = None) -> str:
+    label = {"roas": "ROAS", "cpc": "CPC", "cpm": "CPM"}.get(model, model.upper())
+    parts = [f"{side}:{label}", f"rate={rate:g}", f"start={start_date.isoformat()}"]
+    if source:
+        parts.append(f"source={source}")
+    return " | ".join(parts)
+
+
+def _advertiser_default_terms(adv: models.Advertiser) -> tuple:
+    model = (adv.buy_type or "").strip().lower().replace("_commit", "")
+    if model == "roas":
+        return "roas", _safe_billing_rate(adv.roas_multiplier)
+    if model == "cpc":
+        return "cpc", _safe_billing_rate(adv.cpc_rate)
+    return "", 0.0
+
+
+def _publisher_default_terms(campaign: models.Campaign) -> tuple:
+    model = (campaign.publisher_billing_model or "").strip().lower()
+    rate = _safe_billing_rate(campaign.publisher_billing_rate)
+    if not model and campaign.cpc_cpd:
+        model = "cpc"
+        rate = _safe_billing_rate(campaign.cpc_cpd)
+    if model not in {"cpc", "cpm"}:
+        return "", 0.0
+    return model, rate
+
+
+def _billing_terms_changed(old_terms: tuple, new_terms: tuple) -> bool:
+    old_model, old_rate = old_terms
+    new_model, new_rate = new_terms
+    return old_model != new_model or abs(float(old_rate or 0) - float(new_rate or 0)) > 0.000001
+
+
+def _active_config_for_date(configs, start_date):
+    for cfg in configs:
+        if cfg.start_date <= start_date and (cfg.end_date is None or cfg.end_date >= start_date):
+            return cfg
+    return None
+
+
+async def _upsert_billing_config(
+    db: AsyncSession,
+    campaign: models.Campaign,
+    *,
+    side: str,
+    billing_model: str,
+    rate: float,
+    start_date,
+    changed_by: str = None,
+    source: str = "billing_tab",
+    recompute: bool = True,
+    old_summary_override: str = None,
+) -> int:
+    side = (side or "").strip().lower()
+    billing_model = _normalize_billing_model(side, billing_model)
+    rate = _safe_billing_rate(rate)
+    if rate <= 0:
+        raise HTTPException(status_code=400, detail="rate must be greater than 0")
+
+    result = await db.execute(
+        select(models.BillingConfig)
+        .where(models.BillingConfig.campaign_id == campaign.id)
+        .where(models.BillingConfig.side == side)
+        .order_by(models.BillingConfig.start_date.asc(), models.BillingConfig.id.asc())
+    )
+    configs = result.scalars().all()
+    old_config = _active_config_for_date(configs, start_date)
+    old_summary = old_summary_override or (
+        _billing_summary(side, old_config.billing_model, old_config.rate, old_config.start_date)
+        if old_config else None
+    )
+
+    same_start = [cfg for cfg in configs if cfg.start_date == start_date]
+    if same_start:
+        new_config = same_start[0]
+        new_config.billing_model = billing_model
+        new_config.rate = rate
+        new_config.created_by = changed_by
+        for duplicate in same_start[1:]:
+            await db.delete(duplicate)
+        configs = [cfg for cfg in configs if cfg not in same_start[1:]]
+    else:
+        new_config = models.BillingConfig(
+            campaign_id=campaign.id,
+            side=side,
+            billing_model=billing_model,
+            rate=rate,
+            start_date=start_date,
+            created_by=changed_by,
+        )
+        db.add(new_config)
+        configs.append(new_config)
+        await db.flush()
+
+    configs.sort(key=lambda cfg: (cfg.start_date, cfg.id or 0))
+    for idx, cfg in enumerate(configs):
+        next_cfg = configs[idx + 1] if idx + 1 < len(configs) else None
+        cfg.end_date = (next_cfg.start_date - timedelta(days=1)) if next_cfg else None
+
+    new_summary = _billing_summary(side, billing_model, rate, start_date, source)
+    if old_summary != new_summary:
+        db.add(models.CampaignChangelog(
+            campaign_id=campaign.id,
+            field_name=f"billing.{side}",
+            old_value=old_summary,
+            new_value=new_summary,
+            changed_by=changed_by,
+            source=source,
+        ))
+
+    await db.commit()
+    if recompute:
+        recompute_result = await recompute_campaign_metrics(campaign.id, db)
+        return int(recompute_result.get("recomputed", 0))
+    return 0
+
+
+async def _validate_billing_metrics_if_configured(campaign: models.Campaign, side: str, billing_model: str):
+    try:
+        metrics_config = json.loads(campaign.metrics_json or "{}")
+    except Exception:
+        metrics_config = {}
+    publisher_metrics = {str(m).strip().lower() for m in metrics_config.get("publisher_metrics", [])}
+    advertiser_metrics = {str(m).strip().lower() for m in metrics_config.get("advertiser_metrics", [])}
+    if not publisher_metrics and not advertiser_metrics:
+        return
+    if side == "publisher" and billing_model == "cpc" and "clicks" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks in publisher metrics")
+    if side == "publisher" and billing_model == "cpm" and "impressions" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Publisher CPM requires Impressions in publisher metrics")
+    if side == "advertiser" and billing_model == "roas" and "revenue" not in advertiser_metrics:
+        raise HTTPException(status_code=400, detail="Advertiser ROAS requires Revenue in advertiser metrics")
+    if side == "advertiser" and billing_model == "cpc" and "clicks" not in publisher_metrics:
+        raise HTTPException(status_code=400, detail="Advertiser CPC requires Clicks in publisher metrics")
+
+
+async def _get_campaign_advertiser(db: AsyncSession, campaign: models.Campaign) -> Optional[models.Advertiser]:
+    if not campaign.advertiser_ref_id:
+        return None
+    return await repo.get_advertiser(db, campaign.advertiser_ref_id)
+
+
+async def _validate_go_live_billing_defaults(db: AsyncSession, campaign: models.Campaign):
+    adv = await _get_campaign_advertiser(db, campaign)
+    adv_model, adv_rate = _advertiser_default_terms(adv) if adv else ("", 0.0)
+    if adv_model not in {"roas", "cpc"} or adv_rate <= 0:
+        raise HTTPException(status_code=400, detail="Advertiser billing default is missing ROAS/CPC rate")
+    pub_model, pub_rate = _publisher_default_terms(campaign)
+    if pub_model not in {"cpc", "cpm"} or pub_rate <= 0:
+        raise HTTPException(status_code=400, detail="Publisher billing default is missing CPC/CPM rate")
+
+
+async def _seed_go_live_billing_defaults(db: AsyncSession, campaign: models.Campaign, changed_by: str = None) -> int:
+    start_date = _today_ist()
+    updated = 0
+    adv = await _get_campaign_advertiser(db, campaign)
+    adv_model, adv_rate = _advertiser_default_terms(adv) if adv else ("", 0.0)
+    if adv_model and adv_rate > 0:
+        updated += await _upsert_billing_config(
+            db, campaign, side="advertiser", billing_model=adv_model, rate=adv_rate,
+            start_date=start_date, changed_by=changed_by, source="go_live_advertiser_default",
+            recompute=False,
+        )
+    pub_model, pub_rate = _publisher_default_terms(campaign)
+    if pub_model and pub_rate > 0:
+        updated += await _upsert_billing_config(
+            db, campaign, side="publisher", billing_model=pub_model, rate=pub_rate,
+            start_date=start_date, changed_by=changed_by, source="go_live_publisher_default",
+            recompute=False,
+        )
+    recompute_result = await recompute_campaign_metrics(campaign.id, db)
+    return updated + int(recompute_result.get("recomputed", 0))
+
+
+async def _sync_advertiser_defaults_to_live_campaigns(
+    db: AsyncSession,
+    adv: models.Advertiser,
+    changed_by: str = None,
+) -> int:
+    model, rate = _advertiser_default_terms(adv)
+    if model not in {"roas", "cpc"} or rate <= 0:
+        return 0
+    rows = (await db.execute(
+        select(models.Campaign)
+        .where(models.Campaign.advertiser_ref_id == adv.id)
+        .where(models.Campaign.current_stage == wf.STAGE_LIVE)
+        .where(models.Campaign.is_deleted.is_(False))
+    )).scalars().all()
+    updated = 0
+    for campaign in rows:
+        await _upsert_billing_config(
+            db, campaign, side="advertiser", billing_model=model, rate=rate,
+            start_date=_today_ist(), changed_by=changed_by,
+            source="advertiser_default_change", recompute=True,
+        )
+        updated += 1
+    return updated
+
+
 @app.get("/api/advertisers")
 async def list_advertisers(db: AsyncSession = Depends(get_db)):
     advs = await repo.list_advertisers(db)
@@ -1300,23 +1525,33 @@ async def create_advertiser(request: Request, payload: dict, db: AsyncSession = 
 
 
 @app.patch("/api/advertisers/{adv_id}")
-async def update_advertiser(adv_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
+async def update_advertiser(adv_id: str, payload: dict, request: Request, db: AsyncSession = Depends(get_db)):
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    old_terms = _advertiser_default_terms(adv)
     adv = await repo.update_advertiser(db, adv, payload)
-    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+    billing_updated = 0
+    if _billing_terms_changed(old_terms, _advertiser_default_terms(adv)):
+        changed_by = getattr(request.state, "user_email", None) or payload.get("changed_by")
+        billing_updated = await _sync_advertiser_defaults_to_live_campaigns(db, adv, changed_by=changed_by)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv), "billing_updated": billing_updated}
 
 
 @app.post("/api/advertisers/{adv_id}/submit")
-async def submit_advertiser(adv_id: str, payload: dict = None, db: AsyncSession = Depends(get_db)):
+async def submit_advertiser(adv_id: str, request: Request, payload: dict = None, db: AsyncSession = Depends(get_db)):
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    old_terms = _advertiser_default_terms(adv)
     merged = dict(payload or {})
     merged["status"] = "ONBOARDED"
     adv = await repo.update_advertiser(db, adv, merged)
-    return {"success": True, "advertiser": repo.advertiser_dict(adv)}
+    billing_updated = 0
+    if _billing_terms_changed(old_terms, _advertiser_default_terms(adv)):
+        changed_by = getattr(request.state, "user_email", None) or merged.get("changed_by")
+        billing_updated = await _sync_advertiser_defaults_to_live_campaigns(db, adv, changed_by=changed_by)
+    return {"success": True, "advertiser": repo.advertiser_dict(adv), "billing_updated": billing_updated}
 
 
 @app.get("/api/workflow/available-combos")
@@ -1572,6 +1807,7 @@ async def workflow_get_changelog(campaign_id: str, db: AsyncSession = Depends(ge
     return {"entries": [
         {"id": r.id, "field": r.field_name, "old_value": r.old_value,
          "new_value": r.new_value, "changed_by": r.changed_by,
+         "source": r.source,
          "changed_at": r.changed_at.isoformat() if r.changed_at else None}
         for r in rows
     ]}
@@ -1823,29 +2059,17 @@ async def sync_all_endpoint(db: AsyncSession = Depends(get_db)):
 @app.post("/api/workflow/campaigns/{campaign_id}/recompute")
 async def recompute_campaign_metrics(campaign_id: str, db: AsyncSession = Depends(get_db)):
     """Re-evaluate formulas on existing metric rows without re-syncing from sheets.
-    Derives formulas from Agreement buy_type + Campaign cpc_cpd (sales/ops pipeline)."""
+    Uses billing config first, then Sales/Campaign Ops billing defaults."""
     import etl_worker
     campaign = await repo.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
 
-    # Derive formulas from sales/ops pipeline data
-    buy_type = ''
-    rate = 0.0
-    if campaign.agreement_id:
-        ag_result = await db.execute(
-            select(models.Agreement.buy_type).where(models.Agreement.id == campaign.agreement_id)
-        )
-        ag_row = ag_result.scalar()
-        if ag_row:
-            buy_type = ag_row
-    if campaign.cpc_cpd:
-        try:
-            rate = float(str(campaign.cpc_cpd).replace(',', '').strip())
-        except (ValueError, TypeError):
-            pass
-
-    pub_formula, adv_formula = etl_worker._resolve_spend_formulas(buy_type, rate)
+    pub_model, pub_rate = _publisher_default_terms(campaign)
+    pub_formula = etl_worker._publisher_formula_from_terms(pub_model, pub_rate)
+    adv = await _get_campaign_advertiser(db, campaign)
+    adv_model, adv_rate = _advertiser_default_terms(adv) if adv else ("", 0.0)
+    adv_formula = etl_worker._advertiser_formula_from_terms(adv_model, adv_rate)
     billing_configs = await etl_worker._load_billing_configs(db, campaign_id)
     metrics_config = json.loads(campaign.metrics_json or '{}')
     adv_metric_names = metrics_config.get('advertiser_metrics', [])
@@ -2012,84 +2236,47 @@ class BillingConfigRequest(BaseModel):
     billing_model: str
     rate: float
     start_date: str
+    replace_config_id: Optional[int] = None
 
 
 @app.post("/api/workflow/campaigns/{campaign_id}/billing")
 async def add_billing_config(campaign_id: str, req: BillingConfigRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Add or change billing config for a campaign side."""
-    from datetime import date as dt_date, timedelta
+    from datetime import date as dt_date
     side = (req.side or "").strip().lower()
-    billing_model = (req.billing_model or "").strip().lower()
-    allowed_models = {"publisher": {"cpc", "cpm"}, "advertiser": {"roas", "cpc"}}
-    if side not in allowed_models:
-        raise HTTPException(status_code=400, detail="side must be publisher or advertiser")
-    if billing_model not in allowed_models[side]:
-        allowed = ", ".join(sorted(allowed_models[side])).upper()
-        raise HTTPException(status_code=400, detail=f"{side} billing supports only {allowed}")
-    if req.rate <= 0:
-        raise HTTPException(status_code=400, detail="rate must be greater than 0")
+    billing_model = _normalize_billing_model(side, req.billing_model)
 
     campaign = await repo.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
-    try:
-        metrics_config = json.loads(campaign.metrics_json or "{}")
-    except Exception:
-        metrics_config = {}
-    publisher_metrics = {str(m).strip().lower() for m in metrics_config.get("publisher_metrics", [])}
-    advertiser_metrics = {str(m).strip().lower() for m in metrics_config.get("advertiser_metrics", [])}
-    if side == "publisher" and billing_model == "cpc" and "clicks" not in publisher_metrics:
-        raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks in publisher metrics")
-    if side == "publisher" and billing_model == "cpm" and "impressions" not in publisher_metrics:
-        raise HTTPException(status_code=400, detail="Publisher CPM requires Impressions in publisher metrics")
-    if side == "advertiser" and billing_model == "roas" and "revenue" not in advertiser_metrics:
-        raise HTTPException(status_code=400, detail="Advertiser ROAS requires Revenue in advertiser metrics")
-    if side == "advertiser" and billing_model == "cpc" and "clicks" not in publisher_metrics:
-        raise HTTPException(status_code=400, detail="Advertiser CPC requires Clicks in publisher metrics")
+    await _validate_billing_metrics_if_configured(campaign, side, billing_model)
+    if _safe_billing_rate(req.rate) <= 0:
+        raise HTTPException(status_code=400, detail="rate must be greater than 0")
 
     try:
         new_start = dt_date.fromisoformat(req.start_date)
     except ValueError:
         raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
     user_email = getattr(request.state, "user_email", None)
-
-    result = await db.execute(
-        select(models.BillingConfig)
-        .where(models.BillingConfig.campaign_id == campaign_id)
-        .where(models.BillingConfig.side == side)
-        .order_by(models.BillingConfig.start_date.asc(), models.BillingConfig.id.asc())
-    )
-    configs = result.scalars().all()
-    same_start = [cfg for cfg in configs if cfg.start_date == new_start]
-    if same_start:
-        new_config = same_start[0]
-        new_config.billing_model = billing_model
-        new_config.rate = req.rate
-        new_config.created_by = user_email
-        for duplicate in same_start[1:]:
-            await db.delete(duplicate)
-        configs = [cfg for cfg in configs if cfg not in same_start[1:]]
-    else:
-        new_config = models.BillingConfig(
-            campaign_id=campaign_id,
-            side=side,
-            billing_model=billing_model,
-            rate=req.rate,
-            start_date=new_start,
-            created_by=user_email,
-        )
-        db.add(new_config)
-        configs.append(new_config)
+    old_summary_override = None
+    if req.replace_config_id:
+        existing = (await db.execute(
+            select(models.BillingConfig)
+            .where(models.BillingConfig.id == req.replace_config_id)
+            .where(models.BillingConfig.campaign_id == campaign_id)
+            .where(models.BillingConfig.side == side)
+        )).scalar_one_or_none()
+        if not existing:
+            raise HTTPException(status_code=404, detail="billing config not found")
+        old_summary_override = _billing_summary(side, existing.billing_model, existing.rate, existing.start_date)
+        await db.delete(existing)
         await db.flush()
-
-    configs.sort(key=lambda cfg: (cfg.start_date, cfg.id or 0))
-    for idx, cfg in enumerate(configs):
-        next_cfg = configs[idx + 1] if idx + 1 < len(configs) else None
-        cfg.end_date = (next_cfg.start_date - timedelta(days=1)) if next_cfg else None
-
-    await db.commit()
-    recompute_result = await recompute_campaign_metrics(campaign_id, db)
-    return {"success": True, "recomputed": recompute_result.get("recomputed", 0)}
+    recomputed = await _upsert_billing_config(
+        db, campaign, side=side, billing_model=billing_model, rate=req.rate,
+        start_date=new_start, changed_by=user_email, source="billing_tab", recompute=True,
+        old_summary_override=old_summary_override,
+    )
+    return {"success": True, "recomputed": recomputed}
 
 
 @app.get("/api/sheet-headers")
@@ -2139,6 +2326,7 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
             select(models.Agreement.buy_type).where(models.Agreement.id == campaign.agreement_id)
         )
         buy_type_str = ag_result.scalar() or ""
+    pub_model, pub_rate = _publisher_default_terms(campaign)
     campaign_details = json.dumps({
         "campaign_details": {
             "brand_name": campaign.advertiser_name or campaign.name or "",
@@ -2151,8 +2339,8 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
             "assets": {"creative_url": campaign.creative_url or "", "logo_url": campaign.logo_url or ""},
             "targeting": {"Segment_link": "", "Segment_Description": campaign.targeting or "", "Size": "", "Cohort_Name": ""},
             "budget_and_metrics": {
-                "buy_type": buy_type_str,
-                "rate": campaign.cpc_cpd or "",
+                "buy_type": pub_model.upper() if pub_model else buy_type_str,
+                "rate": pub_rate or "",
                 "total_budget": 0,
             },
             "Rzp_cut": 0,
@@ -2225,17 +2413,24 @@ async def workflow_update_ops_task(task_id: str, req: UpdateOpsTaskRequest, db: 
 
 
 @app.post("/api/workflow/campaigns/{campaign_id}/transition")
-async def workflow_transition(campaign_id: str, req: TransitionRequest, db: AsyncSession = Depends(get_db)):
+async def workflow_transition(campaign_id: str, req: TransitionRequest, request: Request, db: AsyncSession = Depends(get_db)):
     campaign = await repo.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
     from_stage = campaign.current_stage
+    actor_email = req.actor_email or getattr(request.state, "user_email", None)
+    if wf.normalize_stage(req.to_stage) == wf.STAGE_LIVE and from_stage != wf.STAGE_LIVE:
+        await _validate_go_live_billing_defaults(db, campaign)
     try:
         campaign = await repo.transition_campaign(
-            db, campaign, to_stage=req.to_stage, actor_email=req.actor_email,
+            db, campaign, to_stage=req.to_stage, actor_email=actor_email,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    billing_recomputed = 0
+    if campaign.current_stage == wf.STAGE_LIVE and from_stage != wf.STAGE_LIVE:
+        billing_recomputed = await _seed_go_live_billing_defaults(db, campaign, changed_by=actor_email)
 
     # Fire-and-forget hand-off email: a send failure must not undo the committed
     # stage change.
@@ -2258,6 +2453,7 @@ async def workflow_transition(campaign_id: str, req: TransitionRequest, db: Asyn
         "success": True,
         "campaign": repo.campaign_dict(campaign),
         "from_stage": from_stage,
+        "billing_recomputed": billing_recomputed,
         "notified": notified,
     }
 
