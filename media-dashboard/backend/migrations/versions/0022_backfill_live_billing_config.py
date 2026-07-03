@@ -1,6 +1,6 @@
 """backfill billing config for live campaigns
 
-Revision ID: 0022_backfill_live_billing_config
+Revision ID: 0022_backfill_billing_config
 Revises: 0021_default_billing_sources
 Create Date: 2026-07-02
 
@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "0022_backfill_live_billing_config"
+revision: str = "0022_backfill_billing_config"
 down_revision: Union[str, None] = "0021_default_billing_sources"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
