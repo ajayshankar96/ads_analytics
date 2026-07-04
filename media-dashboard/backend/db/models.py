@@ -218,6 +218,11 @@ class BudgetAllocation(Base):
 
 class CampaignMetric(Base):
     __tablename__ = "rmn_campaign_metrics"
+    # One row per campaign per date. The unique index backs the
+    # ON CONFLICT (campaign_id, date) upsert in etl_worker.sync_campaign.
+    __table_args__ = (
+        Index("uq_rmn_metrics_camp_date", "campaign_id", "date", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     campaign_id: Mapped[str] = mapped_column(String(32), index=True)
