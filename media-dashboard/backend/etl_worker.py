@@ -40,6 +40,10 @@ METRIC_ALIASES = {
 
 SHEET_SPENDS_FLAG = "_has_sheet_spends"
 
+# Remembers (formula, missing_variable) pairs already warned about so a config
+# gap is logged once, not once per row. See _evaluate_formula.
+_WARNED_FORMULA_VARS: set = set()
+
 
 def _safe_float(value) -> float:
     if value is None or value == '':
@@ -434,6 +438,22 @@ def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optio
                 continue
             safe_key = key.replace(' ', '_').replace('-', '_')
             formula = formula.replace(key, safe_key)
+        # Any identifier the formula references that isn't in the data (e.g. a
+        # ROAS formula wanting "Revenue" when the advertiser sheet couldn't be
+        # read) is treated as 0 so we degrade gracefully instead of raising per
+        # row. We warn once per (formula, variable) so a config gap is visible
+        # without spamming the log for every date.
+        missing = [n for n in set(re.findall(r'[A-Za-z_][A-Za-z0-9_]*', formula))
+                   if n not in eval_context]
+        for name in missing:
+            eval_context[name] = 0.0
+            warn_key = (formula_str, name)
+            if warn_key not in _WARNED_FORMULA_VARS:
+                _WARNED_FORMULA_VARS.add(warn_key)
+                logger.warning(
+                    f"Formula '{formula_str}' references '{name}' which is not in the "
+                    f"available data; treating as 0. Check the column mapping / that the "
+                    f"source sheet is readable.")
         result = eval(formula, {"__builtins__": {}}, eval_context)
         return float(result) if result else 0.0
     except Exception as e:
@@ -643,6 +663,48 @@ async def _load_column_mapping(
     }
 
 
+def _open_spreadsheet_meta(service, sheet_id: str):
+    """Return (meta, effective_sheet_id, converted_id).
+
+    Uploaded Office files (.xlsx/.xls) live in Drive but the Sheets API refuses
+    to read them ("The document must not be an Office file."). When we hit that,
+    copy the file into a temporary native Google Sheet and read the copy. The
+    caller MUST pass converted_id to _delete_converted() when done.
+    """
+    try:
+        return service.spreadsheets().get(spreadsheetId=sheet_id).execute(), sheet_id, None
+    except Exception as e:
+        if "office file" in str(e).lower() or "not supported" in str(e).lower():
+            from sheets_client import _get_credentials
+            from googleapiclient.discovery import build as _build
+            creds = _get_credentials()
+            drive = _build("drive", "v3", credentials=creds)
+            copy = drive.files().copy(
+                fileId=sheet_id,
+                body={"name": "_tmp_etl_conversion", "mimeType": "application/vnd.google-apps.spreadsheet"},
+            ).execute()
+            converted_id = copy["id"]
+            meta = service.spreadsheets().get(spreadsheetId=converted_id).execute()
+            logger.info(f"  Converted Office file to Google Sheet for ETL: {converted_id}")
+            return meta, converted_id, converted_id
+        raise
+
+
+def _delete_converted(converted_id: Optional[str]) -> None:
+    """Best-effort delete of a temporary sheet created by _open_spreadsheet_meta."""
+    if not converted_id:
+        return
+    try:
+        from sheets_client import _get_credentials
+        from googleapiclient.discovery import build as _build
+        creds = _get_credentials()
+        drive = _build("drive", "v3", credentials=creds)
+        drive.files().delete(fileId=converted_id).execute()
+        logger.info(f"  Deleted temporary converted sheet: {converted_id}")
+    except Exception as ex:
+        logger.warning(f"  Failed to delete temp converted sheet {converted_id}: {ex}")
+
+
 def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                            col_mapping: Dict, segment_filter: str,
                            is_publisher: bool, metric_names: List[str]) -> List[Dict]:
@@ -658,24 +720,7 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
 
     converted_id = None
     try:
-        try:
-            meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-        except Exception as e:
-            if "office file" in str(e).lower() or "not supported" in str(e).lower():
-                from sheets_client import _get_credentials
-                from googleapiclient.discovery import build as _build
-                creds = _get_credentials()
-                drive = _build("drive", "v3", credentials=creds)
-                copy = drive.files().copy(
-                    fileId=sheet_id,
-                    body={"name": "_tmp_etl_conversion", "mimeType": "application/vnd.google-apps.spreadsheet"}
-                ).execute()
-                converted_id = copy["id"]
-                sheet_id = converted_id
-                meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-                logger.info(f"  Converted Office file to Google Sheet for ETL: {converted_id}")
-            else:
-                raise
+        meta, sheet_id, converted_id = _open_spreadsheet_meta(service, sheet_id)
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
 
         target_tabs = _resolve_tabs(tabs, col_mapping, sheet_url=sheet_url,
@@ -749,16 +794,7 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
     except Exception as e:
         logger.error(f"Error extracting visual format from {sheet_url}: {e}")
     finally:
-        if converted_id:
-            try:
-                from sheets_client import _get_credentials
-                from googleapiclient.discovery import build as _build
-                creds = _get_credentials()
-                drive = _build("drive", "v3", credentials=creds)
-                drive.files().delete(fileId=converted_id).execute()
-                logger.info(f"  Deleted temporary converted sheet: {converted_id}")
-            except Exception:
-                pass
+        _delete_converted(converted_id)
 
     return records
 
@@ -781,8 +817,9 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
         return _extract_visual_format(service, sheet_url, sheet_id, col_mapping,
                                       segment_filter, is_publisher, metric_names)
 
+    converted_id = None
     try:
-        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        meta, sheet_id, converted_id = _open_spreadsheet_meta(service, sheet_id)
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
 
         # Determine tabs to process (unified resolver; no all-tabs fallback)
@@ -918,6 +955,8 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
 
     except Exception as e:
         logger.error(f"Error extracting from {sheet_url}: {e}")
+    finally:
+        _delete_converted(converted_id)
 
     return records
 
@@ -940,8 +979,9 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
     sheet_id = match.group(1)
     records = []
 
+    converted_id = None
     try:
-        meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        meta, sheet_id, converted_id = _open_spreadsheet_meta(service, sheet_id)
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
         target_tabs = [t for t in tabs if 'RZP' in t.upper()] or tabs[:1]
 
@@ -1002,6 +1042,8 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
 
     except Exception as e:
         logger.error(f"Error extracting promo code sheet: {e}")
+    finally:
+        _delete_converted(converted_id)
 
     return records
 
