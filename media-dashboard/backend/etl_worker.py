@@ -1164,10 +1164,23 @@ async def sync_bhim_from_gmail(db: AsyncSession) -> Dict[str, Any]:
 
         today = date_type.today()
         batch = []
+        used_ids = set()
         for r in records:
-            adv_code = re.sub(r"[^A-Za-z]", "", r["advertiser"])[:3].upper() or "UNK"
+            # Campaign id must be unique per brand: a 3-letter prefix collides
+            # (e.g. "Ariesone Sunglass" and "Ariesone Trimmer" both -> ARI,
+            # violating the (campaign_id, date) unique index). Use the full
+            # cleaned brand name, truncated to fit the String(32) column
+            # (3 "BF-" + 25 + 4 "-BHI" = 32), with a numeric suffix as a
+            # last-resort tiebreaker.
+            adv_code = re.sub(r"[^A-Za-z]", "", r["advertiser"]).upper() or "UNK"
+            campaign_id = f"BF-{adv_code[:25]}-BHI"
+            n = 2
+            while campaign_id in used_ids:
+                campaign_id = f"BF-{adv_code[:23]}{n}-BHI"
+                n += 1
+            used_ids.add(campaign_id)
             batch.append({
-                "campaign_id": f"BF-{adv_code}-BHI",
+                "campaign_id": campaign_id,
                 "date": today,
                 "advertiser": r["advertiser"],
                 "publisher": "BHIM",
