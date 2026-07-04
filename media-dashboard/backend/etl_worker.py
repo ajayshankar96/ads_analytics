@@ -70,15 +70,50 @@ def _validated_iso_date(y, m, d) -> Optional[str]:
     return dt.isoformat()
 
 
-def _parse_date_from_row(date_str: str, year: Optional[str], month: Optional[str]) -> Optional[str]:
+def _detect_slash_order(date_values) -> Optional[str]:
+    """Decide whether a *column* of slash dates is DD/MM or MM/DD.
+
+    Per-cell parsing can't tell "05/08" apart, but a whole column usually can:
+    somewhere a day exceeds 12 (e.g. "05/31" ⇒ MM/DD, "31/05" ⇒ DD/MM). We scan
+    every value, tally the unambiguous ones, and let the column vote. This makes
+    every ambiguous cell in the column parse consistently instead of flipping
+    orientation row by row (the bug that produced dates like 2028-09-24).
+
+    Returns 'MDY', 'DMY', or None when there's no evidence either way.
+    """
+    dmy = mdy = 0
+    for s in date_values:
+        if not s:
+            continue
+        parts = str(s).strip().split('/')
+        if len(parts) != 3:
+            continue
+        a, b = parts[0].strip(), parts[1].strip()
+        if not (a.isdigit() and b.isdigit()):
+            continue
+        a_i, b_i = int(a), int(b)
+        if a_i > 12 >= b_i:
+            dmy += 1
+        elif b_i > 12 >= a_i:
+            mdy += 1
+    if mdy > dmy:
+        return 'MDY'
+    if dmy > mdy:
+        return 'DMY'
+    return None
+
+
+def _parse_date_from_row(date_str: str, year: Optional[str], month: Optional[str],
+                         slash_order: Optional[str] = None) -> Optional[str]:
     """Parse a sheet cell into YYYY-MM-DD.
 
     ``year``/``month`` come from the tab name and are only needed for formats
     that don't carry their own ("25-Jan", bare day numbers). When they are None
     (tab month unparseable), those formats fail closed instead of guessing.
 
-    Slash dates are interpreted DD/MM first (Indian sheets); an unambiguous
-    value in either position wins regardless.
+    Slash dates: an unambiguous value (a field > 12) always wins. For ambiguous
+    values, ``slash_order`` ('MDY'/'DMY', from a column-level scan) decides;
+    absent that, we fall back to DD/MM (Indian sheets).
     """
     if not date_str or not date_str.strip():
         return None
@@ -104,8 +139,11 @@ def _parse_date_from_row(date_str: str, year: Optional[str], month: Optional[str
                     d_i, m_i = a_i, b_i
                 elif b_i > 12 >= a_i:    # unambiguous MM/DD
                     m_i, d_i = a_i, b_i
-                elif a_i <= 12 and b_i <= 12:  # ambiguous → DD/MM (Indian)
-                    d_i, m_i = a_i, b_i
+                elif a_i <= 12 and b_i <= 12:  # ambiguous → column vote, else DD/MM
+                    if slash_order == 'MDY':
+                        m_i, d_i = a_i, b_i
+                    else:
+                        d_i, m_i = a_i, b_i
                 else:
                     return None
                 return _validated_iso_date(y, m_i, d_i)
@@ -664,7 +702,9 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                 continue
 
             data_rows = rows[data_start - 1:]
-            logger.info(f"  Visual format: tab={tab_name}, date_col={date_col}, data_start={data_start}, metrics={list(metrics_cfg.keys())}, rows={len(data_rows)}")
+            slash_order = _detect_slash_order(
+                row[date_col].strip() for row in data_rows if len(row) > date_col and row[date_col])
+            logger.info(f"  Visual format: tab={tab_name}, date_col={date_col}, data_start={data_start}, metrics={list(metrics_cfg.keys())}, rows={len(data_rows)}, slash_order={slash_order}")
 
             for row in data_rows:
                 if len(row) <= date_col or not row[date_col]:
@@ -676,7 +716,7 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                     if not _matches_segment(seg_val, segment_filter):
                         continue
 
-                date_str = _parse_date_from_row(row[date_col].strip(), year, month)
+                date_str = _parse_date_from_row(row[date_col].strip(), year, month, slash_order)
                 if not date_str:
                     continue
 
@@ -820,6 +860,9 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                 logger.warning(f"No Date column found in tab {tab_name}")
                 continue
 
+            slash_order = _detect_slash_order(
+                row[date_idx].strip() for row in data_rows if len(row) > date_idx and row[date_idx])
+
             for row in data_rows:
                 if len(row) <= date_idx:
                     continue
@@ -830,7 +873,7 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                     if not _matches_segment(seg_val, segment_filter):
                         continue
 
-                date_str = _parse_date_from_row(row[date_idx], year, month)
+                date_str = _parse_date_from_row(row[date_idx], year, month, slash_order)
                 if not date_str:
                     continue
 
@@ -943,10 +986,13 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
                 continue
 
             # Extract daily data from data_start_row onward
-            for row in rows[data_start_row - 1:]:
+            _promo_rows = rows[data_start_row - 1:]
+            slash_order = _detect_slash_order(
+                row[date_col].strip() for row in _promo_rows if row and len(row) > date_col and row[date_col])
+            for row in _promo_rows:
                 if not row or len(row) <= date_col or not row[date_col]:
                     continue
-                date_str = _parse_date_from_row(row[date_col].strip(), year, month)
+                date_str = _parse_date_from_row(row[date_col].strip(), year, month, slash_order)
                 if not date_str:
                     continue
                 record = {'Date': date_str}
