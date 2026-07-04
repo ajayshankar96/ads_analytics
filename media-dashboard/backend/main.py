@@ -405,6 +405,54 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
     return {"success": True}
 
 
+@app.post("/api/column-mappings/preview")
+async def preview_column_mapping(request: Request, db: AsyncSession = Depends(get_db)):
+    """Read-only dry run of a mapping before it touches data.
+
+    Resolves the tabs this config would ingest (rolling pattern or exact tab),
+    detects each tab's month, and reports how much data is actually filled —
+    classifying every tab as ready / awaiting_data / check_config. Writes
+    nothing. Accepts the in-progress picker config directly, or falls back to
+    the saved mapping when the body omits `mapping`.
+    """
+    import asyncio
+    import etl_worker
+    from sheets_client import _get_service
+
+    body = await request.json()
+    sheet_url = body.get("sheet_url", "")
+    if not sheet_url:
+        raise HTTPException(status_code=400, detail="sheet_url is required")
+    map_type = body.get("type", "advertiser")
+    is_publisher = map_type == "publisher"
+
+    # Prefer the live picker config; fall back to whatever is saved for scope.
+    if body.get("mapping") is not None or body.get("tab_pattern") or body.get("tab_name"):
+        match_mode = body.get("tab_match_mode") or ("rolling" if body.get("tab_pattern") else "exact")
+        col_mapping = {
+            "tab_name": body.get("tab_name", ""),
+            # tab_pattern only drives rolling; force-clear it in exact mode so
+            # resolution matches ingest semantics exactly.
+            "tab_pattern": (body.get("tab_pattern") or "") if match_mode == "rolling" else "",
+            "tab_match_mode": match_mode,
+            "mapping": body.get("mapping", {}) or {},
+            "format_type": body.get("format_type", "visual"),
+        }
+    else:
+        saved = await etl_worker._load_column_mapping(
+            db, body.get("name", "") or "", map_type,
+            sheet_url=sheet_url, campaign_id=body.get("campaign_id") or None,
+        )
+        if not saved:
+            raise HTTPException(status_code=404, detail="No saved mapping to preview")
+        col_mapping = saved
+
+    service = _get_service()
+    report = await asyncio.to_thread(
+        etl_worker.preview_mapping, service, sheet_url, col_mapping, is_publisher)
+    return report
+
+
 # ── Data Source Toggle ─────────────────────────────────────────────────────────
 @app.get("/api/data-source")
 def get_data_source():

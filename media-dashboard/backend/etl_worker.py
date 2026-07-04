@@ -1054,6 +1054,164 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
     return records
 
 
+def preview_mapping(service, sheet_url: str, col_mapping: Dict,
+                    is_publisher: bool = False) -> Dict[str, Any]:
+    """Read-only dry run of a column mapping. Writes NOTHING to Postgres.
+
+    Resolves tabs exactly the way ingest does (rolling when tab_pattern is set,
+    else exact tab_name), detects each tab's month, and counts how much data is
+    actually fillable. Every matched tab is classified so the operator can tell
+    a real config bug from "the advertiser just hasn't filled it yet":
+
+      * ready         — dates parse AND at least one mapped metric has a value.
+      * awaiting_data — tab matched and month parsed, but it's blank (no rows),
+                        or dates exist yet every mapped metric cell is still
+                        empty. This is NOT an error. We don't own the data —
+                        advertisers/publishers fill it — and the next sync will
+                        capture it automatically the moment they do.
+      * check_config  — the date column has non-empty cells but none parse as a
+                        date (likely the wrong column or an unreadable format),
+                        or the tab could not be read at all.
+
+    Uses the same primitives as the extractors (_resolve_tabs' matching rules,
+    _parse_tab_month, _detect_slash_order, _parse_date_from_row) so the preview
+    can't disagree with what a real sync would ingest.
+    """
+    pattern = (col_mapping.get("tab_pattern") or "").strip()
+    tab_name_cfg = (col_mapping.get("tab_name") or "").strip()
+    report: Dict[str, Any] = {
+        "match_mode": "rolling" if pattern else "exact",
+        "pattern": pattern,
+        "tab_name": tab_name_cfg,
+        "all_tab_count": 0,
+        "matched": [],
+        "skipped": [],       # matched the pattern but no parseable month
+        "unmatched_count": 0,
+        "converted_office_file": False,
+        "error": None,
+    }
+
+    match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
+    if not match:
+        report["error"] = "Invalid sheet URL"
+        return report
+    sheet_id = match.group(1)
+
+    mapping = col_mapping.get("mapping", {}) or {}
+    date_col = int(mapping.get("date_col_index", 0))
+    data_start = int(mapping.get("data_start_row",
+                                 mapping.get("date_start_row", 1)) or 1)
+    metrics_cfg = mapping.get("metrics", {}) or {}
+    metric_cols: Dict[str, int] = {}
+    for k, v in metrics_cfg.items():
+        try:
+            metric_cols[k] = int(v["col"]) if isinstance(v, dict) else int(v)
+        except (TypeError, ValueError, KeyError):
+            continue
+
+    converted_id = None
+    try:
+        meta, sheet_id, converted_id = _open_spreadsheet_meta(service, sheet_id)
+        report["converted_office_file"] = converted_id is not None
+        tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
+        report["all_tab_count"] = len(tabs)
+
+        # Mirror _resolve_tabs matching so preview == ingest, while also
+        # surfacing the tabs that were skipped/unmatched (which _resolve_tabs
+        # only logs).
+        resolved = []  # (tab, year, month)
+        if pattern:
+            for t in tabs:
+                if pattern.lower() in t.lower():
+                    ym = _parse_tab_month(t)
+                    if ym:
+                        resolved.append((t, ym[0], ym[1]))
+                    else:
+                        report["skipped"].append(
+                            {"tab": t, "reason": "matches pattern but has no month token"})
+                else:
+                    report["unmatched_count"] += 1
+        elif tab_name_cfg:
+            for t in tabs:
+                if tab_name_cfg.lower() in t.lower():
+                    ym = _parse_tab_month(t)
+                    resolved.append((t, ym[0] if ym else None, ym[1] if ym else None))
+                else:
+                    report["unmatched_count"] += 1
+            if not resolved:
+                report["error"] = f"Configured tab '{tab_name_cfg}' not found in this sheet"
+        else:
+            report["error"] = "No tab pattern or tab name configured"
+
+        for tab_name, year, month in resolved:
+            entry = {
+                "tab": tab_name,
+                "month": f"{year}-{month}" if year and month else None,
+                "data_rows": 0,
+                "dated_rows": 0,
+                "rows_with_data": 0,
+                "date_min": None,
+                "date_max": None,
+                "status": "awaiting_data",
+                "note": "",
+            }
+            try:
+                vals = service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ").execute()
+                rows = vals.get('values', [])
+            except Exception as e:
+                entry["status"] = "check_config"
+                entry["note"] = f"could not read tab ({e})"
+                report["matched"].append(entry)
+                continue
+
+            data_rows = rows[data_start - 1:] if len(rows) >= data_start else []
+            filled = [r for r in data_rows
+                      if len(r) > date_col and str(r[date_col]).strip()]
+            entry["data_rows"] = len(filled)
+
+            slash_order = _detect_slash_order(
+                str(r[date_col]).strip() for r in filled)
+            parsed_dates = []
+            rows_with_data = 0
+            for r in filled:
+                ds = _parse_date_from_row(str(r[date_col]).strip(), year, month, slash_order)
+                if not ds:
+                    continue
+                parsed_dates.append(ds)
+                for col in metric_cols.values():
+                    if len(r) > col and str(r[col]).strip() and _safe_float(r[col]) != 0:
+                        rows_with_data += 1
+                        break
+            entry["dated_rows"] = len(parsed_dates)
+            entry["rows_with_data"] = rows_with_data
+            if parsed_dates:
+                entry["date_min"] = min(parsed_dates)
+                entry["date_max"] = max(parsed_dates)
+
+            if len(filled) == 0:
+                entry["status"] = "awaiting_data"
+                entry["note"] = "no rows filled yet"
+            elif len(parsed_dates) == 0:
+                entry["status"] = "check_config"
+                entry["note"] = ("date column has values but none parse as dates "
+                                 "— wrong column or unrecognised format?")
+            elif metric_cols and rows_with_data == 0:
+                entry["status"] = "awaiting_data"
+                entry["note"] = "dates present but every mapped metric cell is still blank"
+            else:
+                entry["status"] = "ready"
+            report["matched"].append(entry)
+
+    except Exception as e:
+        report["error"] = str(e)
+        logger.error(f"preview_mapping error for {sheet_url}: {e}")
+    finally:
+        _delete_converted(converted_id)
+
+    return report
+
+
 async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str, Any]:
     """Sync one campaign: pull sheets → merge → store in Postgres."""
     from sheets_client import _get_service

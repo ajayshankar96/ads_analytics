@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getWorkflowCampaigns, getFilters, submitTrackingSetup, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, getSheetPreview, getColumnMappings, saveColumnMapping, getBillingConfig, addBillingConfig, recomputeMetrics } from "../api";
+import { getWorkflowCampaigns, getFilters, submitTrackingSetup, syncCampaign, getCampaignMetrics, runAttribution, getSheetUrls, getSheetPreview, getColumnMappings, saveColumnMapping, previewColumnMapping, getBillingConfig, addBillingConfig, recomputeMetrics } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -167,6 +167,8 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   const [existingConfig, setExistingConfig] = useState(null);
   const [matchMode, setMatchMode] = useState("exact");
   const [tabPattern, setTabPattern] = useState("");
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState(null);
 
   useEffect(() => {
     if (name) {
@@ -234,6 +236,43 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     else setMetricCells((prev) => ({ ...prev, [mode]: { row: rowIdx, col: colIdx } }));
   };
 
+  // Build the visual mapping exactly the same way for both save and preview so
+  // the dry-run can never disagree with what a real sync would ingest.
+  const buildMapping = () => {
+    const metricsMapping = {};
+    Object.keys(metricCells).forEach((key) => {
+      const cell = metricCells[key];
+      const cellContent = rows[cell.row] && rows[cell.row][cell.col] ? rows[cell.row][cell.col].trim() : `col_${cell.col}`;
+      metricsMapping[key] = isPub
+        ? { col: cell.col, header: cellContent }
+        : { col: cell.col, start_row: cell.row + 1, header: cellContent };
+    });
+    return isPub
+      ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segCell ? segCell.col : null, metrics: metricsMapping }
+      : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
+  };
+
+  const handlePreview = async () => {
+    if (!dateCell) { alert("Select where dates start first"); return; }
+    if (matchMode === "rolling" && !tabPattern.trim()) {
+      alert("Enter a tab pattern for auto-detect, or switch to exact match.");
+      return;
+    }
+    setPreviewing(true);
+    setPreview(null);
+    try {
+      const r = await previewColumnMapping({
+        name, type: pickerType, campaign_id: campaignId, sheet_url: sheetUrl, tab_name: selectedTab || "",
+        mapping: buildMapping(),
+        format_type: "visual",
+        tab_pattern: matchMode === "rolling" ? tabPattern.trim() : null,
+        tab_match_mode: matchMode,
+      });
+      setPreview(r);
+    } catch (e) { alert("Preview failed: " + e.message); }
+    finally { setPreviewing(false); }
+  };
+
   const handleSave = async () => {
     if (!dateCell) { alert("Please select where dates start"); return; }
     const mappedMetrics = Object.keys(metricCells);
@@ -244,22 +283,11 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     }
     setSaving(true);
     try {
-      const metricsMapping = {};
-      mappedMetrics.forEach((key) => {
-        const cell = metricCells[key];
-        const cellContent = rows[cell.row] && rows[cell.row][cell.col] ? rows[cell.row][cell.col].trim() : `col_${cell.col}`;
-        metricsMapping[key] = isPub
-          ? { col: cell.col, header: cellContent }
-          : { col: cell.col, start_row: cell.row + 1, header: cellContent };
-      });
-      const mapping = isPub
-        ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segCell ? segCell.col : null, metrics: metricsMapping }
-        : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
       await saveColumnMapping({
         name, type: pickerType, campaign_id: campaignId, sheet_url: sheetUrl, tab_name: selectedTab || "",
         header_row: dateCell.row + 1,
         data_start_row: dateCell.row + 1,
-        mapping,
+        mapping: buildMapping(),
         format_type: "visual",
         tab_pattern: matchMode === "rolling" ? tabPattern.trim() : null,
         tab_match_mode: matchMode,
@@ -439,10 +467,98 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             })}
           </div>
 
-          <button onClick={handleSave} disabled={saving || !hasAllSelections} style={{ background: hasAllSelections ? c.green : c.line, color: hasAllSelections ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: hasAllSelections ? "pointer" : "not-allowed" }}>
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={handleSave} disabled={saving || !hasAllSelections} style={{ background: hasAllSelections ? c.green : c.line, color: hasAllSelections ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: hasAllSelections ? "pointer" : "not-allowed" }}>
+              {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
+            </button>
+            <button onClick={handlePreview} disabled={previewing || !dateCell} title="Read-only dry run — checks which tabs/months this config will pull and whether data is filled, without writing anything" style={{ background: "#fff", color: dateCell ? c.blue : c.muted, border: `1px solid ${dateCell ? c.blue : c.line}`, borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: dateCell ? "pointer" : "not-allowed" }}>
+              {previewing ? "Checking…" : "Preview / Dry-run"}
+            </button>
+          </div>
+
+          {preview && <PreviewResults preview={preview} />}
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Dry-run results: which tabs/months this config will ingest, and whether the
+//    advertiser/publisher has actually filled them yet. "Awaiting data" is an
+//    expected state, not an error — we don't own the sheet; the next sync picks
+//    it up automatically once the counterparty fills it.
+const PREVIEW_STATUS = {
+  ready: { color: c.green, bg: "#E3F6EE", label: "Ready" },
+  awaiting_data: { color: c.amber, bg: "#FEF3E2", label: "Awaiting data" },
+  check_config: { color: c.red, bg: "#FDE7E2", label: "Check config" },
+};
+
+function PreviewResults({ preview }) {
+  const matched = preview.matched || [];
+  const skipped = preview.skipped || [];
+  const readyCount = matched.filter((t) => t.status === "ready").length;
+  const awaiting = matched.filter((t) => t.status === "awaiting_data").length;
+  const issues = matched.filter((t) => t.status === "check_config").length;
+
+  return (
+    <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "10px 12px", background: c.bg, borderBottom: `1px solid ${c.line}`, fontSize: 12, color: c.ink, fontWeight: 700, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <span>Dry-run — {preview.match_mode === "rolling" ? `rolling “${preview.pattern}”` : `exact “${preview.tab_name || "—"}”`}</span>
+        <span style={{ fontWeight: 600, color: c.muted }}>
+          {matched.length} tab(s) matched · {readyCount} ready · {awaiting} awaiting · {issues} to check
+        </span>
+      </div>
+
+      {preview.error && (
+        <div style={{ padding: "10px 12px", fontSize: 12, color: c.red, background: "#FDE7E2" }}>{preview.error}</div>
+      )}
+      {preview.converted_office_file && (
+        <div style={{ padding: "6px 12px", fontSize: 11, color: c.muted }}>Note: this is an uploaded Excel file — read via a temporary conversion (same as sync).</div>
+      )}
+
+      {matched.length > 0 && (
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
+          <thead>
+            <tr style={{ background: "#F1F5F9", color: c.muted }}>
+              {["Tab", "Month", "Status", "Dated rows", "Rows w/ data", "Date range", "Note"].map((h) => (
+                <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontWeight: 700, borderBottom: `1px solid ${c.line}` }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matched.map((t) => {
+              const s = PREVIEW_STATUS[t.status] || PREVIEW_STATUS.check_config;
+              return (
+                <tr key={t.tab} style={{ borderBottom: `1px solid #F1F5F9` }}>
+                  <td style={{ padding: "6px 10px", fontWeight: 600, color: c.ink }}>{t.tab}</td>
+                  <td style={{ padding: "6px 10px", color: c.sub }}>{t.month || "—"}</td>
+                  <td style={{ padding: "6px 10px" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: s.bg, color: s.color }}>{s.label}</span>
+                  </td>
+                  <td style={{ padding: "6px 10px", color: c.sub }}>{t.dated_rows}</td>
+                  <td style={{ padding: "6px 10px", color: c.sub }}>{t.rows_with_data}</td>
+                  <td style={{ padding: "6px 10px", color: c.sub }}>{t.date_min ? `${t.date_min} → ${t.date_max}` : "—"}</td>
+                  <td style={{ padding: "6px 10px", color: c.muted }}>{t.note}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {matched.length === 0 && !preview.error && (
+        <div style={{ padding: "10px 12px", fontSize: 12, color: c.amber }}>No tabs match this configuration yet.</div>
+      )}
+
+      {skipped.length > 0 && (
+        <div style={{ padding: "8px 12px", fontSize: 11, color: c.muted, borderTop: `1px solid ${c.line}` }}>
+          Skipped {skipped.length} tab(s) matching the pattern but with no month token: {skipped.slice(0, 6).map((s) => s.tab).join(", ")}{skipped.length > 6 ? " …" : ""}
+        </div>
+      )}
+      {awaiting > 0 && issues === 0 && (
+        <div style={{ padding: "8px 12px", fontSize: 11, color: c.sub, borderTop: `1px solid ${c.line}`, background: "#FFFBEB" }}>
+          “Awaiting data” tabs are configured correctly — they’ll be captured automatically on the next sync once the advertiser/publisher fills them.
+        </div>
       )}
     </div>
   );

@@ -255,6 +255,9 @@ export const getColumnMappings = (name, type, sheetUrl, campaignId) =>
 export const saveColumnMapping = (payload) =>
   apiFetch("/api/column-mappings", { method: "POST", body: JSON.stringify(payload) });
 
+export const previewColumnMapping = (payload) =>
+  apiFetch("/api/column-mappings/preview", { method: "POST", body: JSON.stringify(payload) });
+
 // ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
 export const setDataSource = (source) =>
   apiFetch("/api/data-source", { method: "POST", body: JSON.stringify({ source }) });
