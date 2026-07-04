@@ -876,6 +876,11 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
             for i, h in enumerate(header_row):
                 if h and h.strip():
                     col_map[h.strip()] = i
+            # Case-insensitive view so lowercase metric names ("revenue") match
+            # capitalized sheet headers ("Revenue"). First occurrence wins.
+            col_map_lower = {}
+            for name, i in col_map.items():
+                col_map_lower.setdefault(name.lower(), i)
 
             # If we have a configured field_map, use it to resolve standard keys
             if col_mapping and field_map:
@@ -946,8 +951,9 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                             else:
                                 record[metric_name] = 0.0
                         else:
-                            if metric_name in col_map and len(row) > col_map[metric_name]:
-                                record[metric_name] = _safe_float(row[col_map[metric_name]])
+                            idx = col_map.get(metric_name, col_map_lower.get(metric_name.strip().lower()))
+                            if idx is not None and len(row) > idx:
+                                record[metric_name] = _safe_float(row[idx])
                             else:
                                 record[metric_name] = 0.0
 
