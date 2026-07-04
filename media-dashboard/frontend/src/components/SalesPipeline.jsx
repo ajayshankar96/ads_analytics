@@ -23,8 +23,8 @@ const s = {
   cat: { color: c.blue, fontWeight: 600 },
   pill: { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "#EAF0FF", color: c.blue, marginRight: 8 },
   rate: { fontWeight: 700, color: c.ink },
-  goalMain: { fontWeight: 600, color: c.ink },
-  goalSub: { fontSize: 12, color: c.muted, marginTop: 2 },
+  ownerName: { fontWeight: 600, color: c.ink },
+  ownerEmail: { fontSize: 12, color: c.muted, marginTop: 2 },
   badge: { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20 },
   badgeLive: { background: "#E3F6EE", color: c.green },
   badgeDraft: { background: "#FEF3E2", color: c.amber },
@@ -48,10 +48,16 @@ function rateText(a) {
   if (a.buy_type === "CPC") return a.cpc_rate != null ? `₹${a.cpc_rate}/click` : "—";
   return "—";
 }
-function goalText(a) {
-  if (a.goal_type === "ROAS") return a.target_roas != null ? `ROAS ${a.target_roas}x` : "ROAS";
-  if (a.goal_type === "CAC") return a.target_cac != null ? `CAC ₹${a.target_cac}` : "CAC";
-  return null;
+function ownerText(a) {
+  const email = (a.owner_email || "").trim();
+  if (!email) return null;
+  const local = email.split("@")[0];
+  const name = local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return { name: name || email, email };
 }
 function budgetText(a) {
   if (!a.budget_hint) return dash;
@@ -154,9 +160,9 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
             <thead>
               <tr>
                 <th style={s.th}>Advertiser</th>
+                <th style={s.th}>Owner</th>
                 <th style={s.th}>Category</th>
                 <th style={s.th}>Buy type · Rate</th>
-                <th style={s.th}>Performance goal</th>
                 <th style={{ ...s.th, ...s.thRight }}>Total budget</th>
                 <th style={{ ...s.th, ...s.thRight }}>Live offers</th>
                 <th style={{ ...s.th, textAlign: "center" }}>Email</th>
@@ -167,7 +173,7 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
             <tbody>
               {advertisers.map((a) => {
                 const live = a.status === "ONBOARDED";
-                const goal = goalText(a);
+                const owner = ownerText(a);
                 return (
                   <tr key={a.id} style={{ ...s.tr, cursor: "default" }}>
                     <td style={s.td}>
@@ -179,12 +185,12 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
                         </div>
                       </div>
                     </td>
+                    <td style={s.td}>
+                      {owner ? <><div style={s.ownerName}>{owner.name}</div><div style={s.ownerEmail}>{owner.email}</div></> : dash}
+                    </td>
                     <td style={s.td}>{a.category ? <span style={s.cat}>{a.category}</span> : dash}</td>
                     <td style={s.td}>
                       {a.buy_type ? <><span style={s.pill}>{a.buy_type}</span><span style={s.rate}>{rateText(a)}</span></> : dash}
-                    </td>
-                    <td style={s.td}>
-                      {goal ? <><div style={s.goalMain}>{goal}</div><div style={s.goalSub}>brand-level</div></> : dash}
                     </td>
                     <td style={{ ...s.td, ...s.tdRight }}>{budgetText(a)}</td>
                     <td style={{ ...s.td, ...s.tdRight }}>{dash}</td>
