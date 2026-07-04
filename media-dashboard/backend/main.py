@@ -1571,7 +1571,10 @@ async def create_advertiser(request: Request, payload: dict, db: AsyncSession = 
         raise HTTPException(status_code=400, detail="advertiser name is required to mint an ID")
     if not payload.get("owner_email"):
         payload["owner_email"] = getattr(request.state, "user_email", None)
-    adv = await repo.create_advertiser(db, payload)
+    try:
+        adv = await repo.create_advertiser(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 
 
@@ -1581,7 +1584,10 @@ async def update_advertiser(adv_id: str, payload: dict, request: Request, db: As
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
     old_terms = _advertiser_default_terms(adv)
-    adv = await repo.update_advertiser(db, adv, payload)
+    try:
+        adv = await repo.update_advertiser(db, adv, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     billing_updated = 0
     if _billing_terms_changed(old_terms, _advertiser_default_terms(adv)):
         changed_by = getattr(request.state, "user_email", None) or payload.get("changed_by")
@@ -1597,7 +1603,10 @@ async def submit_advertiser(adv_id: str, request: Request, payload: dict = None,
     old_terms = _advertiser_default_terms(adv)
     merged = dict(payload or {})
     merged["status"] = "ONBOARDED"
-    adv = await repo.update_advertiser(db, adv, merged)
+    try:
+        adv = await repo.update_advertiser(db, adv, merged)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     billing_updated = 0
     if _billing_terms_changed(old_terms, _advertiser_default_terms(adv)):
         changed_by = getattr(request.state, "user_email", None) or merged.get("changed_by")

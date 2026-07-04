@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { createAdvertiser, updateAdvertiser, submitAdvertiser, recordWelcomeEmail } from "../api";
+import React, { useState, useEffect } from "react";
+import { createAdvertiser, updateAdvertiser, submitAdvertiser, recordWelcomeEmail, getAdvertisers } from "../api";
 import { GOOGLE_WEB_CLIENT_ID, useGisLoaded, getGmailAccessToken, sendViaGmail, textToHtml } from "../lib/gmail";
 
 /**
@@ -173,6 +173,18 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
   const [poFile, setPoFile] = useState(a.po_name ? { name: a.po_name } : null);
   const [error, setError] = useState("");
 
+  // Existing advertiser names, for an instant duplicate check on step 1.
+  const [existingAdvs, setExistingAdvs] = useState([]);
+  useEffect(() => {
+    getAdvertisers()
+      .then((d) => setExistingAdvs(d.advertisers || []))
+      .catch(() => {});
+  }, []);
+  const trimmedName = data.name.trim();
+  const isDupName = trimmedName !== "" && existingAdvs.some(
+    (adv) => adv.id !== advId && (adv.name || "").trim().toLowerCase() === trimmedName.toLowerCase()
+  );
+
   // Step 7 — welcome email
   useGisLoaded();
   const [emailTo, setEmailTo] = useState(a.poc_email || "");
@@ -228,12 +240,14 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
 
   const saveDraft = async () => {
     if (!data.name.trim()) { setError("Enter the advertiser name before saving a draft."); setStep(1); return; }
+    if (isDupName) { setError(`An advertiser named "${trimmedName}" already exists.`); setStep(1); return; }
     try { await persist({ current_step: step, status: "DRAFT" }); onClose(); }
     catch (e) { setError("Save failed: " + e.message); }
   };
 
   const validate = () => {
     if (step === 1 && !data.name.trim()) return "Advertiser name is required.";
+    if (step === 1 && isDupName) return `An advertiser named "${trimmedName}" already exists.`;
     return "";
   };
 
@@ -274,8 +288,10 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
           <div style={s.grid2}>
             <div style={s.field}>
               <label style={s.label}>Advertiser name<span style={s.req}>*</span></label>
-              <input style={s.input} placeholder="e.g. Plum Goodness" value={data.name} onChange={(e) => set({ name: e.target.value })} />
-              <div style={s.help}>Legal entity name as on registration</div>
+              <input style={{ ...s.input, ...(isDupName ? { borderColor: c.red } : {}) }} placeholder="e.g. Plum Goodness" value={data.name} onChange={(e) => set({ name: e.target.value })} />
+              {isDupName
+                ? <div style={{ ...s.help, color: c.red, fontWeight: 600 }}>An advertiser named “{trimmedName}” already exists.</div>
+                : <div style={s.help}>Legal entity name as on registration</div>}
             </div>
             <div style={s.field}>
               <label style={s.label}>Industry / Category</label>

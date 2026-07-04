@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import workflow_logic as wf
@@ -175,9 +175,29 @@ async def get_advertiser(db: AsyncSession, adv_id: str) -> Optional[models.Adver
     return (await db.execute(select(models.Advertiser).where(models.Advertiser.id == adv_id))).scalar_one_or_none()
 
 
+async def advertiser_name_exists(db: AsyncSession, name: str, exclude_id: str = None) -> bool:
+    """True if another advertiser already carries this name (case-insensitive,
+    whitespace-trimmed). `exclude_id` skips the row being edited so a rename to
+    the same name doesn't flag itself."""
+    name = (name or "").strip()
+    if not name:
+        return False
+    stmt = select(models.Advertiser.id).where(
+        func.lower(func.trim(models.Advertiser.name)) == name.lower()
+    )
+    if exclude_id:
+        stmt = stmt.where(models.Advertiser.id != exclude_id)
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
 async def create_advertiser(db: AsyncSession, payload: Dict[str, Any]) -> models.Advertiser:
     fields = _coerce_adv(payload)
-    name = fields.get("name") or payload.get("name") or ""
+    name = (fields.get("name") or payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("Advertiser name is required")
+    if await advertiser_name_exists(db, name):
+        raise ValueError(f"An advertiser named '{name}' already exists")
+    fields["name"] = name  # store the trimmed form so future checks stay consistent
     adv = models.Advertiser(
         id=await next_advertiser_id(db, name),
         status=payload.get("status", "DRAFT"),
@@ -191,7 +211,15 @@ async def create_advertiser(db: AsyncSession, payload: Dict[str, Any]) -> models
 
 
 async def update_advertiser(db: AsyncSession, adv: models.Advertiser, payload: Dict[str, Any]) -> models.Advertiser:
-    for k, v in _coerce_adv(payload).items():
+    coerced = _coerce_adv(payload)
+    if "name" in coerced:
+        new_name = (coerced.get("name") or "").strip()
+        if not new_name:
+            raise ValueError("Advertiser name is required")
+        if await advertiser_name_exists(db, new_name, exclude_id=adv.id):
+            raise ValueError(f"An advertiser named '{new_name}' already exists")
+        coerced["name"] = new_name
+    for k, v in coerced.items():
         setattr(adv, k, v)
     if "status" in payload and payload["status"]:
         adv.status = payload["status"]
