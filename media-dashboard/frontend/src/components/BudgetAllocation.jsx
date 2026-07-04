@@ -53,18 +53,24 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function AddPublisherModal({ onClose, onSave }) {
+function AddPublisherModal({ onClose, onSave, existing = [] }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const trimmed = name.trim();
+  const isDup = trimmed !== "" && existing.some(
+    (p) => (p.name || "").trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  const canSubmit = trimmed !== "" && !isDup && !saving;
+
   const handleSave = async () => {
-    if (!name.trim() || saving) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
-      await onSave({ name: name.trim() });
+      await onSave({ name: trimmed });
       onClose();
     } catch (e) {
-      alert("Failed: " + e.message);
+      alert("Couldn't add publisher: " + e.message);
     } finally { setSaving(false); }
   };
 
@@ -75,20 +81,26 @@ function AddPublisherModal({ onClose, onSave }) {
         <div style={s.field}>
           <label style={s.label}>Publisher name</label>
           <input
-            style={s.modalInput}
+            style={{ ...s.modalInput, ...(isDup ? { borderColor: c.red } : {}) }}
             placeholder="e.g. Swiggy"
             value={name}
             autoFocus
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
           />
-          <div style={{ fontSize: 12, color: c.muted, marginTop: 6 }}>
-            A short code (e.g. P8) is assigned automatically.
-          </div>
+          {isDup ? (
+            <div style={{ fontSize: 12, color: c.red, fontWeight: 600, marginTop: 6 }}>
+              A publisher named “{trimmed}” already exists.
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 6 }}>
+              A short code (e.g. P8) is assigned automatically.
+            </div>
+          )}
         </div>
         <div style={s.modalFooter}>
           <button style={s.ghostBtn} onClick={onClose}>Cancel</button>
-          <button style={s.addBtn} onClick={handleSave} disabled={saving || !name.trim()}>
+          <button style={{ ...s.addBtn, ...(canSubmit ? {} : { opacity: 0.5, cursor: "not-allowed" }) }} onClick={handleSave} disabled={!canSubmit}>
             {saving ? "Adding…" : "Add publisher"}
           </button>
         </div>
@@ -351,7 +363,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         </div>
       )}
 
-      {showAddPub && <AddPublisherModal onClose={() => setShowAddPub(false)} onSave={handleAddPublisher} />}
+      {showAddPub && <AddPublisherModal existing={publishers} onClose={() => setShowAddPub(false)} onSave={handleAddPublisher} />}
     </div>
   );
 }

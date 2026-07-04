@@ -13,7 +13,14 @@ async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+    // Prefer FastAPI's {"detail": "..."} so callers show a clean message
+    // (e.g. "Publisher 'Flipkart' already exists") instead of a raw payload.
+    let msg = text;
+    try {
+      const j = JSON.parse(text);
+      if (j && typeof j.detail === "string") msg = j.detail;
+    } catch (_) { /* not JSON — keep raw text */ }
+    throw new Error(msg || `API error ${res.status}`);
   }
   return res.json();
 }
