@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { getAdvertisers, getPublishers, getAllAllocationsForMonth, saveAllocations } from "../api";
+import { getAdvertisers, getPublishers, getAllAllocationsForMonth, saveAllocations, createPublisher } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -55,14 +55,13 @@ function currentMonth() {
 
 function AddPublisherModal({ onClose, onSave }) {
   const [name, setName] = useState("");
-  const [code, setCode] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!name.trim() || !code.trim()) return;
+    if (!name.trim() || saving) return;
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), code: code.trim() });
+      await onSave({ name: name.trim() });
       onClose();
     } catch (e) {
       alert("Failed: " + e.message);
@@ -75,15 +74,23 @@ function AddPublisherModal({ onClose, onSave }) {
         <div style={s.modalTitle}>Add new publisher</div>
         <div style={s.field}>
           <label style={s.label}>Publisher name</label>
-          <input style={s.modalInput} placeholder="e.g. Swiggy" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div style={s.field}>
-          <label style={s.label}>Code</label>
-          <input style={s.modalInput} placeholder="e.g. P12" value={code} onChange={(e) => setCode(e.target.value)} />
+          <input
+            style={s.modalInput}
+            placeholder="e.g. Swiggy"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+          />
+          <div style={{ fontSize: 12, color: c.muted, marginTop: 6 }}>
+            A short code (e.g. P8) is assigned automatically.
+          </div>
         </div>
         <div style={s.modalFooter}>
           <button style={s.ghostBtn} onClick={onClose}>Cancel</button>
-          <button style={s.addBtn} onClick={handleSave} disabled={saving}>{saving ? "Adding…" : "Add publisher"}</button>
+          <button style={s.addBtn} onClick={handleSave} disabled={saving || !name.trim()}>
+            {saving ? "Adding…" : "Add publisher"}
+          </button>
         </div>
       </div>
     </div>
@@ -200,16 +207,8 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     finally { setSavingAdv(null); }
   };
 
-  const handleAddPublisher = async ({ name, code }) => {
-    const res = await fetch("/api/publishers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, code }),
-    });
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      throw new Error(d.detail || "Failed to add publisher");
-    }
+  const handleAddPublisher = async ({ name }) => {
+    await createPublisher(name);
     await load();
   };
 
@@ -232,6 +231,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <input type="month" style={s.monthPicker} value={month} onChange={(e) => setMonth(e.target.value)} />
         </div>
         <div style={s.btnRow}>
+          {canEdit && (
+            <button style={s.addBtn} onClick={() => setShowAddPub(true)}>
+              + Add Publisher
+            </button>
+          )}
         </div>
       </div>
 

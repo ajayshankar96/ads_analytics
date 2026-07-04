@@ -323,6 +323,12 @@ export const deleteUserRole = (email) =>
 // ── Publishers & Budget Allocation ────────────────────────────────────────────
 export const getPublishers = () => apiFetch("/api/publishers");
 
+export const createPublisher = (name, code) =>
+  apiFetch("/api/publishers", {
+    method: "POST",
+    body: JSON.stringify({ name, code }),
+  });
+
 export const getAllocations = (advId, month) =>
   apiFetch(`/api/advertisers/${advId}/allocations${buildQuery({ month })}`);
 

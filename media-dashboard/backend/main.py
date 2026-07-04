@@ -1722,12 +1722,15 @@ async def list_publishers(db: AsyncSession = Depends(get_db)):
 
 class CreatePublisherRequest(BaseModel):
     name: str
-    code: str
+    code: Optional[str] = None
 
 
 @app.post("/api/publishers")
 async def create_publisher(req: CreatePublisherRequest, db: AsyncSession = Depends(get_db)):
-    pub = await repo.create_publisher(db, name=req.name, code=req.code)
+    try:
+        pub = await repo.create_publisher(db, name=req.name, code=req.code)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "publisher": pub}
 
 

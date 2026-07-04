@@ -620,10 +620,37 @@ async def list_publishers(db: AsyncSession) -> List[Dict[str, Any]]:
     return [{"id": p.id, "name": p.name, "code": p.code} for p in result.scalars().all()]
 
 
-async def create_publisher(db: AsyncSession, name: str, code: str) -> Dict[str, Any]:
+async def create_publisher(db: AsyncSession, name: str, code: str = None) -> Dict[str, Any]:
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Publisher name is required")
+
     result = await db.execute(select(models.Publisher))
-    count = len(result.scalars().all())
-    pub_id = f"PUB-{count + 1:03d}"
+    pubs = result.scalars().all()
+
+    # reject duplicates (case-insensitive) so the roster stays clean
+    if any((p.name or "").strip().lower() == name.lower() for p in pubs):
+        raise ValueError(f"Publisher '{name}' already exists")
+
+    # derive the next id from the max existing PUB-XXX suffix (robust to gaps
+    # from any past deletions — never reuses/collides with an existing id)
+    max_id = 0
+    for p in pubs:
+        m = re.match(r"PUB-(\d+)$", (p.id or ""))
+        if m:
+            max_id = max(max_id, int(m.group(1)))
+    pub_id = f"PUB-{max_id + 1:03d}"
+
+    # auto-assign a short code (P{n}) when the caller doesn't supply one
+    code = (code or "").strip()
+    if not code:
+        max_code = 0
+        for p in pubs:
+            m = re.match(r"P(\d+)$", (p.code or ""))
+            if m:
+                max_code = max(max_code, int(m.group(1)))
+        code = f"P{max_code + 1}"
+
     pub = models.Publisher(id=pub_id, name=name, code=code, is_active=True)
     db.add(pub)
     await db.commit()
