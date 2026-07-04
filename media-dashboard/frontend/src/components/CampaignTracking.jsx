@@ -99,6 +99,57 @@ const STANDARD_FIELDS = [
   { key: "cpc", label: "CPC" },
 ];
 
+// ── Tab month detection (mirrors backend etl_worker._parse_tab_month) ─────────
+// Full month names first so "june" wins over "jun". The trailing (?![a-z])
+// guard stops brand substrings ("Maya"→may, "Decathlon"→dec). The leading
+// (?<![a-z]) boundary is emulated manually below (Babel won't transpile regex
+// lookbehind, so it would break older Safari at runtime).
+const MONTH_NAMES_RE_SRC =
+  "(january|february|march|april|may|june|july|august|september|october|november|december|" +
+  "jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)(?![a-z])";
+const NUM_MONTH_YEAR_RE = /\b(0?[1-9]|1[0-2])[/\-.](20\d{2})\b/;
+const NUM_YEAR_MONTH_RE = /\b(20\d{2})[/\-.](0?[1-9]|1[0-2])\b/;
+
+function findMonthToken(tabName) {
+  if (!tabName) return null;
+  const re = new RegExp(MONTH_NAMES_RE_SRC, "gi");
+  let m;
+  while ((m = re.exec(tabName)) !== null) {
+    const before = m.index > 0 ? tabName[m.index - 1] : "";
+    if (!/[a-z]/i.test(before)) return m; // emulate (?<![a-z])
+    if (m.index === re.lastIndex) re.lastIndex++; // guard against zero-length loops
+  }
+  return null;
+}
+
+function tabHasMonth(tabName) {
+  if (!tabName) return false;
+  if (findMonthToken(tabName)) return true;
+  return NUM_MONTH_YEAR_RE.test(tabName) || NUM_YEAR_MONTH_RE.test(tabName);
+}
+
+// Strip the month token (plus any adjacent year/separators) from a monthly tab
+// name to propose a stable rolling-match pattern. The pattern is used as a
+// case-insensitive substring on the backend, so "RZP_Ctrl8 June" → "RZP_Ctrl8"
+// matches both the June and July tabs.
+function proposeTabPattern(tabName) {
+  if (!tabName) return { pattern: "", hasMonth: false };
+  let stripped = null;
+  const m = findMonthToken(tabName);
+  if (m) {
+    const end = m.index + m[0].length;
+    const tailYear = tabName.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
+    const realEnd = tailYear ? end + tailYear[0].length : end;
+    stripped = tabName.slice(0, m.index) + tabName.slice(realEnd);
+  } else {
+    const num = tabName.match(NUM_MONTH_YEAR_RE) || tabName.match(NUM_YEAR_MONTH_RE);
+    if (num) stripped = tabName.slice(0, num.index) + tabName.slice(num.index + num[0].length);
+  }
+  if (stripped === null) return { pattern: tabName, hasMonth: false };
+  const pattern = stripped.replace(/^[\s\-_.']+|[\s\-_.']+$/g, "").trim();
+  return { pattern, hasMonth: true };
+}
+
 // ── Visual Sheet Picker (works for both publisher and advertiser) ─────────────
 function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, pickerType = "advertiser" }) {
   const isPub = pickerType === "publisher";
@@ -114,6 +165,8 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(false);
   const [existingConfig, setExistingConfig] = useState(null);
+  const [matchMode, setMatchMode] = useState("exact");
+  const [tabPattern, setTabPattern] = useState("");
 
   useEffect(() => {
     if (name) {
@@ -124,11 +177,15 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       setDateCell(null);
       setMetricCells({});
       setSegCell(null);
+      setMatchMode("exact");
+      setTabPattern("");
       getColumnMappings(name, pickerType, sheetUrl, campaignId).then((d) => {
         if (d.mappings && d.mappings.length > 0) {
           const m = d.mappings[0];
           setExistingConfig(m);
           setSelectedTab(m.tab_name || "");
+          setMatchMode(m.tab_match_mode || "exact");
+          setTabPattern(m.tab_pattern || "");
           const mapping = m.mapping || {};
           if (mapping.date_col_index != null) {
             const startRow = mapping.date_start_row || mapping.data_start_row || 1;
@@ -163,7 +220,13 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     finally { setLoading(false); }
   };
 
-  const handleTabChange = (t) => { setSelectedTab(t); loadSheet(t); };
+  const handleTabChange = (t) => {
+    setSelectedTab(t);
+    const { pattern, hasMonth } = proposeTabPattern(t);
+    if (hasMonth) { setMatchMode("rolling"); setTabPattern(pattern); }
+    else { setMatchMode("exact"); setTabPattern(""); }
+    loadSheet(t);
+  };
 
   const handleCellClick = (rowIdx, colIdx) => {
     if (mode === "date") setDateCell({ row: rowIdx, col: colIdx });
@@ -175,6 +238,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     if (!dateCell) { alert("Please select where dates start"); return; }
     const mappedMetrics = Object.keys(metricCells);
     if (mappedMetrics.length === 0) { alert("Please select at least one metric column"); return; }
+    if (matchMode === "rolling" && !tabPattern.trim()) {
+      alert("Enter a tab pattern for auto-detect, or switch to exact match.");
+      return;
+    }
     setSaving(true);
     try {
       const metricsMapping = {};
@@ -194,6 +261,8 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
         data_start_row: dateCell.row + 1,
         mapping,
         format_type: "visual",
+        tab_pattern: matchMode === "rolling" ? tabPattern.trim() : null,
+        tab_match_mode: matchMode,
       });
       setSaved(true);
       if (onSaved) onSaved();
@@ -245,6 +314,57 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
           {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
+
+      {tabs.length > 0 && (
+        <div style={{ border: `1px solid ${matchMode === "rolling" ? c.green : c.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, background: matchMode === "rolling" ? "#F0FDF4" : c.bg }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: c.ink, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={matchMode === "rolling"}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  const { pattern } = proposeTabPattern(selectedTab);
+                  setMatchMode("rolling");
+                  if (!tabPattern.trim()) setTabPattern(pattern);
+                } else {
+                  setMatchMode("exact");
+                }
+              }}
+            />
+            Auto-detect new monthly tabs (rolling match)
+          </label>
+          {matchMode === "rolling" ? (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: c.sub, marginBottom: 5 }}>
+                Reads every tab that contains this text <em>and</em> a month name (e.g. “June”, “Jul’26”). Future months are picked up automatically each sync — no re-config needed.
+              </div>
+              <input
+                value={tabPattern}
+                onChange={(e) => setTabPattern(e.target.value)}
+                placeholder="e.g. RZP_Ctrl8"
+                style={{ width: "100%", maxWidth: 320, border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12, boxSizing: "border-box" }}
+              />
+              {(() => {
+                const p = tabPattern.trim().toLowerCase();
+                const matched = tabs.filter((t) => (!p || t.toLowerCase().includes(p)) && tabHasMonth(t));
+                return (
+                  <div style={{ fontSize: 11, color: matched.length ? c.green : c.red, marginTop: 6 }}>
+                    {!p
+                      ? "Enter a pattern to preview matches."
+                      : matched.length
+                        ? `Matches ${matched.length} existing tab(s): ${matched.slice(0, 6).join(", ")}${matched.length > 6 ? " …" : ""}`
+                        : "No existing tabs match — check the pattern."}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: c.muted, marginTop: 6 }}>
+              Reads only the selected tab “{selectedTab || "—"}”. Enable rolling match for sheets that add a new tab each month.
+            </div>
+          )}
+        </div>
+      )}
 
       {rows.length > 0 && (
         <>
