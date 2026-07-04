@@ -27,14 +27,18 @@ spec:
           - name: etl
             image: c.rzp.io/proxy_dockerhub/python:3.11-slim
             env:
-            - name: DATABASE_URL
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@media-dashboard-postgres.analytics-tools.svc.cluster.local:5432/$(POSTGRES_DB)"
+            # NOTE: $(VAR) expansion only works for vars defined EARLIER in this
+            # list, so POSTGRES_* must come before DATABASE_URL. With the old
+            # order the job connected as the literal user "$(POSTGRES_USER)"
+            # and every run failed on password auth.
             - name: POSTGRES_USER
               valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_USER } }
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_PASSWORD } }
             - name: POSTGRES_DB
               valueFrom: { secretKeyRef: { name: media-dashboard-postgres-credentials, key: POSTGRES_DB } }
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@media-dashboard-postgres.analytics-tools.svc.cluster.local:5432/$(POSTGRES_DB)"
             - name: OAUTH_TOKEN_JSON_CONTENT
               valueFrom: { secretKeyRef: { name: media-dashboard-secrets, key: OAUTH_TOKEN_JSON_CONTENT } }
             - name: GIT_TOKEN
