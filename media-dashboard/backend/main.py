@@ -319,7 +319,7 @@ async def get_column_mappings(
     db: AsyncSession = Depends(get_db),
 ):
     """Get saved column mappings."""
-    sql = "SELECT id, campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at FROM rmn_column_mappings"
+    sql = "SELECT id, campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at, tab_pattern, tab_match_mode FROM rmn_column_mappings"
     params = {}
     clauses = []
     if type:
@@ -356,7 +356,8 @@ async def get_column_mappings(
     return {"mappings": [
         {"id": r[0], "campaign_id": r[1], "name": r[2], "type": r[3], "sheet_url": r[4], "tab_name": r[5],
          "header_row": r[6], "data_start_row": r[7], "mapping": json.loads(r[8]) if r[8] else {},
-         "format_type": r[9], "created_at": r[10].isoformat() if r[10] else None}
+         "format_type": r[9], "created_at": r[10].isoformat() if r[10] else None,
+         "tab_pattern": r[11], "tab_match_mode": r[12] or "exact"}
         for r in rows
     ]}
 
@@ -386,8 +387,8 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
         await db.execute(text("DELETE FROM rmn_column_mappings WHERE campaign_id IS NULL AND name = :name AND type = :type"),
                          {"name": name, "type": map_type})
     await db.execute(text("""
-        INSERT INTO rmn_column_mappings (campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, updated_at)
-        VALUES (:campaign_id, :name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, NOW())
+        INSERT INTO rmn_column_mappings (campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, tab_pattern, tab_match_mode, updated_at)
+        VALUES (:campaign_id, :name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, :tab_pattern, :tab_match_mode, NOW())
     """), {
         "campaign_id": campaign_id,
         "name": name, "type": map_type,
@@ -397,6 +398,8 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
         "data_start_row": body.get("data_start_row", 2),
         "mapping": mapping_json,
         "format_type": body.get("format_type", "vertical"),
+        "tab_pattern": body.get("tab_pattern") or None,
+        "tab_match_mode": body.get("tab_match_mode") or "exact",
     })
     await db.commit()
     return {"success": True}

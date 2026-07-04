@@ -286,6 +286,10 @@ class ColumnMapping(Base):
     type: Mapped[str] = mapped_column(String(16))  # publisher or advertiser
     sheet_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
     tab_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    # Rolling monthly tabs: stable tab keyword (e.g. "RZP_Ctrl8" matches
+    # "RZP_Ctrl8 June", "RZP_Ctrl8 July", ...). Month/year comes from the tab.
+    tab_pattern: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    tab_match_mode: Mapped[str] = mapped_column(String(16), default="exact")  # exact | rolling
     header_row: Mapped[int] = mapped_column(Integer, default=1)
     data_start_row: Mapped[int] = mapped_column(Integer, default=2)
     mapping: Mapped[str] = mapped_column(Text)  # JSON

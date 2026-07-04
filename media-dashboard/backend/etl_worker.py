@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
@@ -52,7 +52,34 @@ def _safe_float(value) -> float:
         return 0.0
 
 
-def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
+# How far in the future an ingested metric date may be before we treat it as
+# garbage (mis-parsed / typo'd dates like 2028-09-24 were polluting the table).
+_MAX_FUTURE_DAYS = 45
+_MIN_METRIC_YEAR = 2024
+
+
+def _validated_iso_date(y, m, d) -> Optional[str]:
+    """Build YYYY-MM-DD, rejecting impossible dates and implausible ranges."""
+    try:
+        dt = date(int(y), int(m), int(d))
+    except (ValueError, TypeError):
+        return None
+    if dt.year < _MIN_METRIC_YEAR or dt > date.today() + timedelta(days=_MAX_FUTURE_DAYS):
+        logger.warning(f"Skipping implausible metric date {dt.isoformat()}")
+        return None
+    return dt.isoformat()
+
+
+def _parse_date_from_row(date_str: str, year: Optional[str], month: Optional[str]) -> Optional[str]:
+    """Parse a sheet cell into YYYY-MM-DD.
+
+    ``year``/``month`` come from the tab name and are only needed for formats
+    that don't carry their own ("25-Jan", bare day numbers). When they are None
+    (tab month unparseable), those formats fail closed instead of guessing.
+
+    Slash dates are interpreted DD/MM first (Indian sheets); an unambiguous
+    value in either position wins regardless.
+    """
     if not date_str or not date_str.strip():
         return None
     date_str = date_str.strip()
@@ -63,68 +90,237 @@ def _parse_date_from_row(date_str: str, year: str, month: str) -> Optional[str]:
         if date_str.lower().startswith(m_name) and ("'" in date_str or "20" in date_str):
             return None
     try:
-        # MM/DD/YYYY or M/D/YYYY
+        # DD/MM/YYYY (Indian default) or MM/DD/YYYY when unambiguous
         if '/' in date_str:
             parts = date_str.split('/')
             if len(parts) == 3:
-                m, d, y = parts
+                a, b, y = (p.strip() for p in parts)
+                if not (a.isdigit() and b.isdigit() and y.isdigit()):
+                    return None
                 if len(y) == 2:
                     y = '20' + y
-                return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-        # DD-Mon (e.g. "25-Jan", "1-Feb") — uses year from tab name
+                a_i, b_i = int(a), int(b)
+                if a_i > 12 >= b_i:      # unambiguous DD/MM
+                    d_i, m_i = a_i, b_i
+                elif b_i > 12 >= a_i:    # unambiguous MM/DD
+                    m_i, d_i = a_i, b_i
+                elif a_i <= 12 and b_i <= 12:  # ambiguous → DD/MM (Indian)
+                    d_i, m_i = a_i, b_i
+                else:
+                    return None
+                return _validated_iso_date(y, m_i, d_i)
+            return None
         if '-' in date_str:
             parts = date_str.split('-')
+            # DD-Mon (e.g. "25-Jan", "1-Feb") — needs year from tab name
             if len(parts) == 2:
                 day_part, mon_part = parts
                 if day_part.isdigit() and mon_part.lower()[:3] in MONTH_MAP:
+                    if year is None:
+                        return None  # fail closed: no year context from tab
                     m_num = MONTH_MAP[mon_part.lower()[:3]]
-                    return f"{year}-{m_num}-{day_part.zfill(2)}"
+                    return _validated_iso_date(year, m_num, day_part)
             if len(parts) == 3:
                 d, m, y = parts
-                # DD-MM-YYYY (all digits)
+                # YYYY-MM-DD (ISO) or DD-MM-YYYY (all digits)
                 if all(p.isdigit() for p in parts):
+                    if len(d) == 4:  # ISO: first part is the year
+                        return _validated_iso_date(d, m, y)
                     if len(y) == 2:
                         y = '20' + y
-                    return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+                    return _validated_iso_date(y, m, d)
                 # DD-Mon-YYYY (e.g. 23-Jun-2026)
                 if d.isdigit() and m.lower()[:3] in MONTH_MAP and y.isdigit():
                     if len(y) == 2:
                         y = '20' + y
                     m_num = MONTH_MAP[m.lower()[:3]]
-                    return f"{y}-{m_num}-{d.zfill(2)}"
+                    return _validated_iso_date(y, m_num, d)
         # YYYYMMDD
         if len(date_str) == 8 and date_str.isdigit():
-            return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            return _validated_iso_date(date_str[:4], date_str[4:6], date_str[6:8])
         # "D Month YYYY" or "D Month" (e.g. "1 June 2026", "15 March 2026")
         parts = date_str.split()
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].lower()[:3] in MONTH_MAP:
-            day = parts[0].zfill(2)
             m_num = MONTH_MAP[parts[1].lower()[:3]]
             y = parts[2] if len(parts) >= 3 and parts[2].isdigit() else year
+            if y is None:
+                return None  # fail closed: no explicit year and no tab context
             if len(y) == 2:
                 y = '20' + y
-            return f"{y}-{m_num}-{day}"
-        # Just a day number (legacy format — needs year/month from tab name)
-        day = parts[0].zfill(2)
-        if day.isdigit() and 1 <= int(day) <= 31:
-            return f"{year}-{month}-{day}"
+            return _validated_iso_date(y, m_num, parts[0])
+        # Just a day number (legacy format — needs year+month from tab name)
+        if parts and parts[0].isdigit() and 1 <= int(parts[0]) <= 31:
+            if year is None or month is None:
+                return None  # fail closed: tab gave us no month context
+            return _validated_iso_date(year, month, parts[0])
     except Exception:
         pass
     return None
 
 
-def _get_year_month_from_tab(tab_name: str) -> tuple:
-    year = "2026"
-    if "'25" in tab_name or "2025" in tab_name:
-        year = "2025"
-    elif "'26" in tab_name or "2026" in tab_name:
-        year = "2026"
-    month = "01"
-    for m_name, m_num in MONTH_MAP.items():
-        if m_name in tab_name.lower():
-            month = m_num
-            break
+# Month token in a tab name: full names first so "june" wins over "jun";
+# guarded by (?<![a-z]) / (?![a-z]) so brand substrings ("Maya" -> may,
+# "Decathlon" -> dec) don't match. Digits/punctuation may touch the token
+# ("Ctrl8June", "RZP-Jul") — that's fine.
+_MONTH_TOKEN_RE = re.compile(
+    r"(?<![a-z])(january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)(?![a-z])",
+    re.IGNORECASE,
+)
+_MONTH_NUM = {
+    'january': '01', 'february': '02', 'march': '03', 'april': '04', 'may': '05',
+    'june': '06', 'july': '07', 'august': '08', 'september': '09', 'sept': '09',
+    'october': '10', 'november': '11', 'december': '12',
+    **MONTH_MAP,
+}
+# Numeric month-year forms: "06/2026", "06-2026", "2026/06", "2026-06"
+_NUM_MONTH_YEAR_RE = re.compile(r"(?<!\d)(0?[1-9]|1[0-2])[/\-.](20\d{2})(?!\d)")
+_NUM_YEAR_MONTH_RE = re.compile(r"(?<!\d)(20\d{2})[/\-.](0?[1-9]|1[0-2])(?!\d)")
+_YEAR4_RE = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+_YEAR_APOS_RE = re.compile(r"'(\d{2})(?!\d)")
+
+
+def _parse_tab_month(tab_name: str) -> Optional[tuple]:
+    """Extract (year, month) as strings from a tab name; None if unparseable.
+
+    Handles mixed formats: "RZP_Ctrl8 June", "Jun'26", "July 2026", "06/2026",
+    "2026-07", "Ctrl8June26". FAIL CLOSED: if no month token is found, return
+    None — callers must skip the tab (or drop tab-context-dependent rows)
+    rather than guess (the old parser defaulted to Jan 2026, silently
+    mis-dating everything).
+    """
+    if not tab_name:
+        return None
+
+    month = None
+    year = None
+    m = _MONTH_TOKEN_RE.search(tab_name)
+    if m:
+        month = _MONTH_NUM[m.group(1).lower()]
+        # Year token near the month: "Jun'26", "Jun 26", "Jun-26", "June2026"
+        tail = tab_name[m.end():]
+        tail_year = re.match(r"[\s\-_.']*((?:20)?\d{2})(?!\d)", tail)
+        if tail_year:
+            y = tail_year.group(1)
+            if len(y) == 2:
+                y = '20' + y
+            if 2020 <= int(y) <= 2039:
+                year = y
+    else:
+        num = _NUM_MONTH_YEAR_RE.search(tab_name)
+        if num:
+            month, year = num.group(1).zfill(2), num.group(2)
+        else:
+            num = _NUM_YEAR_MONTH_RE.search(tab_name)
+            if num:
+                year, month = num.group(1), num.group(2).zfill(2)
+
+    if month is None:
+        return None
+
+    if year is None:
+        # Fall back to a 4-digit or 'YY year anywhere in the name
+        y4 = _YEAR4_RE.search(tab_name)
+        ya = _YEAR_APOS_RE.search(tab_name)
+        if y4:
+            year = y4.group(1)
+        elif ya and 20 <= int(ya.group(1)) <= 39:
+            year = '20' + ya.group(1)
+
+    if year is None:
+        # No explicit year: assume current year, unless that would put the tab
+        # more than one month in the future (e.g. a "Dec" tab seen in January
+        # is last year's, not eleven months from now).
+        today = date.today()
+        year_i = today.year
+        if int(month) - today.month > 1:
+            year_i -= 1
+        year = str(year_i)
+
     return year, month
+
+
+def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
+                  sheet_url: str = "", allow_rzp_discovery: bool = False,
+                  default_all_tabs: bool = False) -> List[tuple]:
+    """Unified tab resolution for advertiser AND publisher extraction.
+
+    Returns [(tab_name, year, month)] where year/month may be None (exact-name
+    matches without a month token — row formats needing tab context then fail
+    closed per-row in _parse_date_from_row).
+
+    Modes:
+      * tab_pattern set (rolling): every tab containing the pattern AND having
+        a parseable month qualifies — new monthly tabs are picked up
+        automatically; junk tabs ("<pattern> Summary") are excluded by the
+        month requirement.
+      * tab_name set (exact/legacy): case-insensitive substring match. NO
+        fallback to other tabs — a rename now surfaces as an error instead of
+        silently ingesting the whole spreadsheet.
+      * neither: optionally discover legacy RZP tabs (publisher sheets). No
+        first-N-tabs fallback.
+    """
+    cm = col_mapping or {}
+    pattern = (cm.get("tab_pattern") or "").strip()
+    tab_name_cfg = (cm.get("tab_name") or "").strip()
+
+    if pattern:
+        resolved, skipped = [], []
+        for t in tabs:
+            if pattern.lower() in t.lower():
+                ym = _parse_tab_month(t)
+                if ym:
+                    resolved.append((t, ym[0], ym[1]))
+                else:
+                    skipped.append(t)
+        if skipped:
+            logger.warning(f"Tabs match pattern '{pattern}' but have no parseable "
+                           f"month, skipped: {skipped} ({sheet_url})")
+        if not resolved:
+            logger.error(f"No tabs matching pattern '{pattern}' with a parseable "
+                         f"month in {sheet_url} — nothing ingested")
+        else:
+            logger.info(f"Rolling tab match '{pattern}': "
+                        f"{[(t, f'{y}-{m}') for t, y, m in resolved]}")
+        return resolved
+
+    if tab_name_cfg:
+        matched = [t for t in tabs if tab_name_cfg.lower() in t.lower()]
+        if not matched:
+            logger.error(f"Configured tab '{tab_name_cfg}' not found in {sheet_url} "
+                         f"(tabs: {tabs[:10]}) — nothing ingested, NO fallback")
+            return []
+        out = []
+        for t in matched:
+            ym = _parse_tab_month(t)
+            out.append((t, ym[0] if ym else None, ym[1] if ym else None))
+        return out
+
+    if allow_rzp_discovery:
+        rzp = [t for t in tabs if 'RZP' in t.upper()]
+        if not rzp:
+            logger.error(f"No configured tab and no RZP tabs in {sheet_url} — "
+                         f"nothing ingested (removed first-tabs fallback)")
+            return []
+        out = []
+        for t in rzp:
+            ym = _parse_tab_month(t)
+            out.append((t, ym[0] if ym else None, ym[1] if ym else None))
+        return out
+
+    if default_all_tabs:
+        # Visual mappings saved without a tab selection historically read every
+        # tab; keep that for backward compatibility (but say so loudly).
+        logger.warning(f"No tab configured for visual mapping on {sheet_url} — "
+                       f"reading ALL {len(tabs)} tabs")
+        out = []
+        for t in tabs:
+            ym = _parse_tab_month(t)
+            out.append((t, ym[0] if ym else None, ym[1] if ym else None))
+        return out
+
+    logger.error(f"No tab configuration for {sheet_url} — nothing ingested")
+    return []
 
 
 def _matches_segment(row_segment: str, target_segments: str) -> bool:
@@ -389,7 +585,8 @@ async def _load_column_mapping(
     clauses.append("(" + " OR ".join(scope_clauses) + ")")
     order_sql = "CASE " + " ".join(order_parts + ["ELSE 2"]) + " END, updated_at DESC"
     result = await db.execute(text(
-        "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type "
+        "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, "
+        "tab_pattern, tab_match_mode "
         f"FROM rmn_column_mappings WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 1"
     ), params)
     row = result.fetchone()
@@ -403,6 +600,8 @@ async def _load_column_mapping(
         "data_start_row": row[4],
         "mapping": json.loads(row[5]) if row[5] else {},
         "format_type": row[6],
+        "tab_pattern": row[7],
+        "tab_match_mode": row[8],
     }
 
 
@@ -418,8 +617,6 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
     if seg_col is not None:
         seg_col = int(seg_col)
     metrics_cfg = mapping.get("metrics", {})
-
-    tab_filter = col_mapping.get("tab_name", "")
 
     converted_id = None
     try:
@@ -443,17 +640,10 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                 raise
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
 
-        if tab_filter:
-            target_tabs = [t for t in tabs if tab_filter.lower() in t.lower()]
-            if not target_tabs:
-                target_tabs = tabs
-                logger.warning(f"Visual format: no matching tabs for '{tab_filter}', using all tabs")
-        else:
-            target_tabs = tabs
+        target_tabs = _resolve_tabs(tabs, col_mapping, sheet_url=sheet_url,
+                                    default_all_tabs=True)
 
-        for tab_name in target_tabs:
-            year, month = _get_year_month_from_tab(tab_name)
-
+        for tab_name, year, month in target_tabs:
             try:
                 result = service.spreadsheets().values().get(
                     spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
@@ -555,26 +745,15 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
         meta = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
         tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
 
-        # Determine tabs to process
-        if col_mapping and col_mapping.get("tab_name"):
-            target_tabs = [t for t in tabs if col_mapping["tab_name"] in t]
-            if not target_tabs:
-                target_tabs = [t for t in tabs if 'RZP' in t.upper()]
-        else:
-            target_tabs = [t for t in tabs if 'RZP' in t.upper()]
-
-        if not target_tabs:
-            # Last resort: use all tabs
-            target_tabs = tabs[:5]
-            logger.warning(f"No RZP tabs found in {sheet_url}, trying first tabs: {target_tabs}")
+        # Determine tabs to process (unified resolver; no all-tabs fallback)
+        target_tabs = _resolve_tabs(tabs, col_mapping, sheet_url=sheet_url,
+                                    allow_rzp_discovery=True)
 
         cfg_header_row = (col_mapping.get("header_row", 3) if col_mapping else None)
         cfg_data_start = (col_mapping.get("data_start_row", cfg_header_row + 1) if col_mapping else None)
         field_map = col_mapping.get("mapping", {}) if col_mapping else {}
 
-        for tab_name in target_tabs:
-            year, month = _get_year_month_from_tab(tab_name)
-
+        for tab_name, year, month in target_tabs:
             try:
                 result = service.spreadsheets().values().get(
                     spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ"
@@ -724,7 +903,8 @@ def _extract_promo_code_sheet(service, sheet_url: str, promo_code: str,
         target_tabs = [t for t in tabs if 'RZP' in t.upper()] or tabs[:1]
 
         for tab_name in target_tabs:
-            year, month = _get_year_month_from_tab(tab_name)
+            ym = _parse_tab_month(tab_name)
+            year, month = ym if ym else (None, None)
 
             try:
                 result = service.spreadsheets().values().get(
