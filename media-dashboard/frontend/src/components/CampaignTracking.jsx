@@ -169,6 +169,28 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   const [tabPattern, setTabPattern] = useState("");
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [colWidths, setColWidths] = useState({}); // {colIdx: px} — user-resized columns
+
+  // Drag the right edge of a column header to resize that column.
+  const startColResize = (e, colIdx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = colWidths[colIdx] || 100;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    const onMove = (ev) => {
+      const w = Math.max(60, Math.min(600, startW + (ev.clientX - startX)));
+      setColWidths((prev) => ({ ...prev, [colIdx]: w }));
+    };
+    const onUp = () => {
+      document.body.style.userSelect = prevUserSelect;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
 
   useEffect(() => {
     if (name) {
@@ -409,6 +431,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
             {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click any cell in the Segment column (optional)" : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
+            <span style={{ opacity: 0.8 }}> · drag a column header's edge to resize it, hover a cell to see its full value</span>
           </div>
 
           <div style={{ overflowX: "auto", border: `1px solid ${c.line}`, borderRadius: 8, marginBottom: 12, maxHeight: 400, overflowY: "auto" }}>
@@ -417,7 +440,15 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                 <tr>
                   <th style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, color: c.muted, position: "sticky", top: 0, zIndex: 1 }}>#</th>
                   {colLetters.map((letter, colIdx) => (
-                    <th key={colIdx} style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: c.muted, minWidth: 60, position: "sticky", top: 0, zIndex: 1 }}>{letter}</th>
+                    <th key={colIdx} style={{ padding: "5px 8px", background: "#F1F5F9", border: `1px solid ${c.line}`, fontSize: 10, fontWeight: 700, color: c.muted, minWidth: 60, width: colWidths[colIdx] || undefined, position: "sticky", top: 0, zIndex: 1 }}>
+                      {letter}
+                      <div
+                        onMouseDown={(e) => startColResize(e, colIdx)}
+                        onDoubleClick={(e) => { e.stopPropagation(); setColWidths((prev) => { const n = { ...prev }; delete n[colIdx]; return n; }); }}
+                        title="Drag to resize · double-click to reset"
+                        style={{ position: "absolute", top: 0, right: -3, width: 7, height: "100%", cursor: "col-resize", zIndex: 2 }}
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -446,8 +477,9 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       else if (metricColMatch) { bg = `${getMetricColor(metricColMatch)}08`; }
                       return (
                         <td key={colIdx} onClick={() => handleCellClick(rowIdx, colIdx)}
-                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: bg, fontWeight: fontW, color, transition: "background 0.1s" }}>
-                          {String(cellVal).substring(0, 15)}
+                          title={String(cellVal)}
+                          style={{ padding: "4px 8px", border: `1px solid ${c.line}`, maxWidth: colWidths[colIdx] || 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", background: bg, fontWeight: fontW, color, transition: "background 0.1s" }}>
+                          {String(cellVal)}
                         </td>
                       );
                     })}
