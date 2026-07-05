@@ -45,6 +45,21 @@ SHEET_SPENDS_FLAG = "_has_sheet_spends"
 _WARNED_FORMULA_VARS: set = set()
 
 
+def _is_month_label(s) -> bool:
+    """True for monthly-summary labels like "Jan'26", "June'26", "Feb 2026".
+
+    Sheets often stack a month-totals block above (or between) daily rows;
+    those labels are neither dates nor column titles — the date parser skips
+    them and header detection must walk past them."""
+    s = str(s or "").strip().lower()
+    if not s:
+        return False
+    for m_name in MONTH_MAP:
+        if s.startswith(m_name) and ("'" in s or "20" in s):
+            return True
+    return False
+
+
 def _safe_float(value) -> float:
     if value is None or value == '':
         return 0.0
@@ -125,9 +140,8 @@ def _parse_date_from_row(date_str: str, year: Optional[str], month: Optional[str
     if date_str.upper() in ('TOTAL', 'GRAND TOTAL', ''):
         return None
     # Skip monthly summary rows like "Jan'26", "Feb'26", "June'26"
-    for m_name in MONTH_MAP:
-        if date_str.lower().startswith(m_name) and ("'" in date_str or "20" in date_str):
-            return None
+    if _is_month_label(date_str):
+        return None
     try:
         # DD/MM/YYYY (Indian default) or MM/DD/YYYY when unambiguous
         if '/' in date_str:
@@ -220,6 +234,10 @@ _NUM_MONTH_YEAR_RE = re.compile(r"(?<!\d)(0?[1-9]|1[0-2])[/\-.](20\d{2})(?!\d)")
 _NUM_YEAR_MONTH_RE = re.compile(r"(?<!\d)(20\d{2})[/\-.](0?[1-9]|1[0-2])(?!\d)")
 _YEAR4_RE = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 _YEAR_APOS_RE = re.compile(r"'(\d{2})(?!\d)")
+# camelCase word boundaries: "RZPJan26" → "RZP Jan26". Only genuine case
+# transitions split — brand traps ("Maya", "Rajan", "RAJAN") have none and
+# stay unmatched, preserving the letter-guard's fail-closed behaviour.
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
 def _parse_tab_month(tab_name: str) -> Optional[tuple]:
@@ -237,6 +255,15 @@ def _parse_tab_month(tab_name: str) -> Optional[tuple]:
     month = None
     year = None
     m = _MONTH_TOKEN_RE.search(tab_name)
+    if not m:
+        # "RZPJan26": the month token touches a letter, which the guard blocks
+        # (it exists so "Maya"/"Rajan" never match). A camelCase boundary is a
+        # real word break though — split and retry on the spaced form.
+        spaced = _CAMEL_BOUNDARY_RE.sub(" ", tab_name)
+        if spaced != tab_name:
+            m = _MONTH_TOKEN_RE.search(spaced)
+            if m:
+                tab_name = spaced  # tail/year searches index into this string
     if m:
         month = _MONTH_NUM[m.group(1).lower()]
         # Year token near the month: "Jun'26", "Jun 26", "Jun-26", "June2026"
@@ -1379,17 +1406,21 @@ def _mapped_columns(mapping: Dict) -> Dict[str, int]:
     return cols
 
 
-_HDR_SEARCH_UP = 5  # rows above the data region to search for the title row
+_HDR_SEARCH_UP = 20  # rows above the data region to search for the title row
 
 
 def _looks_like_header_text(s) -> bool:
     """True when a cell plausibly holds a column TITLE.
 
-    Numbers ("7,827", "0"), dashes and blanks are VALUES — sheets often stack
-    a totals row above the header row, and treating those cells as headers
-    made drift detection compare month totals across tabs (pure noise)."""
+    Numbers ("7,827", "0"), dashes, blanks AND month-summary labels ("July'26")
+    are VALUES — sheets stack totals rows and monthly-summary blocks above the
+    daily rows, and treating those cells as headers made drift detection fire
+    on month totals (and would fire again every time a new month row shifts
+    the block down)."""
     s = str(s or "").strip()
     if not s or s in {"-", "–", "—", "NA", "N/A"}:
+        return False
+    if _is_month_label(s):
         return False
     t = s.replace(",", "").replace("%", "").replace("₹", "").replace("$", "").strip()
     try:
