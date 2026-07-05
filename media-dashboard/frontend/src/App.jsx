@@ -15,6 +15,7 @@ import CampaignTracking from "./components/CampaignTracking";
 import { getFilters, getHealth, refreshCache, recordView, getViewStats, getConsoleAccess, getMyRole, setDataSource as setDataSourceApi } from "./api";
 import QueryConsole from "./components/QueryConsole";
 import RoleManager from "./components/RoleManager";
+import SheetHealth from "./components/SheetHealth";
 
 // ── Tab groups (Option C layout) ──────────────────────────────────────────────
 const TAB_GROUPS = [
@@ -47,8 +48,9 @@ const TAB_GROUPS = [
     label: "Manage",
     color: "#7c3aed",
     tabs: [
-      { id: "onboarding", label: "Campaign Onboarding", icon: "📋" },
-      { id: "roles",      label: "User Roles",          icon: "🔑" },
+      { id: "onboarding",   label: "Campaign Onboarding", icon: "📋" },
+      { id: "sheet-health", label: "Sheet Health",        icon: "🩺" },
+      { id: "roles",        label: "User Roles",          icon: "🔑" },
     ],
   },
   {
@@ -74,7 +76,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles",
+  "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles", "sheet-health",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -379,6 +381,7 @@ export default function App() {
       case "pub-allocation": return <BudgetAllocation userRole={userRole} />;
       case "tracking":       return <CampaignTracking userRole={userRole} />;
       case "roles":          return <RoleManager />;
+      case "sheet-health":   return <SheetHealth />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
       case "performance":    return <AdvertiserPerformance {...props} />;

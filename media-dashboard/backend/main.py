@@ -9,9 +9,9 @@ Run locally:
 import json
 import logging
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -322,7 +322,7 @@ async def get_column_mappings(
     db: AsyncSession = Depends(get_db),
 ):
     """Get saved column mappings."""
-    sql = "SELECT id, campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at, tab_pattern, tab_match_mode FROM rmn_column_mappings"
+    sql = "SELECT id, campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, created_at, tab_pattern, tab_match_mode, sheet_fingerprint FROM rmn_column_mappings"
     params = {}
     clauses = []
     if type:
@@ -356,11 +356,17 @@ async def get_column_mappings(
         sql += " ORDER BY updated_at DESC"
     result = await db.execute(text(sql), params)
     rows = result.fetchall()
+    def _fp(raw):
+        try:
+            return json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            return None
     return {"mappings": [
         {"id": r[0], "campaign_id": r[1], "name": r[2], "type": r[3], "sheet_url": r[4], "tab_name": r[5],
          "header_row": r[6], "data_start_row": r[7], "mapping": json.loads(r[8]) if r[8] else {},
          "format_type": r[9], "created_at": r[10].isoformat() if r[10] else None,
-         "tab_pattern": r[11], "tab_match_mode": r[12] or "exact"}
+         "tab_pattern": r[11], "tab_match_mode": r[12] or "exact",
+         "sheet_fingerprint": _fp(r[13])}
         for r in rows
     ]}
 
@@ -378,6 +384,27 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
 
     mapping_json = json.dumps(body.get("mapping", {}))
 
+    # Snapshot the sheet's current shape (mapped-column headers, resolved tabs,
+    # segment values) so Sheet Health can detect drift later. Best-effort: a
+    # Sheets hiccup must never block saving the mapping itself.
+    fingerprint = None
+    if sheet_url:
+        try:
+            import asyncio as _asyncio
+            import etl_worker
+            from sheets_client import _get_service
+            fp_cfg = {
+                "tab_name": body.get("tab_name", ""),
+                "tab_pattern": body.get("tab_pattern") or "",
+                "tab_match_mode": body.get("tab_match_mode") or "exact",
+                "mapping": body.get("mapping", {}) or {},
+                "format_type": body.get("format_type", "visual"),
+            }
+            fingerprint = await _asyncio.to_thread(
+                etl_worker.capture_sheet_fingerprint, _get_service(), sheet_url, fp_cfg)
+        except Exception as e:
+            logger.warning(f"fingerprint capture failed on save ({sheet_url}): {e}")
+
     # Upsert by the narrowest available scope. New Campaign Tracking mappings
     # are campaign-scoped; legacy callers can still save sheet- or name-scoped rows.
     if campaign_id:
@@ -390,8 +417,8 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
         await db.execute(text("DELETE FROM rmn_column_mappings WHERE campaign_id IS NULL AND name = :name AND type = :type"),
                          {"name": name, "type": map_type})
     await db.execute(text("""
-        INSERT INTO rmn_column_mappings (campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, tab_pattern, tab_match_mode, updated_at)
-        VALUES (:campaign_id, :name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, :tab_pattern, :tab_match_mode, NOW())
+        INSERT INTO rmn_column_mappings (campaign_id, name, type, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, tab_pattern, tab_match_mode, sheet_fingerprint, updated_at)
+        VALUES (:campaign_id, :name, :type, :sheet_url, :tab_name, :header_row, :data_start_row, :mapping, :format_type, :tab_pattern, :tab_match_mode, :sheet_fingerprint, NOW())
     """), {
         "campaign_id": campaign_id,
         "name": name, "type": map_type,
@@ -403,9 +430,14 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
         "format_type": body.get("format_type", "vertical"),
         "tab_pattern": body.get("tab_pattern") or None,
         "tab_match_mode": body.get("tab_match_mode") or "exact",
+        "sheet_fingerprint": json.dumps(fingerprint) if fingerprint else None,
     })
     await db.commit()
-    return {"success": True}
+    # segment_values lets the Setup form immediately offer sheet-driven
+    # segment selection after the picker is saved.
+    return {"success": True,
+            "fingerprint_captured": fingerprint is not None,
+            "segment_values": (fingerprint or {}).get("segment_values", [])}
 
 
 @app.post("/api/column-mappings/preview")
@@ -454,6 +486,101 @@ async def preview_column_mapping(request: Request, db: AsyncSession = Depends(ge
     report = await asyncio.to_thread(
         etl_worker.preview_mapping, service, sheet_url, col_mapping, is_publisher)
     return report
+
+
+# ── Sheet Health ───────────────────────────────────────────────────────────────
+# Scanning every configured sheet tab-by-tab costs ~1-2s per sheet against the
+# Sheets API, so serve a cached report for 10 minutes unless ?refresh=1.
+_SHEET_HEALTH_TTL_S = 600
+_sheet_health_cache: Dict[str, Any] = {"at": None, "data": None}
+
+
+@app.get("/api/sheet-health")
+async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
+    """Freshness + drift report for every campaign sheet with a data URL.
+
+    Per sheet side: how recent the last row with an actual metric VALUE is
+    (prefilled date columns don't count), which tabs the saved mapping
+    resolves today, and alerts when the sheet no longer matches the
+    fingerprint captured at mapping-save time (renamed headers, missing tabs,
+    changed segment values, configured segment absent).
+    """
+    import asyncio
+    import etl_worker
+    from sheets_client import _get_service
+
+    now = datetime.now(dt_timezone.utc)
+    cached = _sheet_health_cache["data"]
+    if (not refresh and cached and _sheet_health_cache["at"]
+            and (now - _sheet_health_cache["at"]).total_seconds() < _SHEET_HEALTH_TTL_S):
+        return {**cached, "cached": True}
+
+    rows = (await db.execute(text(
+        "SELECT id, name, advertiser_name, publisher_name, advertiser_data_url, "
+        "publisher_data_url, segment_adv, segment_pub, self_targeted, current_stage "
+        "FROM rmn_campaigns WHERE is_deleted = FALSE AND "
+        "(COALESCE(advertiser_data_url, '') <> '' OR COALESCE(publisher_data_url, '') <> '') "
+        "ORDER BY id"
+    ))).fetchall()
+
+    service = _get_service()
+    sheets: List[Dict[str, Any]] = []
+    # The same sheet+mapping can back several campaigns (parent/child clones);
+    # scan each (url, mapping-scope) once and reuse the result.
+    scan_cache: Dict[tuple, Dict[str, Any]] = {}
+
+    for r in rows:
+        (cid, cname, adv_name, pub_name, adv_url, pub_url,
+         seg_adv, seg_pub, self_targeted, stage) = r
+        for side, url, seg, party in (
+            ("advertiser", adv_url, seg_adv, adv_name),
+            ("publisher", pub_url, seg_pub, pub_name),
+        ):
+            if not (url or "").strip():
+                continue
+            entry: Dict[str, Any] = {
+                "campaign_id": cid, "campaign_name": cname, "side": side,
+                "party": party, "sheet_url": url, "segment": seg or "",
+                "self_targeted": bool(self_targeted), "stage": stage,
+            }
+            cm = await etl_worker._load_column_mapping(
+                db, party or "", side, sheet_url=url, campaign_id=cid)
+            if not cm:
+                entry.update({
+                    "freshness": "not_configured", "tabs_matched": [],
+                    "latest_data_date": None, "days_behind": None,
+                    "fingerprint_captured_at": None, "error": None,
+                    "alerts": [{"type": "not_configured", "severity": "warning",
+                                "message": "No column mapping saved for this sheet — "
+                                           "it is not being ingested."}],
+                })
+                sheets.append(entry)
+                continue
+            cache_key = (url, cm.get("campaign_id"), side, seg or "", bool(self_targeted))
+            health = scan_cache.get(cache_key)
+            if health is None:
+                health = await asyncio.to_thread(
+                    etl_worker.check_sheet_health, service, url, cm,
+                    cm.get("sheet_fingerprint"), seg or "", bool(self_targeted))
+                scan_cache[cache_key] = health
+            entry.update(health)
+            sheets.append(entry)
+
+    summary = {
+        "total": len(sheets),
+        "fresh": sum(1 for s in sheets if s.get("freshness") == "fresh"),
+        "lagging": sum(1 for s in sheets if s.get("freshness") == "lagging"),
+        "stale": sum(1 for s in sheets if s.get("freshness") == "stale"),
+        "no_data": sum(1 for s in sheets if s.get("freshness") == "no_data"),
+        "not_configured": sum(1 for s in sheets if s.get("freshness") == "not_configured"),
+        "with_alerts": sum(1 for s in sheets
+                           if any(a.get("severity") == "error" for a in s.get("alerts", []))),
+    }
+    data = {"generated_at": now.isoformat(), "summary": summary,
+            "sheets": sheets, "cached": False}
+    _sheet_health_cache["at"] = now
+    _sheet_health_cache["data"] = data
+    return data
 
 
 # ── Data Source Toggle ─────────────────────────────────────────────────────────
@@ -2379,6 +2506,9 @@ class TrackingSetupRequest(BaseModel):
     publisher_data_url: str = ""
     segment_pub: str = ""
     segment_adv: str = ""
+    # Self-targeted: no segment column in the sheets — the segment is the
+    # advertiser/publisher itself (Setup shows a name dropdown instead).
+    self_targeted: bool = False
     goals_json: str = "{}"
     metrics_json: str = "{}"
     additional_context: str = ""
@@ -2396,6 +2526,7 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
     campaign.publisher_data_url = req.publisher_data_url
     campaign.segment_pub = req.segment_pub
     campaign.segment_adv = req.segment_adv
+    campaign.self_targeted = req.self_targeted
     campaign.goals_json = req.goals_json
     campaign.metrics_json = req.metrics_json
     campaign.additional_context = req.additional_context

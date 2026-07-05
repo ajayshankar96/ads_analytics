@@ -135,6 +135,9 @@ class Campaign(Base):
     publisher_data_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
     segment_pub: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     segment_adv: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    # Self-targeted: the segment IS the advertiser/publisher itself (no
+    # segment column in the sheet) — Setup offers a name dropdown instead.
+    self_targeted: Mapped[bool] = mapped_column(Boolean, default=False)
     goals_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
     metrics_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
     additional_context: Mapped[Optional[str]] = mapped_column(Text, default=None)
@@ -297,6 +300,9 @@ class ColumnMapping(Base):
     data_start_row: Mapped[int] = mapped_column(Integer, default=2)
     mapping: Mapped[str] = mapped_column(Text)  # JSON
     format_type: Mapped[str] = mapped_column(String(32), default="vertical")
+    # JSON snapshot of the sheet at save time (mapped-column headers, resolved
+    # tabs, distinct segment values). Sheet Health diffs live sheet vs this.
+    sheet_fingerprint: Mapped[Optional[str]] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

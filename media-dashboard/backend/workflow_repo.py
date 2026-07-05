@@ -49,6 +49,7 @@ def campaign_dict(c: models.Campaign) -> Dict[str, Any]:
         "not_live_reason": c.not_live_reason,
         "advertiser_data_url": c.advertiser_data_url, "publisher_data_url": c.publisher_data_url,
         "segment_pub": c.segment_pub, "segment_adv": c.segment_adv,
+        "self_targeted": c.self_targeted,
         "goals_json": c.goals_json, "metrics_json": c.metrics_json,
         "additional_context": c.additional_context, "tracking_submitted": c.tracking_submitted,
         "landing_link": c.landing_link, "offer_title": c.offer_title,

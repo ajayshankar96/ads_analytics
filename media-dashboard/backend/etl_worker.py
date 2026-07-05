@@ -415,6 +415,12 @@ def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
     return []
 
 
+def _self_targeted(campaign) -> bool:
+    """Safe accessor — self_targeted was added in migration 0027; tolerate
+    stubs/mocks that predate the column."""
+    return bool(getattr(campaign, "self_targeted", False))
+
+
 def _matches_segment(row_segment: str, target_segments: str) -> bool:
     if not target_segments or not target_segments.strip():
         return True
@@ -701,12 +707,16 @@ async def _load_column_mapping(
     order_sql = "CASE " + " ".join(order_parts + ["ELSE 2"]) + " END, updated_at DESC"
     result = await db.execute(text(
         "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, "
-        "tab_pattern, tab_match_mode "
+        "tab_pattern, tab_match_mode, sheet_fingerprint "
         f"FROM rmn_column_mappings WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 1"
     ), params)
     row = result.fetchone()
     if not row:
         return None
+    try:
+        fingerprint = json.loads(row[9]) if row[9] else None
+    except (TypeError, ValueError):
+        fingerprint = None
     return {
         "campaign_id": row[0],
         "sheet_url": row[1],
@@ -717,6 +727,7 @@ async def _load_column_mapping(
         "format_type": row[6],
         "tab_pattern": row[7],
         "tab_match_mode": row[8],
+        "sheet_fingerprint": fingerprint,
     }
 
 
@@ -1146,6 +1157,11 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
         "skipped": [],       # matched the pattern but no parseable month
         "unmatched_count": 0,
         "converted_office_file": False,
+        # Distinct values seen in the mapped segment column (all matched tabs).
+        # The Setup form uses these so operators pick a segment that actually
+        # exists in the sheet instead of free-typing one that silently
+        # filters every row out.
+        "segment_values": [],
         "error": None,
     }
 
@@ -1166,6 +1182,13 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
             metric_cols[k] = int(v["col"]) if isinstance(v, dict) else int(v)
         except (TypeError, ValueError, KeyError):
             continue
+    seg_col = mapping.get("segment_col_index")
+    if seg_col is not None:
+        try:
+            seg_col = int(seg_col)
+        except (TypeError, ValueError):
+            seg_col = None
+    seg_values_seen: set = set()
 
     converted_id = None
     try:
@@ -1245,6 +1268,8 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
                 if not ds:
                     continue
                 parsed_dates.append(ds)
+                if seg_col is not None and len(r) > seg_col and str(r[seg_col]).strip():
+                    seg_values_seen.add(str(r[seg_col]).strip())
                 for col in metric_cols.values():
                     if len(r) > col and str(r[col]).strip() and _safe_float(r[col]) != 0:
                         rows_with_data += 1
@@ -1269,6 +1294,8 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
                 entry["status"] = "ready"
             report["matched"].append(entry)
 
+        report["segment_values"] = sorted(seg_values_seen)
+
     except Exception as e:
         report["error"] = str(e)
         logger.error(f"preview_mapping error for {sheet_url}: {e}")
@@ -1276,6 +1303,280 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
         _delete_converted(converted_id)
 
     return report
+
+
+# ── Sheet Health ──────────────────────────────────────────────────────────────
+# Two consumers share one read pass (_scan_sheet):
+#   * capture_sheet_fingerprint — snapshot at mapping-save time (headers of the
+#     mapped columns, resolved tabs, distinct segment values). Stored as JSON in
+#     rmn_column_mappings.sheet_fingerprint.
+#   * check_sheet_health — re-scan later and diff against the fingerprint to
+#     surface drift (renamed headers, missing tabs, changed segment values) plus
+#     freshness (how recent the last row with an actual metric value is —
+#     dated_rows alone lies because sheets prefill dates for the whole month).
+
+def _mapped_columns(mapping: Dict) -> Dict[str, int]:
+    """role → 0-based column index for every column the mapping reads."""
+    cols: Dict[str, int] = {}
+    try:
+        cols["date"] = int(mapping.get("date_col_index", 0))
+    except (TypeError, ValueError):
+        cols["date"] = 0
+    seg = mapping.get("segment_col_index")
+    if seg is not None:
+        try:
+            cols["segment"] = int(seg)
+        except (TypeError, ValueError):
+            pass
+    for k, v in (mapping.get("metrics", {}) or {}).items():
+        try:
+            cols[k] = int(v["col"]) if isinstance(v, dict) else int(v)
+        except (TypeError, ValueError, KeyError):
+            continue
+    return cols
+
+
+def _header_cells(rows: List[List], data_start: int, cols: Dict[str, int]) -> Dict[str, str]:
+    """Cell contents of the row just above the data region for each mapped
+    column — the human-visible header. Empty when data starts at row 1 (no
+    header row exists); the drift check skips blank baselines."""
+    hdr_idx = data_start - 2  # 0-based index of the row above data_start (1-based)
+    hdr = rows[hdr_idx] if 0 <= hdr_idx < len(rows) else []
+    return {role: (str(hdr[ci]).strip() if len(hdr) > ci else "")
+            for role, ci in cols.items()}
+
+
+def _scan_sheet(service, sheet_url: str, col_mapping: Dict) -> Dict[str, Any]:
+    """One read-only pass over every tab the mapping resolves.
+
+    Returns {"error", "all_tabs", "resolved", "tabs": [{tab, month, headers,
+    segment_values, dated_rows, rows_with_data, last_data_date,
+    dates_unparseable, read_error}]}. Uses the exact ingest primitives
+    (_resolve_tabs, _parse_tab_month, _detect_slash_order,
+    _parse_date_from_row) so health can't disagree with what sync reads.
+    """
+    result: Dict[str, Any] = {"error": None, "all_tabs": [], "resolved": [], "tabs": []}
+    m = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
+    if not m:
+        result["error"] = "Invalid sheet URL"
+        return result
+    sheet_id = m.group(1)
+
+    mapping = col_mapping.get("mapping", {}) or {}
+    cols = _mapped_columns(mapping)
+    data_start = int(mapping.get("data_start_row",
+                                 mapping.get("date_start_row", 1)) or 1)
+    date_col = cols.get("date", 0)
+    seg_col = cols.get("segment")
+    metric_cols = {k: v for k, v in cols.items() if k not in ("date", "segment")}
+
+    converted_id = None
+    try:
+        meta, sheet_id, converted_id = _open_spreadsheet_meta(service, sheet_id)
+        all_tabs = [s['properties']['title'] for s in meta.get('sheets', [])]
+        result["all_tabs"] = all_tabs
+        resolved = _resolve_tabs(all_tabs, col_mapping, sheet_url=sheet_url,
+                                 default_all_tabs=True)
+        result["resolved"] = [t for t, _, _ in resolved]
+
+        for tab_name, year, month in resolved:
+            info: Dict[str, Any] = {
+                "tab": tab_name,
+                "month": f"{year}-{month}" if year and month else None,
+                "headers": {}, "segment_values": [],
+                "dated_rows": 0, "rows_with_data": 0,
+                "last_data_date": None, "dates_unparseable": False,
+                "read_error": None,
+            }
+            try:
+                vals = service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=f"'{tab_name}'!A1:ZZ").execute()
+                rows = vals.get('values', [])
+            except Exception as e:
+                info["read_error"] = str(e)
+                result["tabs"].append(info)
+                continue
+
+            info["headers"] = _header_cells(rows, data_start, cols)
+            data_rows = rows[data_start - 1:] if len(rows) >= data_start else []
+            filled = [r for r in data_rows
+                      if len(r) > date_col and str(r[date_col]).strip()]
+            slash_order = _detect_slash_order(
+                str(r[date_col]).strip() for r in filled)
+
+            seg_vals = set()
+            data_dates: List[str] = []
+            dated = 0
+            for r in filled:
+                ds = _parse_date_from_row(str(r[date_col]).strip(), year, month, slash_order)
+                if not ds:
+                    continue
+                dated += 1
+                if seg_col is not None and len(r) > seg_col and str(r[seg_col]).strip():
+                    seg_vals.add(str(r[seg_col]).strip())
+                for ci in metric_cols.values():
+                    if len(r) > ci and str(r[ci]).strip() and _safe_float(r[ci]) != 0:
+                        data_dates.append(ds)
+                        break
+            info["dated_rows"] = dated
+            info["rows_with_data"] = len(data_dates)
+            info["dates_unparseable"] = bool(filled) and dated == 0
+            info["segment_values"] = sorted(seg_vals)
+            if data_dates:
+                info["last_data_date"] = max(data_dates)
+            result["tabs"].append(info)
+
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error(f"_scan_sheet error for {sheet_url}: {e}")
+    finally:
+        _delete_converted(converted_id)
+    return result
+
+
+def capture_sheet_fingerprint(service, sheet_url: str, col_mapping: Dict) -> Optional[Dict]:
+    """Snapshot the sheet's shape at mapping-save time. None on failure —
+    the save must never be blocked by a fingerprint hiccup."""
+    scan = _scan_sheet(service, sheet_url, col_mapping)
+    if scan["error"]:
+        logger.warning(f"fingerprint capture failed for {sheet_url}: {scan['error']}")
+        return None
+    readable = [t for t in scan["tabs"] if not t["read_error"]]
+    # Monthly tabs share one structure; keep headers from the last tab that
+    # actually has them filled (later tabs are usually the freshest copy).
+    headers: Dict[str, str] = {}
+    for t in readable:
+        if any(v for v in t["headers"].values()):
+            headers = t["headers"]
+    return {
+        "version": 1,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "tab_name": (col_mapping.get("tab_name") or "").strip() or None,
+        "tab_pattern": (col_mapping.get("tab_pattern") or "").strip() or None,
+        "tab_match_mode": col_mapping.get("tab_match_mode") or "exact",
+        "tabs": scan["resolved"],
+        "headers": headers,
+        "segment_values": sorted({v for t in readable for v in t["segment_values"]}),
+    }
+
+
+def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
+                       fingerprint: Optional[Dict], segment_filter: str = "",
+                       self_targeted: bool = False) -> Dict[str, Any]:
+    """Freshness + drift report for one configured sheet side.
+
+    Freshness = days since the last date where a mapped metric actually has a
+    non-zero value (NOT just a prefilled date). fresh ≤1 day behind, lagging
+    2–6, stale 7+, no_data when nothing was ever filled.
+
+    Alerts diff the live sheet against the saved fingerprint: missing tabs,
+    renamed headers, changed segment values, plus config-level failures
+    (pattern matches nothing, dates unparseable, configured segment absent).
+    """
+    scan = _scan_sheet(service, sheet_url, col_mapping)
+    alerts: List[Dict[str, str]] = []
+
+    def alert(atype: str, severity: str, message: str):
+        alerts.append({"type": atype, "severity": severity, "message": message})
+
+    out: Dict[str, Any] = {
+        "error": scan["error"],
+        "tabs_matched": scan["resolved"],
+        "latest_data_date": None,
+        "days_behind": None,
+        "freshness": "no_data",
+        "alerts": alerts,
+        "segment_values": [],
+        "fingerprint_captured_at": (fingerprint or {}).get("captured_at"),
+    }
+    if scan["error"]:
+        alert("sheet_unreadable", "error", f"Could not read sheet: {scan['error']}")
+        return out
+
+    readable = [t for t in scan["tabs"] if not t["read_error"]]
+    for t in scan["tabs"]:
+        if t["read_error"]:
+            alert("tab_unreadable", "error",
+                  f"Tab “{t['tab']}” could not be read: {t['read_error']}")
+        elif t["dates_unparseable"]:
+            alert("dates_unparseable", "error",
+                  f"Tab “{t['tab']}”: date column has values but none parse as "
+                  f"dates — column moved or format changed?")
+
+    if not scan["resolved"]:
+        cfg = (col_mapping.get("tab_pattern") or col_mapping.get("tab_name") or "").strip()
+        alert("no_tabs_matched", "error",
+              f"No tabs match the configured pattern/tab “{cfg}” — tabs were "
+              f"renamed or deleted; nothing will be ingested.")
+
+    # Freshness across all matched tabs.
+    data_dates = [t["last_data_date"] for t in readable if t["last_data_date"]]
+    if data_dates:
+        latest = max(data_dates)
+        out["latest_data_date"] = latest
+        try:
+            behind = (date.today() - datetime.strptime(latest, "%Y-%m-%d").date()).days
+        except ValueError:
+            behind = None
+        if behind is not None:
+            behind = max(0, behind)
+            out["days_behind"] = behind
+            out["freshness"] = ("fresh" if behind <= 1
+                                else "lagging" if behind <= 6 else "stale")
+
+    # Segment checks (skipped for self-targeted campaigns — their sheets have
+    # no segment column; the segment IS the brand).
+    live_segments = sorted({v for t in readable for v in t["segment_values"]})
+    out["segment_values"] = live_segments
+    seg_col_mapped = "segment" in _mapped_columns(col_mapping.get("mapping", {}) or {})
+    if not self_targeted and seg_col_mapped and segment_filter and readable:
+        if live_segments and not any(_matches_segment(v, segment_filter) for v in live_segments):
+            alert("segment_not_found", "error",
+                  f"Configured segment “{segment_filter}” no longer appears in "
+                  f"the sheet's segment column (found: "
+                  f"{', '.join(live_segments[:8])}{'…' if len(live_segments) > 8 else ''}) "
+                  f"— rows will be filtered out and metrics will flatline.")
+
+    # Drift vs fingerprint.
+    if not fingerprint:
+        alert("no_baseline", "warning",
+              "No saved baseline for this mapping — re-save the sheet config "
+              "to enable change detection.")
+        return out
+
+    missing = [t for t in (fingerprint.get("tabs") or []) if t not in scan["all_tabs"]]
+    if missing:
+        alert("tabs_missing", "error",
+              f"Tab(s) present when the mapping was saved are gone: "
+              f"{', '.join(missing)} — renamed or deleted?")
+
+    baseline_headers = fingerprint.get("headers") or {}
+    drifted = {}
+    for t in readable:
+        for role, expected in baseline_headers.items():
+            if not str(expected).strip():
+                continue  # no baseline header to compare against
+            found = (t["headers"] or {}).get(role, "")
+            if found.strip().lower() != str(expected).strip().lower():
+                drifted.setdefault((role, expected, found), []).append(t["tab"])
+    for (role, expected, found), tabs_ in drifted.items():
+        alert("header_changed", "error",
+              f"“{role}” column header changed on {', '.join(tabs_)}: expected "
+              f"“{expected}”, found “{found or '(blank)'}” — columns may have "
+              f"moved; verify the mapping.")
+
+    base_segs = fingerprint.get("segment_values") or []
+    if base_segs and readable and not self_targeted:
+        added = [s for s in live_segments if s not in base_segs]
+        removed = [s for s in base_segs if s not in live_segments]
+        if removed:
+            alert("segment_values_changed", "error",
+                  f"Segment value(s) disappeared from the sheet: {', '.join(removed)}")
+        if added:
+            alert("segment_values_changed", "warning",
+                  f"New segment value(s) appeared in the sheet: {', '.join(added)}")
+
+    return out
 
 
 async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str, Any]:
@@ -1342,7 +1643,10 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     else:
         adv_records = _extract_from_sheet(
             service, campaign.advertiser_data_url,
-            segment_filter=campaign.segment_adv,
+            # Self-targeted campaigns store the BRAND name as the segment (the
+            # sheet has no segment column) — never row-filter on it, or a stale
+            # segment_col_index in an old mapping silently drops every row.
+            segment_filter="" if _self_targeted(campaign) else campaign.segment_adv,
             offer_filter=campaign.offer_title or "",
             metric_names=direct_metrics,
             is_publisher=False,
@@ -1361,7 +1665,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     logger.info(f"  Pulling publisher data...")
     pub_records = _extract_from_sheet(
         service, campaign.publisher_data_url,
-        segment_filter=campaign.segment_pub,
+        segment_filter="" if _self_targeted(campaign) else campaign.segment_pub,
         offer_filter=campaign.offer_title or "",
         metric_names=[],
         is_publisher=True,

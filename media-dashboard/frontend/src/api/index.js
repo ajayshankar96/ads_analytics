@@ -265,6 +265,9 @@ export const saveColumnMapping = (payload) =>
 export const previewColumnMapping = (payload) =>
   apiFetch("/api/column-mappings/preview", { method: "POST", body: JSON.stringify(payload) });
 
+export const getSheetHealth = (refresh = false) =>
+  apiFetch(`/api/sheet-health${refresh ? "?refresh=1" : ""}`);
+
 // ── Postgres Dashboard (Phase 4) ──────────────────────────────────────────────
 export const setDataSource = (source) =>
   apiFetch("/api/data-source", { method: "POST", body: JSON.stringify({ source }) });
