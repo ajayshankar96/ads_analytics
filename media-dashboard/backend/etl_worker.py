@@ -384,6 +384,13 @@ def _add_metric_alias(row_data: Dict[str, float], key: str, value) -> None:
         row_data["Advertiser_Spends"] = numeric_value
         row_data["advertiser_spends"] = numeric_value
         return
+    if normalized_key == "clicks":
+        # Advertiser-side clicks must NOT overwrite row_data['Clicks'] — that key
+        # holds publisher-sheet clicks and drives CPC billing formulas
+        # ("Clicks * rate"). Keep the advertiser value under a distinct name.
+        row_data["Advertiser_Clicks"] = numeric_value
+        row_data["advertiser_clicks"] = numeric_value
+        return
     row_data[key] = numeric_value
     canonical = METRIC_ALIASES.get(normalized_key)
     if canonical:

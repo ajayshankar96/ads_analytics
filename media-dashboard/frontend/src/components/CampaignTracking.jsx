@@ -13,6 +13,7 @@ const PUBLISHER_METRICS = [
 ];
 const ADVERTISER_METRICS = [
   { key: "spends", label: "Spends" },
+  { key: "clicks", label: "Clicks" },
   { key: "sessions", label: "Sessions" },
   { key: "orders", label: "Orders" },
   { key: "revenue", label: "Revenue" },
