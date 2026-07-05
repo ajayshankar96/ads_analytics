@@ -293,8 +293,11 @@ async def sheet_preview(url: str = Query(...), tab: Optional[str] = None):
     try:
         tabs = [s["properties"]["title"] for s in meta.get("sheets", [])]
         target_tab = tab if tab and tab in tabs else tabs[0]
+        # A1:ZZ (702 cols) matches what etl_worker syncs; the old A1:Z cap cut
+        # the visual picker off at column Z even when data sat further right
+        # (e.g. multiple offers in one tab reaching column CE).
         result = service.spreadsheets().values().get(
-            spreadsheetId=file_id, range=f"'{target_tab}'!A1:Z20"
+            spreadsheetId=file_id, range=f"'{target_tab}'!A1:ZZ20"
         ).execute()
         rows = result.get("values", [])
         return {"tabs": tabs, "selected_tab": target_tab, "rows": rows[:20]}
