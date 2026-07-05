@@ -353,7 +353,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     const mappedMetrics = Object.keys(metricCells);
     if (mappedMetrics.length === 0) { alert("Please select at least one metric column"); return; }
     if (!selfTargeted && !segCell) {
-      alert("Select the Segment column in the sheet — the campaign's segment must come from the sheet.\n(If this campaign has no segment column, tick “Self-targeted campaign” in the setup above.)");
+      alert("Select the Segment column in the sheet — the campaign's segment must come from the sheet.\n(If this sheet has no segment column, choose “Self-targeted” in the segment dropdown in the setup above.)");
       return;
     }
     if (matchMode !== "exact" && !tabPattern.trim()) {
@@ -740,9 +740,13 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [pubDataUrl, setPubDataUrl] = useState(campaign.publisher_data_url || "");
   const [segmentPub, setSegmentPub] = useState(campaign.segment_pub || "");
   const [segmentAdv, setSegmentAdv] = useState(campaign.segment_adv || "");
-  // Self-targeted: sheets have no segment column — the segment IS the brand.
-  // Segment fields become a name dropdown and sheet segment-picking is hidden.
-  const [selfTargeted, setSelfTargeted] = useState(!!campaign.self_targeted);
+  // Self-targeted (per sheet side): that side's sheet has no segment column —
+  // the segment IS the brand. The segment field becomes a name dropdown and
+  // sheet segment-picking is hidden for that side.
+  const [selfTargeted, setSelfTargeted] = useState({
+    advertiser: !!campaign.self_targeted_adv,
+    publisher: !!campaign.self_targeted_pub,
+  });
   // Distinct segment-column values seen in each side's sheet (from the picker's
   // preview/save or the saved fingerprint) — non-self-targeted segments must be
   // chosen from these so a typo can't silently filter every row out.
@@ -760,7 +764,10 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     setPubDataUrl(campaign.publisher_data_url || "");
     setSegmentPub(campaign.segment_pub || "");
     setSegmentAdv(campaign.segment_adv || "");
-    setSelfTargeted(!!campaign.self_targeted);
+    setSelfTargeted({
+      advertiser: !!campaign.self_targeted_adv,
+      publisher: !!campaign.self_targeted_pub,
+    });
     setSheetSegments({ advertiser: [], publisher: [] });
     setPubMetrics(metrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
     setAdvMetrics(metrics.advertiser_metrics || []);
@@ -771,7 +778,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     campaign.publisher_data_url,
     campaign.segment_pub,
     campaign.segment_adv,
-    campaign.self_targeted,
+    campaign.self_targeted_adv,
+    campaign.self_targeted_pub,
     campaign.metrics_json,
   ]);
 
@@ -807,24 +815,22 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     if (advMetrics.length === 0) { alert("Select at least one advertiser metric"); return; }
     if (!segmentPub.trim()) { alert("Segment (Publisher) is required"); return; }
     if (!segmentAdv.trim()) { alert("Segment (Advertiser) is required"); return; }
-    if (!selfTargeted) {
-      // Non-self-targeted segments must exist in the sheet's segment column,
-      // otherwise sync filters every row out and metrics silently flatline.
-      if (!segmentMatchesSheet(segmentAdv, sheetSegments.advertiser)) {
-        alert(`Segment (Advertiser) "${segmentAdv}" doesn't match any value in the advertiser sheet's segment column.\nValues found: ${sheetSegments.advertiser.join(", ")}`);
-        return;
-      }
-      if (!segmentMatchesSheet(segmentPub, sheetSegments.publisher)) {
-        alert(`Segment (Publisher) "${segmentPub}" doesn't match any value in the publisher sheet's segment column.\nValues found: ${sheetSegments.publisher.join(", ")}`);
-        return;
-      }
+    // Non-self-targeted segments must exist in the sheet's segment column,
+    // otherwise sync filters every row out and metrics silently flatline.
+    if (!selfTargeted.advertiser && !segmentMatchesSheet(segmentAdv, sheetSegments.advertiser)) {
+      alert(`Segment (Advertiser) "${segmentAdv}" doesn't match any value in the advertiser sheet's segment column.\nValues found: ${sheetSegments.advertiser.join(", ")}`);
+      return;
+    }
+    if (!selfTargeted.publisher && !segmentMatchesSheet(segmentPub, sheetSegments.publisher)) {
+      alert(`Segment (Publisher) "${segmentPub}" doesn't match any value in the publisher sheet's segment column.\nValues found: ${sheetSegments.publisher.join(", ")}`);
+      return;
     }
     setSubmitting(true);
     const metricsPayload = JSON.stringify({
       publisher_metrics: pubMetrics, advertiser_metrics: advMetrics,
     });
     try {
-      await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, self_targeted: selfTargeted, metrics_json: metricsPayload, additional_context: "" });
+      await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, self_targeted_adv: selfTargeted.advertiser, self_targeted_pub: selfTargeted.publisher, metrics_json: metricsPayload, additional_context: "" });
       setIsEditingSubmitted(false);
       onReload();
     }
@@ -849,7 +855,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           )}
         </div>
         <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px" }}>
-          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Segment (Advertiser)", campaign.segment_adv], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Self-targeted", campaign.self_targeted ? "Yes — segment is the brand itself" : "No"], ["Publisher Metrics", selectedPubMetrics], ["Advertiser Metrics", selectedAdvMetrics]].map(([label, val]) => (
+          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Segment (Advertiser)", campaign.self_targeted_adv ? `${campaign.segment_adv || "—"} (self-targeted)` : campaign.segment_adv], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.self_targeted_pub ? `${campaign.segment_pub || "—"} (self-targeted)` : campaign.segment_pub], ["Publisher Metrics", selectedPubMetrics], ["Advertiser Metrics", selectedAdvMetrics]].map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 12 }}>
               <span style={{ color: c.muted, minWidth: 140 }}>{label}</span>
               <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>{val && val.startsWith && val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : (val || "—")}</span>
@@ -900,18 +906,6 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           )}
           {pubDataUrl && <a href={pubDataUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: c.blue, marginTop: 3, display: "inline-block" }}>Open sheet ↗</a>}
         </div>
-        {/* Self-targeted toggle spans both columns, above the segment fields. */}
-        <div style={{ gridColumn: "1 / -1", background: selfTargeted ? "#FDF3E3" : c.bg, border: `1px solid ${selfTargeted ? `${c.amber}55` : c.line}`, borderRadius: 8, padding: "10px 12px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: c.ink, cursor: "pointer" }}>
-            <input type="checkbox" checked={selfTargeted} onChange={(e) => setSelfTargeted(e.target.checked)} style={{ accentColor: c.amber }} />
-            Self-targeted campaign
-          </label>
-          <div style={{ fontSize: 11, color: c.sub, marginTop: 4, marginLeft: 24 }}>
-            {selfTargeted
-              ? "The sheets have no segment column — the segment is the brand itself. Pick the advertiser/publisher name below; sheet segment-column selection is disabled."
-              : "Sheets carry a segment column. Map it in the sheet config below, then choose the campaign's segment from the values found in the sheet."}
-          </div>
-        </div>
         {/* Order matters: this is a 2-col grid, so Segment (Advertiser) sits
             under the Advertiser URL and Segment (Publisher) under the
             Publisher URL. */}
@@ -919,7 +913,9 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           { label: "Segment (Advertiser) *", value: segmentAdv, set: setSegmentAdv, side: "advertiser", placeholder: "e.g. Partnership_Razorpay" },
           { label: "Segment (Publisher) *", value: segmentPub, set: setSegmentPub, side: "publisher", placeholder: "e.g. Razorpay_Boat" },
         ].map(({ label, value, set, side, placeholder }) => {
+          const st = selfTargeted[side];
           const inputStyle = { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", background: "#fff", boxSizing: "border-box" };
+          const modeStyle = { ...inputStyle, marginBottom: 6, background: st ? "#FDF3E3" : "#fff", borderColor: st ? `${c.amber}88` : c.line, fontWeight: 600, color: c.ink };
           // Self-targeted → the segment IS the brand: dropdown of this
           // campaign's advertiser + publisher names.
           const selfOptions = [campaign.advertiser_name, campaign.publisher_name].filter(Boolean);
@@ -927,12 +923,26 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           return (
             <div key={side}>
               <label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>{label}</label>
-              {selfTargeted ? (
-                <select style={inputStyle} value={value} onChange={(e) => set(e.target.value)}>
-                  <option value="">Select name…</option>
-                  {selfOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  {value && !selfOptions.includes(value) && <option value={value}>{value} (current)</option>}
-                </select>
+              {/* Mode first: is this side's sheet segmented, or self-targeted? */}
+              <select
+                style={modeStyle}
+                value={st ? "self" : "segment"}
+                onChange={(e) => setSelfTargeted((prev) => ({ ...prev, [side]: e.target.value === "self" }))}
+              >
+                <option value="segment">Enter segment name (from the {side} sheet)</option>
+                <option value="self">Self-targeted — no segment column in the sheet</option>
+              </select>
+              {st ? (
+                <>
+                  <select style={inputStyle} value={value} onChange={(e) => set(e.target.value)}>
+                    <option value="">Select name…</option>
+                    {selfOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {value && !selfOptions.includes(value) && <option value={value}>{value} (current)</option>}
+                  </select>
+                  <div style={{ fontSize: 11, color: c.sub, marginTop: 3 }}>
+                    The segment is the brand itself — every row in the {side} sheet counts for this campaign; sheet segment-column selection is disabled.
+                  </div>
+                </>
               ) : sheetVals.length > 0 ? (
                 <>
                   <select style={inputStyle} value={value} onChange={(e) => set(e.target.value)}>
@@ -988,7 +998,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           name={campaign.publisher_name || ""}
           campaignId={campaign.campaign_id}
           metrics={PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label }))}
-          selfTargeted={selfTargeted}
+          selfTargeted={selfTargeted.publisher}
           onSegmentValues={(vals) => setSheetSegments((prev) => ({ ...prev, publisher: vals }))}
           onSaved={() => {}}
         />
@@ -1002,7 +1012,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           name={campaign.advertiser_name || ""}
           campaignId={campaign.campaign_id}
           metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
-          selfTargeted={selfTargeted}
+          selfTargeted={selfTargeted.advertiser}
           onSegmentValues={(vals) => setSheetSegments((prev) => ({ ...prev, advertiser: vals }))}
           onSaved={() => {}}
         />

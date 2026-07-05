@@ -415,10 +415,11 @@ def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
     return []
 
 
-def _self_targeted(campaign) -> bool:
-    """Safe accessor — self_targeted was added in migration 0027; tolerate
-    stubs/mocks that predate the column."""
-    return bool(getattr(campaign, "self_targeted", False))
+def _self_targeted(campaign, side: str = "advertiser") -> bool:
+    """Safe per-side accessor — columns added in migration 0028; tolerate
+    stubs/mocks that predate them."""
+    attr = "self_targeted_adv" if side == "advertiser" else "self_targeted_pub"
+    return bool(getattr(campaign, attr, False))
 
 
 def _matches_segment(row_segment: str, target_segments: str) -> bool:
@@ -1337,14 +1338,53 @@ def _mapped_columns(mapping: Dict) -> Dict[str, int]:
     return cols
 
 
-def _header_cells(rows: List[List], data_start: int, cols: Dict[str, int]) -> Dict[str, str]:
-    """Cell contents of the row just above the data region for each mapped
-    column — the human-visible header. Empty when data starts at row 1 (no
-    header row exists); the drift check skips blank baselines."""
-    hdr_idx = data_start - 2  # 0-based index of the row above data_start (1-based)
-    hdr = rows[hdr_idx] if 0 <= hdr_idx < len(rows) else []
-    return {role: (str(hdr[ci]).strip() if len(hdr) > ci else "")
-            for role, ci in cols.items()}
+_HDR_SEARCH_UP = 5  # rows above the data region to search for the title row
+
+
+def _looks_like_header_text(s) -> bool:
+    """True when a cell plausibly holds a column TITLE.
+
+    Numbers ("7,827", "0"), dashes and blanks are VALUES — sheets often stack
+    a totals row above the header row, and treating those cells as headers
+    made drift detection compare month totals across tabs (pure noise)."""
+    s = str(s or "").strip()
+    if not s or s in {"-", "–", "—", "NA", "N/A"}:
+        return False
+    t = s.replace(",", "").replace("%", "").replace("₹", "").replace("$", "").strip()
+    try:
+        float(t)
+        return False
+    except ValueError:
+        return True
+
+
+def _header_cells(rows: List[List], data_start: int, cols: Dict[str, int],
+                  first_data_idx: Optional[int] = None) -> Dict[str, str]:
+    """Human-visible column titles for each mapped column.
+
+    Anchors on the first row whose date actually PARSED (when known) and walks
+    upward a few rows to the first row whose date column holds title-like text
+    (e.g. "Date"). Sheets commonly stack banner/totals rows above the data, and
+    a mis-clicked data_start_row otherwise lands the naive "row above the data"
+    heuristic on a totals row, capturing numbers as headers. Cells that don't
+    look like titles come back as "" (the drift check skips blanks)."""
+    date_ci = cols.get("date", 0)
+    anchor = first_data_idx if first_data_idx is not None else data_start - 1
+    hdr = None
+    for idx in range(anchor - 1, max(-1, anchor - 1 - _HDR_SEARCH_UP), -1):
+        row = rows[idx] if 0 <= idx < len(rows) else []
+        cell = str(row[date_ci]).strip() if len(row) > date_ci else ""
+        if _looks_like_header_text(cell):
+            hdr = row
+            break
+    if hdr is None:  # no recognisable title row (e.g. data starts at row 1)
+        idx0 = anchor - 1
+        hdr = rows[idx0] if 0 <= idx0 < len(rows) else []
+    out: Dict[str, str] = {}
+    for role, ci in cols.items():
+        cell = str(hdr[ci]).strip() if len(hdr) > ci else ""
+        out[role] = cell if _looks_like_header_text(cell) else ""
+    return out
 
 
 def _scan_sheet(service, sheet_url: str, col_mapping: Dict) -> Dict[str, Any]:
@@ -1398,27 +1438,32 @@ def _scan_sheet(service, sheet_url: str, col_mapping: Dict) -> Dict[str, Any]:
                 result["tabs"].append(info)
                 continue
 
-            info["headers"] = _header_cells(rows, data_start, cols)
-            data_rows = rows[data_start - 1:] if len(rows) >= data_start else []
-            filled = [r for r in data_rows
+            filled = [(i, r) for i, r in enumerate(rows[data_start - 1:],
+                                                   start=data_start - 1)
                       if len(r) > date_col and str(r[date_col]).strip()]
             slash_order = _detect_slash_order(
-                str(r[date_col]).strip() for r in filled)
+                str(r[date_col]).strip() for _, r in filled)
 
             seg_vals = set()
             data_dates: List[str] = []
             dated = 0
-            for r in filled:
+            first_parsed_idx: Optional[int] = None
+            for i, r in filled:
                 ds = _parse_date_from_row(str(r[date_col]).strip(), year, month, slash_order)
                 if not ds:
                     continue
                 dated += 1
+                if first_parsed_idx is None:
+                    first_parsed_idx = i
                 if seg_col is not None and len(r) > seg_col and str(r[seg_col]).strip():
                     seg_vals.add(str(r[seg_col]).strip())
                 for ci in metric_cols.values():
                     if len(r) > ci and str(r[ci]).strip() and _safe_float(r[ci]) != 0:
                         data_dates.append(ds)
                         break
+            # Header detection anchors on the first REAL data row — a
+            # mis-clicked data_start_row otherwise reads a totals row.
+            info["headers"] = _header_cells(rows, data_start, cols, first_parsed_idx)
             info["dated_rows"] = dated
             info["rows_with_data"] = len(data_dates)
             info["dates_unparseable"] = bool(filled) and dated == 0
@@ -1572,16 +1617,18 @@ def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
     drifted = {}
     for t in readable:
         for role, expected in baseline_headers.items():
-            if not str(expected).strip():
-                continue  # no baseline header to compare against
+            if not _looks_like_header_text(expected):
+                continue  # blank/numeric baseline (junk capture) — nothing to compare
             found = (t["headers"] or {}).get(role, "")
+            if not _looks_like_header_text(found):
+                continue  # tab has no recognisable title row — can't compare
             if found.strip().lower() != str(expected).strip().lower():
                 drifted.setdefault((role, expected, found), []).append(t["tab"])
     for (role, expected, found), tabs_ in drifted.items():
         alert("header_changed", "error",
               f"“{role}” column header changed on {', '.join(tabs_)}: expected "
-              f"“{expected}”, found “{found or '(blank)'}” — columns may have "
-              f"moved; verify the mapping.")
+              f"“{expected}”, found “{found}” — columns may have moved; "
+              f"verify the mapping.")
 
     base_segs = fingerprint.get("segment_values") or []
     if base_segs and readable and not self_targeted:
@@ -1664,7 +1711,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             # Self-targeted campaigns store the BRAND name as the segment (the
             # sheet has no segment column) — never row-filter on it, or a stale
             # segment_col_index in an old mapping silently drops every row.
-            segment_filter="" if _self_targeted(campaign) else campaign.segment_adv,
+            segment_filter="" if _self_targeted(campaign, "advertiser") else campaign.segment_adv,
             offer_filter=campaign.offer_title or "",
             metric_names=direct_metrics,
             is_publisher=False,
@@ -1683,7 +1730,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     logger.info(f"  Pulling publisher data...")
     pub_records = _extract_from_sheet(
         service, campaign.publisher_data_url,
-        segment_filter="" if _self_targeted(campaign) else campaign.segment_pub,
+        segment_filter="" if _self_targeted(campaign, "publisher") else campaign.segment_pub,
         offer_filter=campaign.offer_title or "",
         metric_names=[],
         is_publisher=True,

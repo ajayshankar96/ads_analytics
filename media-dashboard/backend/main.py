@@ -517,7 +517,8 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
 
     rows = (await db.execute(text(
         "SELECT id, name, advertiser_name, publisher_name, advertiser_data_url, "
-        "publisher_data_url, segment_adv, segment_pub, self_targeted, current_stage "
+        "publisher_data_url, segment_adv, segment_pub, self_targeted_adv, "
+        "self_targeted_pub, current_stage "
         "FROM rmn_campaigns WHERE is_deleted = FALSE AND "
         "(COALESCE(advertiser_data_url, '') <> '' OR COALESCE(publisher_data_url, '') <> '') "
         "ORDER BY id"
@@ -531,10 +532,10 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
 
     for r in rows:
         (cid, cname, adv_name, pub_name, adv_url, pub_url,
-         seg_adv, seg_pub, self_targeted, stage) = r
-        for side, url, seg, party in (
-            ("advertiser", adv_url, seg_adv, adv_name),
-            ("publisher", pub_url, seg_pub, pub_name),
+         seg_adv, seg_pub, st_adv, st_pub, stage) = r
+        for side, url, seg, party, self_targeted in (
+            ("advertiser", adv_url, seg_adv, adv_name, st_adv),
+            ("publisher", pub_url, seg_pub, pub_name, st_pub),
         ):
             if not (url or "").strip():
                 continue
@@ -2529,9 +2530,10 @@ class TrackingSetupRequest(BaseModel):
     publisher_data_url: str = ""
     segment_pub: str = ""
     segment_adv: str = ""
-    # Self-targeted: no segment column in the sheets — the segment is the
-    # advertiser/publisher itself (Setup shows a name dropdown instead).
-    self_targeted: bool = False
+    # Self-targeted (per sheet side): that side's sheet has no segment column
+    # — the segment is the brand itself (Setup shows a name dropdown instead).
+    self_targeted_adv: bool = False
+    self_targeted_pub: bool = False
     goals_json: str = "{}"
     metrics_json: str = "{}"
     additional_context: str = ""
@@ -2549,7 +2551,8 @@ async def workflow_tracking_setup(campaign_id: str, req: TrackingSetupRequest, d
     campaign.publisher_data_url = req.publisher_data_url
     campaign.segment_pub = req.segment_pub
     campaign.segment_adv = req.segment_adv
-    campaign.self_targeted = req.self_targeted
+    campaign.self_targeted_adv = req.self_targeted_adv
+    campaign.self_targeted_pub = req.self_targeted_pub
     campaign.goals_json = req.goals_json
     campaign.metrics_json = req.metrics_json
     campaign.additional_context = req.additional_context

@@ -135,9 +135,10 @@ class Campaign(Base):
     publisher_data_url: Mapped[Optional[str]] = mapped_column(Text, default=None)
     segment_pub: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     segment_adv: Mapped[Optional[str]] = mapped_column(String(255), default=None)
-    # Self-targeted: the segment IS the advertiser/publisher itself (no
-    # segment column in the sheet) — Setup offers a name dropdown instead.
-    self_targeted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Self-targeted (per sheet side): that side's sheet has no segment column
+    # — the segment IS the brand; Setup offers a name dropdown instead.
+    self_targeted_adv: Mapped[bool] = mapped_column(Boolean, default=False)
+    self_targeted_pub: Mapped[bool] = mapped_column(Boolean, default=False)
     goals_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
     metrics_json: Mapped[Optional[str]] = mapped_column(Text, default=None)
     additional_context: Mapped[Optional[str]] = mapped_column(Text, default=None)
