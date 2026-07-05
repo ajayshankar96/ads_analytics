@@ -118,7 +118,10 @@ spec:
             memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "1Gi"
+            # 1Gi was OOMKilled on 2026-07-05: steady state sits ~620Mi and a
+            # sheet-health scan (whole-sheet A1:ZZ reads) overlapping a sync
+            # pushed it over. 2Gi gives scans + sync room to coexist.
+            memory: "2Gi"
             cpu: "500m"
         livenessProbe:
           httpGet:
