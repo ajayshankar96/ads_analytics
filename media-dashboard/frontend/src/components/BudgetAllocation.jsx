@@ -224,7 +224,13 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     await load();
   };
 
-  const totalBudgetLoaded = advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  // "Budget loaded" is month-scoped: an advertiser's budget counts toward the
+  // month they were onboarded (onboarded_at; created_at as fallback for rows
+  // predating the field).
+  const onboardMonth = (a) => (a.onboarded_at || a.created_at || "").slice(0, 7);
+  const monthAdvertisers = advertisers.filter((a) => onboardMonth(a) === month);
+  const totalBudgetLoaded = monthAdvertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const tableBudgetTotal = advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
   const totalAllocatedAll = grandTotal;
   const allocationPct = totalBudgetLoaded > 0 ? (totalAllocatedAll / totalBudgetLoaded * 100) : 0;
   const activePubs = publishers.filter((p) => pubTotals[p.id] > 0).length;
@@ -257,7 +263,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Budget Loaded</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtInr(totalBudgetLoaded)}</div>
-            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Across {advertisers.length} advertisers</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{monthAdvertisers.length} advertiser{monthAdvertisers.length === 1 ? "" : "s"} onboarded this month</div>
           </div>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Allocated</div>
@@ -350,7 +356,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               })}
               <tr style={s.totalRow}>
                 <td style={s.totalTd}>TOTAL</td>
-                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(totalBudgetLoaded)}</td>
+                <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(tableBudgetTotal)}</td>
                 {publishers.map((p) => (
                   <td key={p.id} style={{ ...s.totalTd, textAlign: "center" }}>{fmtInr(pubTotals[p.id])}</td>
                 ))}

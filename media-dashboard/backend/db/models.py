@@ -47,6 +47,9 @@ class Advertiser(Base):
     owner_email: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     status: Mapped[str] = mapped_column(String(16), index=True, default="DRAFT")  # DRAFT/ONBOARDED
     current_step: Mapped[int] = mapped_column(Integer, default=1)
+    # Stamped once when status first flips to ONBOARDED; drives month-scoped
+    # "budget loaded" numbers in Budget Allocation.
+    onboarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
 
     # Step 1 — Basics
     category: Mapped[Optional[str]] = mapped_column(String(120), default=None)

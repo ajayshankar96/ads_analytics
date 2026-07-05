@@ -105,6 +105,7 @@ def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
         "welcome_email_subject": a.welcome_email_subject,
         "welcome_email_body": a.welcome_email_body,
         "welcome_email_sent_at": a.welcome_email_sent_at.isoformat() if a.welcome_email_sent_at else None,
+        "onboarded_at": a.onboarded_at.isoformat() if a.onboarded_at else None,
         "created_at": a.created_at.isoformat() if a.created_at else None,
     }
 
@@ -198,10 +199,12 @@ async def create_advertiser(db: AsyncSession, payload: Dict[str, Any]) -> models
     if await advertiser_name_exists(db, name):
         raise ValueError(f"An advertiser named '{name}' already exists")
     fields["name"] = name  # store the trimmed form so future checks stay consistent
+    status = payload.get("status", "DRAFT")
     adv = models.Advertiser(
         id=await next_advertiser_id(db, name),
-        status=payload.get("status", "DRAFT"),
+        status=status,
         current_step=int(payload.get("current_step", 1) or 1),
+        onboarded_at=wf.utcnow() if status == "ONBOARDED" else None,
         **fields,
     )
     db.add(adv)
@@ -223,6 +226,8 @@ async def update_advertiser(db: AsyncSession, adv: models.Advertiser, payload: D
         setattr(adv, k, v)
     if "status" in payload and payload["status"]:
         adv.status = payload["status"]
+        if adv.status == "ONBOARDED" and adv.onboarded_at is None:
+            adv.onboarded_at = wf.utcnow()
     if "current_step" in payload and payload["current_step"]:
         adv.current_step = int(payload["current_step"])
     adv.updated_at = wf.utcnow()
