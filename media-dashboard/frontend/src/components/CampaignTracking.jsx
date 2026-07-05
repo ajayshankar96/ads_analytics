@@ -247,15 +247,17 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
           setMatchMode(m.tab_match_mode || "exact");
           setTabPattern(m.tab_pattern || "");
           const mapping = m.mapping || {};
+          const startRow = mapping.date_start_row || mapping.data_start_row || 1;
           if (mapping.date_col_index != null) {
-            const startRow = mapping.date_start_row || mapping.data_start_row || 1;
             setDateCell({ row: startRow - 1, col: mapping.date_col_index });
           }
           if (mapping.segment_cell && mapping.segment_cell.col != null) {
             setSegCell({ row: (mapping.segment_cell.row || 1) - 1, col: mapping.segment_cell.col, value: mapping.segment_cell.value || "" });
             setSegScope("cell");
           } else if (mapping.segment_col_index != null) {
-            setSegCell({ col: mapping.segment_col_index });
+            // Anchor the restored column highlight at the data start row so it
+            // tints from where data begins, not the whole column.
+            setSegCell({ row: startRow - 1, col: mapping.segment_col_index });
             setSegScope("column");
           }
           // Saved fingerprint carries the sheet's segment values — surface them
@@ -562,9 +564,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       const isDateSel = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
                       const isDateCol = dateCell && dateCell.col === colIdx && rowIdx >= dateCell.row;
                       // "cell" scope highlights only the clicked label cell;
-                      // "column" (or unconfirmed) tints the whole column.
+                      // "column" (or unconfirmed) tints the column FROM the
+                      // clicked cell downward — same as date/metric columns.
                       const isSegSel = segCell && segCell.row != null && segCell.row === rowIdx && segCell.col === colIdx && segScope !== "column";
-                      const isSegCol = segCell && segCell.col === colIdx && segScope !== "cell";
+                      const isSegCol = segCell && segCell.col === colIdx && segScope !== "cell" && rowIdx >= (segCell.row ?? 0);
                       let metricMatch = null;
                       let metricColMatch = null;
                       for (const [mk, mc] of Object.entries(metricCells)) {
