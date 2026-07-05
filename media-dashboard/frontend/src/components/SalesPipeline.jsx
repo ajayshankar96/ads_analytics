@@ -30,6 +30,11 @@ const s = {
   badgeDraft: { background: "#FEF3E2", color: c.amber },
   stageSub: { fontSize: 11.5, color: c.muted, marginTop: 3 },
   dash: { color: "#B0B8C4" },
+  headerRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 20 },
+  filterBar: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" },
+  select: { border: `1px solid ${c.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600, color: c.ink, background: "#fff", outline: "none", cursor: "pointer", maxWidth: 180 },
+  clearBtn: { background: "transparent", border: "none", color: c.blue, fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: "4px 2px" },
+  count: { fontSize: 12.5, color: c.muted, fontWeight: 600, whiteSpace: "nowrap" },
 };
 
 const PALETTE = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2", "#C8321E"];
@@ -48,16 +53,20 @@ function rateText(a) {
   if (a.buy_type === "CPC") return a.cpc_rate != null ? `₹${a.cpc_rate}/click` : "—";
   return "—";
 }
-function ownerText(a) {
-  const email = (a.owner_email || "").trim();
-  if (!email) return null;
-  const local = email.split("@")[0];
+function ownerNameFromEmail(email) {
+  const local = (email || "").split("@")[0];
   const name = local
     .split(/[._-]+/)
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
-  return { name: name || email, email };
+  return name || email;
+}
+
+function ownerText(a) {
+  const email = (a.owner_email || "").trim();
+  if (!email) return null;
+  return { name: ownerNameFromEmail(email), email };
 }
 function budgetText(a) {
   if (!a.budget_hint) return dash;
@@ -136,6 +145,12 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
   const [emailModal, setEmailModal] = useState(null);
   const [viewAdv, setViewAdv] = useState(null);
 
+  // Filters — options are derived from the loaded advertisers.
+  const [fOwner, setFOwner] = useState("");
+  const [fCategory, setFCategory] = useState("");
+  const [fBuyType, setFBuyType] = useState("");
+  const [fStatus, setFStatus] = useState("");
+
   const load = () => {
     setLoading(true);
     getAdvertisers().then((d) => setAdvertisers(d.advertisers || [])).catch(console.error).finally(() => setLoading(false));
@@ -144,16 +159,68 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
 
   const closeWizard = () => { setWizard(null); load(); };
 
+  const ownerOptions = [...new Set(
+    advertisers.map((a) => (a.owner_email || "").trim().toLowerCase()).filter(Boolean)
+  )].sort();
+  const categoryOptions = [...new Set(advertisers.map((a) => a.category).filter(Boolean))].sort();
+  const buyTypeOptions = [...new Set(advertisers.map((a) => a.buy_type).filter(Boolean))].sort();
+
+  const hasFilters = !!(fOwner || fCategory || fBuyType || fStatus);
+  const clearFilters = () => { setFOwner(""); setFCategory(""); setFBuyType(""); setFStatus(""); };
+
+  const filtered = advertisers.filter((a) => {
+    if (fOwner && (a.owner_email || "").trim().toLowerCase() !== fOwner) return false;
+    if (fCategory && (a.category || "") !== fCategory) return false;
+    if (fBuyType && (a.buy_type || "") !== fBuyType) return false;
+    if (fStatus === "ONBOARDED" && a.status !== "ONBOARDED") return false;
+    if (fStatus === "DRAFT" && a.status === "ONBOARDED") return false;
+    return true;
+  });
+
   if (loading) return <div style={s.loading}>Loading advertisers…</div>;
 
   return (
     <div>
-      {canEdit && <button style={s.addBtn} onClick={() => setWizard({})}>+ New Advertiser</button>}
+      <div style={s.headerRow}>
+        {canEdit ? <button style={{ ...s.addBtn, marginBottom: 0 }} onClick={() => setWizard({})}>+ New Advertiser</button> : <div />}
+        {advertisers.length > 0 && (
+          <div style={s.filterBar}>
+            <select style={s.select} value={fOwner} onChange={(e) => setFOwner(e.target.value)} title="Filter by owner">
+              <option value="">All owners</option>
+              {ownerOptions.map((em) => <option key={em} value={em}>{ownerNameFromEmail(em)}</option>)}
+            </select>
+            <select style={s.select} value={fCategory} onChange={(e) => setFCategory(e.target.value)} title="Filter by category">
+              <option value="">All categories</option>
+              {categoryOptions.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+            <select style={s.select} value={fBuyType} onChange={(e) => setFBuyType(e.target.value)} title="Filter by buy type">
+              <option value="">All buy types</option>
+              {buyTypeOptions.map((bt) => <option key={bt} value={bt}>{bt}</option>)}
+            </select>
+            <select style={s.select} value={fStatus} onChange={(e) => setFStatus(e.target.value)} title="Filter by status">
+              <option value="">All statuses</option>
+              <option value="ONBOARDED">Onboarded</option>
+              <option value="DRAFT">Draft</option>
+            </select>
+            {hasFilters && (
+              <>
+                <span style={s.count}>{filtered.length} of {advertisers.length}</span>
+                <button style={s.clearBtn} onClick={clearFilters}>Clear</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} userEmail={userEmail} />}
       {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} userEmail={userEmail} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>
+      ) : filtered.length === 0 ? (
+        <div style={s.empty}>
+          No advertisers match the current filters.{" "}
+          <span style={{ ...s.clearBtn, textDecoration: "underline" }} onClick={clearFilters}>Clear filters</span>
+        </div>
       ) : (
         <div style={s.wrap}>
           <table style={s.table}>
@@ -171,7 +238,7 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
               </tr>
             </thead>
             <tbody>
-              {advertisers.map((a) => {
+              {filtered.map((a) => {
                 const live = a.status === "ONBOARDED";
                 const owner = ownerText(a);
                 return (
