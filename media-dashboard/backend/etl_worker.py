@@ -282,6 +282,46 @@ def _parse_tab_month(tab_name: str) -> Optional[tuple]:
     return year, month
 
 
+_TEMPLATE_TOKEN = "{month}"
+_TEMPLATE_SEP_RE = re.compile(r"[\s\-_.']+")
+
+
+def _normalize_template(value: str) -> str:
+    """Case/separator-insensitive form for template comparison, so
+    "RZP June'26" and "rzp_june'26" normalize identically."""
+    return _TEMPLATE_SEP_RE.sub("_", str(value).strip().lower()).strip("_")
+
+
+def _tab_template(tab_name: str) -> Optional[str]:
+    """Replace a tab's month token (+ adjacent year) with "{month}".
+
+    "RZP_July'26" → "RZP_{month}"; "RZP_TWS_July'26" → "RZP_TWS_{month}".
+    Returns None when the tab has no recognizable month (callers fail closed).
+
+    This powers template match mode: substring patterns can't express
+    "RZP_ but NOT RZP_TWS_" — the operator picks the exact tabs in the dry-run,
+    we derive the shape, and future ingestion is locked to it.
+    """
+    if not tab_name:
+        return None
+    m = _MONTH_TOKEN_RE.search(tab_name)
+    if m:
+        end = m.end()
+        tail = re.match(r"[\s\-_.']*((?:20)?\d{2})(?!\d)", tab_name[end:])
+        if tail:
+            end += tail.end()
+        return tab_name[:m.start()] + _TEMPLATE_TOKEN + tab_name[end:]
+    num = _NUM_MONTH_YEAR_RE.search(tab_name) or _NUM_YEAR_MONTH_RE.search(tab_name)
+    if num:
+        return tab_name[:num.start()] + _TEMPLATE_TOKEN + tab_name[num.end():]
+    return None
+
+
+def _tab_matches_template(tab_name: str, template: str) -> bool:
+    t = _tab_template(tab_name)
+    return t is not None and _normalize_template(t) == _normalize_template(template)
+
+
 def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
                   sheet_url: str = "", allow_rzp_discovery: bool = False,
                   default_all_tabs: bool = False) -> List[tuple]:
@@ -292,6 +332,11 @@ def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
     closed per-row in _parse_date_from_row).
 
     Modes:
+      * tab_pattern containing "{month}" (template): the tab name must BE the
+        pattern with {month} replaced by an actual month token ("RZP_{month}"
+        matches RZP_July'26 but not RZP_TWS_July'26). Comparison is case- and
+        separator-insensitive. New monthly tabs of the same shape are picked
+        up automatically.
       * tab_pattern set (rolling): every tab containing the pattern AND having
         a parseable month qualifies — new monthly tabs are picked up
         automatically; junk tabs ("<pattern> Summary") are excluded by the
@@ -307,14 +352,19 @@ def _resolve_tabs(tabs: List[str], col_mapping: Optional[Dict],
     tab_name_cfg = (cm.get("tab_name") or "").strip()
 
     if pattern:
+        is_template = _TEMPLATE_TOKEN in pattern
         resolved, skipped = [], []
         for t in tabs:
-            if pattern.lower() in t.lower():
-                ym = _parse_tab_month(t)
-                if ym:
-                    resolved.append((t, ym[0], ym[1]))
-                else:
-                    skipped.append(t)
+            if is_template:
+                if not _tab_matches_template(t, pattern):
+                    continue
+            elif pattern.lower() not in t.lower():
+                continue
+            ym = _parse_tab_month(t)
+            if ym:
+                resolved.append((t, ym[0], ym[1]))
+            else:
+                skipped.append(t)
         if skipped:
             logger.warning(f"Tabs match pattern '{pattern}' but have no parseable "
                            f"month, skipped: {skipped} ({sheet_url})")
@@ -1086,8 +1136,9 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
     """
     pattern = (col_mapping.get("tab_pattern") or "").strip()
     tab_name_cfg = (col_mapping.get("tab_name") or "").strip()
+    is_template = _TEMPLATE_TOKEN in pattern
     report: Dict[str, Any] = {
-        "match_mode": "rolling" if pattern else "exact",
+        "match_mode": ("template" if is_template else "rolling") if pattern else "exact",
         "pattern": pattern,
         "tab_name": tab_name_cfg,
         "all_tab_count": 0,
@@ -1129,7 +1180,15 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
         resolved = []  # (tab, year, month)
         if pattern:
             for t in tabs:
-                if pattern.lower() in t.lower():
+                if is_template:
+                    # Template mode: exact shape match (pattern with {month}
+                    # swapped for a real month token) — no substring fallback.
+                    if _tab_matches_template(t, pattern):
+                        ym = _parse_tab_month(t)
+                        resolved.append((t, ym[0], ym[1]) if ym else (t, None, None))
+                    else:
+                        report["unmatched_count"] += 1
+                elif pattern.lower() in t.lower():
                     ym = _parse_tab_month(t)
                     if ym:
                         resolved.append((t, ym[0], ym[1]))

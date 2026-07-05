@@ -151,6 +151,31 @@ function proposeTabPattern(tabName) {
   return { pattern, hasMonth: true };
 }
 
+// ── Template matching ("RZP_{month}") — mirrors backend etl_worker._tab_template.
+// A tab matches a template only when its WHOLE name equals the template with
+// {month} swapped for a real month token (+ optional year): with "RZP_{month}",
+// RZP_July'26 matches but RZP_TWS_July'26 does not. Substring patterns can't
+// express that exclusion. Comparison is case- and separator-insensitive.
+const TEMPLATE_TOKEN = "{month}";
+const normalizeTemplate = (s) => String(s).trim().toLowerCase().replace(/[\s\-_.']+/g, "_").replace(/^_+|_+$/g, "");
+function tabTemplate(tabName) {
+  if (!tabName) return null;
+  const m = findMonthToken(tabName);
+  if (m) {
+    let end = m.index + m[0].length;
+    const tailYear = tabName.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
+    if (tailYear) end += tailYear[0].length;
+    return tabName.slice(0, m.index) + TEMPLATE_TOKEN + tabName.slice(end);
+  }
+  const num = tabName.match(NUM_MONTH_YEAR_RE) || tabName.match(NUM_YEAR_MONTH_RE);
+  if (num) return tabName.slice(0, num.index) + TEMPLATE_TOKEN + tabName.slice(num.index + num[0].length);
+  return null;
+}
+function tabMatchesTemplate(tabName, template) {
+  const t = tabTemplate(tabName);
+  return t != null && normalizeTemplate(t) === normalizeTemplate(template);
+}
+
 // ── Visual Sheet Picker (works for both publisher and advertiser) ─────────────
 function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, pickerType = "advertiser" }) {
   const isPub = pickerType === "publisher";
@@ -275,9 +300,13 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, metrics: metricsMapping };
   };
 
-  const handlePreview = async () => {
+  // overrides lets the dry-run's "confirm detected pattern" flow re-preview
+  // with the inferred template before React state has re-rendered.
+  const handlePreview = async (overrides = {}) => {
     if (!dateCell) { alert("Select where dates start first"); return; }
-    if (matchMode === "rolling" && !tabPattern.trim()) {
+    const effMode = overrides.mode || matchMode;
+    const effPattern = overrides.pattern !== undefined ? overrides.pattern : tabPattern;
+    if (effMode !== "exact" && !effPattern.trim()) {
       alert("Enter a tab pattern for auto-detect, or switch to exact match.");
       return;
     }
@@ -288,19 +317,26 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
         name, type: pickerType, campaign_id: campaignId, sheet_url: sheetUrl, tab_name: selectedTab || "",
         mapping: buildMapping(),
         format_type: "visual",
-        tab_pattern: matchMode === "rolling" ? tabPattern.trim() : null,
-        tab_match_mode: matchMode,
+        tab_pattern: effMode !== "exact" ? effPattern.trim() : null,
+        tab_match_mode: effMode,
       });
       setPreview(r);
     } catch (e) { alert("Preview failed: " + e.message); }
     finally { setPreviewing(false); }
   };
 
+  // Dry-run tab selection → locked template pattern ("RZP_{month}").
+  const adoptPattern = (tpl) => {
+    setMatchMode("template");
+    setTabPattern(tpl);
+    handlePreview({ mode: "template", pattern: tpl });
+  };
+
   const handleSave = async () => {
     if (!dateCell) { alert("Please select where dates start"); return; }
     const mappedMetrics = Object.keys(metricCells);
     if (mappedMetrics.length === 0) { alert("Please select at least one metric column"); return; }
-    if (matchMode === "rolling" && !tabPattern.trim()) {
+    if (matchMode !== "exact" && !tabPattern.trim()) {
       alert("Enter a tab pattern for auto-detect, or switch to exact match.");
       return;
     }
@@ -312,7 +348,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
         data_start_row: dateCell.row + 1,
         mapping: buildMapping(),
         format_type: "visual",
-        tab_pattern: matchMode === "rolling" ? tabPattern.trim() : null,
+        tab_pattern: matchMode !== "exact" ? tabPattern.trim() : null,
         tab_match_mode: matchMode,
       });
       setSaved(true);
@@ -367,11 +403,11 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       </div>
 
       {tabs.length > 0 && (
-        <div style={{ border: `1px solid ${matchMode === "rolling" ? c.green : c.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, background: matchMode === "rolling" ? "#F0FDF4" : c.bg }}>
+        <div style={{ border: `1px solid ${matchMode !== "exact" ? c.green : c.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, background: matchMode !== "exact" ? "#F0FDF4" : c.bg }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: c.ink, cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={matchMode === "rolling"}
+              checked={matchMode !== "exact"}
               onChange={(e) => {
                 if (e.target.checked) {
                   const { pattern } = proposeTabPattern(selectedTab);
@@ -382,22 +418,32 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                 }
               }}
             />
-            Auto-detect new monthly tabs (rolling match)
+            Auto-detect new monthly tabs ({matchMode === "template" ? "pattern match" : "rolling match"})
           </label>
-          {matchMode === "rolling" ? (
+          {matchMode !== "exact" ? (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 11, color: c.sub, marginBottom: 5 }}>
-                Reads every tab that contains this text <em>and</em> a month name (e.g. “June”, “Jul’26”). Future months are picked up automatically each sync — no re-config needed.
+                {matchMode === "template" || tabPattern.includes(TEMPLATE_TOKEN)
+                  ? <>Reads only tabs whose name is exactly this pattern with <strong>{"{month}"}</strong> replaced by a month (e.g. “June’26”, “Jul’26”). Similar tabs with extra words (e.g. “…_TWS_…”) are excluded. Future months of the same shape are picked up automatically.</>
+                  : <>Reads every tab that contains this text <em>and</em> a month name (e.g. “June”, “Jul’26”). Future months are picked up automatically each sync — no re-config needed.</>}
               </div>
               <input
                 value={tabPattern}
-                onChange={(e) => setTabPattern(e.target.value)}
-                placeholder="e.g. RZP_Ctrl8"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTabPattern(v);
+                  // "{month}" in the pattern switches to exact-shape template matching.
+                  setMatchMode(v.includes(TEMPLATE_TOKEN) ? "template" : "rolling");
+                }}
+                placeholder="e.g. RZP_Ctrl8 or RZP_{month}"
                 style={{ width: "100%", maxWidth: 320, border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 10px", fontSize: 12, boxSizing: "border-box" }}
               />
               {(() => {
-                const p = tabPattern.trim().toLowerCase();
-                const matched = tabs.filter((t) => (!p || t.toLowerCase().includes(p)) && tabHasMonth(t));
+                const p = tabPattern.trim();
+                const isTpl = p.includes(TEMPLATE_TOKEN);
+                const matched = tabs.filter((t) => isTpl
+                  ? tabMatchesTemplate(t, p)
+                  : (!p || t.toLowerCase().includes(p.toLowerCase())) && tabHasMonth(t));
                 return (
                   <div style={{ fontSize: 11, color: matched.length ? c.green : c.red, marginTop: 6 }}>
                     {!p
@@ -405,6 +451,9 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       : matched.length
                         ? `Matches ${matched.length} existing tab(s): ${matched.slice(0, 6).join(", ")}${matched.length > 6 ? " …" : ""}`
                         : "No existing tabs match — check the pattern."}
+                    {!isTpl && p && matched.length > 1 && (
+                      <span style={{ color: c.muted }}> · matching too many? Run Preview / Dry-run and untick the tabs you don’t want — a stricter pattern will be suggested.</span>
+                    )}
                   </div>
                 );
               })()}
@@ -504,12 +553,12 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             <button onClick={handleSave} disabled={saving || !hasAllSelections} style={{ background: hasAllSelections ? c.green : c.line, color: hasAllSelections ? "#fff" : c.muted, border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: hasAllSelections ? "pointer" : "not-allowed" }}>
               {saving ? "Saving…" : saved ? "Saved ✓" : "Save Configuration"}
             </button>
-            <button onClick={handlePreview} disabled={previewing || !dateCell} title="Read-only dry run — checks which tabs/months this config will pull and whether data is filled, without writing anything" style={{ background: "#fff", color: dateCell ? c.blue : c.muted, border: `1px solid ${dateCell ? c.blue : c.line}`, borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: dateCell ? "pointer" : "not-allowed" }}>
+            <button onClick={() => handlePreview()} disabled={previewing || !dateCell} title="Read-only dry run — checks which tabs/months this config will pull and whether data is filled, without writing anything" style={{ background: "#fff", color: dateCell ? c.blue : c.muted, border: `1px solid ${dateCell ? c.blue : c.line}`, borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: dateCell ? "pointer" : "not-allowed" }}>
               {previewing ? "Checking…" : "Preview / Dry-run"}
             </button>
           </div>
 
-          {preview && <PreviewResults preview={preview} />}
+          {preview && <PreviewResults preview={preview} onAdoptPattern={adoptPattern} />}
         </>
       )}
     </div>
@@ -526,17 +575,42 @@ const PREVIEW_STATUS = {
   check_config: { color: c.red, bg: "#FDE7E2", label: "Check config" },
 };
 
-function PreviewResults({ preview }) {
+function PreviewResults({ preview, onAdoptPattern }) {
   const matched = preview.matched || [];
   const skipped = preview.skipped || [];
   const readyCount = matched.filter((t) => t.status === "ready").length;
   const awaiting = matched.filter((t) => t.status === "awaiting_data").length;
   const issues = matched.filter((t) => t.status === "check_config").length;
 
+  // Tick/untick tabs → infer a stricter template pattern for future syncs.
+  // Only meaningful in pattern modes (a substring pattern often over-matches,
+  // e.g. "RZP" swallowing "RZP_TWS_…"); exact mode reads one tab anyway.
+  const [excluded, setExcluded] = useState({});
+  useEffect(() => { setExcluded({}); }, [preview]);
+  const selectable = !!onAdoptPattern && (preview.match_mode === "rolling" || preview.match_mode === "template") && matched.length > 1;
+  const kept = matched.filter((t) => !excluded[t.tab]);
+  const removed = matched.filter((t) => excluded[t.tab]);
+  let inferred = null;
+  let inferNote = null;
+  if (selectable && removed.length > 0) {
+    if (kept.length === 0) {
+      inferNote = { tone: "warn", text: "Tick at least one tab to keep." };
+    } else {
+      const keptTpls = [...new Set(kept.map((t) => { const x = tabTemplate(t.tab); return x ? normalizeTemplate(x) : null; }))];
+      if (keptTpls.length === 1 && keptTpls[0]) {
+        const clash = removed.some((t) => { const x = tabTemplate(t.tab); return x && normalizeTemplate(x) === keptTpls[0]; });
+        if (!clash) inferred = tabTemplate(kept[0].tab);
+        else inferNote = { tone: "warn", text: "Some unticked tabs have the same name shape as the ticked ones — a monthly pattern can’t tell them apart. Consider exact match or renaming the tabs." };
+      } else {
+        inferNote = { tone: "warn", text: "The ticked tabs don’t share a single monthly name shape — keep one consistent series ticked (e.g. only “RZP_<Month>”)." };
+      }
+    }
+  }
+
   return (
     <div style={{ marginTop: 14, border: `1px solid ${c.line}`, borderRadius: 10, overflow: "hidden" }}>
       <div style={{ padding: "10px 12px", background: c.bg, borderBottom: `1px solid ${c.line}`, fontSize: 12, color: c.ink, fontWeight: 700, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <span>Dry-run — {preview.match_mode === "rolling" ? `rolling “${preview.pattern}”` : `exact “${preview.tab_name || "—"}”`}</span>
+        <span>Dry-run — {preview.match_mode === "template" ? `pattern “${preview.pattern}”` : preview.match_mode === "rolling" ? `rolling “${preview.pattern}”` : `exact “${preview.tab_name || "—"}”`}</span>
         <span style={{ fontWeight: 600, color: c.muted }}>
           {matched.length} tab(s) matched · {readyCount} ready · {awaiting} awaiting · {issues} to check
         </span>
@@ -548,12 +622,17 @@ function PreviewResults({ preview }) {
       {preview.converted_office_file && (
         <div style={{ padding: "6px 12px", fontSize: 11, color: c.muted }}>Note: this is an uploaded Excel file — read via a temporary conversion (same as sync).</div>
       )}
+      {selectable && removed.length === 0 && (
+        <div style={{ padding: "8px 12px", fontSize: 11, color: c.sub, borderBottom: `1px solid ${c.line}`, background: "#F8FAFF" }}>
+          Matching more tabs than you want? Untick the ones to exclude — the system will detect a stricter pattern and ask you to confirm it for future syncs.
+        </div>
+      )}
 
       {matched.length > 0 && (
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11 }}>
           <thead>
             <tr style={{ background: "#F1F5F9", color: c.muted }}>
-              {["Tab", "Month", "Status", "Dated rows", "Rows w/ data", "Date range", "Note"].map((h) => (
+              {(selectable ? ["Sync?"] : []).concat(["Tab", "Month", "Status", "Dated rows", "Rows w/ data", "Date range", "Note"]).map((h) => (
                 <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontWeight: 700, borderBottom: `1px solid ${c.line}` }}>{h}</th>
               ))}
             </tr>
@@ -561,9 +640,20 @@ function PreviewResults({ preview }) {
           <tbody>
             {matched.map((t) => {
               const s = PREVIEW_STATUS[t.status] || PREVIEW_STATUS.check_config;
+              const isExcluded = !!excluded[t.tab];
               return (
-                <tr key={t.tab} style={{ borderBottom: `1px solid #F1F5F9` }}>
-                  <td style={{ padding: "6px 10px", fontWeight: 600, color: c.ink }}>{t.tab}</td>
+                <tr key={t.tab} style={{ borderBottom: `1px solid #F1F5F9`, opacity: isExcluded ? 0.45 : 1 }}>
+                  {selectable && (
+                    <td style={{ padding: "6px 10px" }}>
+                      <input
+                        type="checkbox"
+                        checked={!isExcluded}
+                        onChange={() => setExcluded((prev) => ({ ...prev, [t.tab]: !prev[t.tab] }))}
+                        style={{ cursor: "pointer" }}
+                      />
+                    </td>
+                  )}
+                  <td style={{ padding: "6px 10px", fontWeight: 600, color: c.ink, textDecoration: isExcluded ? "line-through" : "none" }}>{t.tab}</td>
                   <td style={{ padding: "6px 10px", color: c.sub }}>{t.month || "—"}</td>
                   <td style={{ padding: "6px 10px" }}>
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: s.bg, color: s.color }}>{s.label}</span>
@@ -577,6 +667,23 @@ function PreviewResults({ preview }) {
             })}
           </tbody>
         </table>
+      )}
+
+      {inferred && (
+        <div style={{ padding: "10px 12px", borderTop: `1px solid ${c.line}`, background: "#E3F6EE", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 12, color: c.ink }}>
+            Detected pattern from your selection: <strong style={{ fontFamily: "monospace" }}>{inferred}</strong>
+            <div style={{ fontSize: 11, color: c.sub, marginTop: 2 }}>
+              Only tabs of this exact shape sync — including future months (e.g. next month’s tab). The {removed.length} unticked tab(s) and their future months stay excluded.
+            </div>
+          </div>
+          <button onClick={() => onAdoptPattern(inferred)} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+            Confirm pattern & re-check
+          </button>
+        </div>
+      )}
+      {inferNote && (
+        <div style={{ padding: "8px 12px", fontSize: 11, color: c.amber, borderTop: `1px solid ${c.line}`, background: "#FEF3E2" }}>{inferNote.text}</div>
       )}
 
       {matched.length === 0 && !preview.error && (

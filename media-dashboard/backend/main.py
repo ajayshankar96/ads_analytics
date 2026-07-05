@@ -434,9 +434,9 @@ async def preview_column_mapping(request: Request, db: AsyncSession = Depends(ge
         match_mode = body.get("tab_match_mode") or ("rolling" if body.get("tab_pattern") else "exact")
         col_mapping = {
             "tab_name": body.get("tab_name", ""),
-            # tab_pattern only drives rolling; force-clear it in exact mode so
-            # resolution matches ingest semantics exactly.
-            "tab_pattern": (body.get("tab_pattern") or "") if match_mode == "rolling" else "",
+            # tab_pattern only drives rolling/template; force-clear it in exact
+            # mode so resolution matches ingest semantics exactly.
+            "tab_pattern": (body.get("tab_pattern") or "") if match_mode != "exact" else "",
             "tab_match_mode": match_mode,
             "mapping": body.get("mapping", {}) or {},
             "format_type": body.get("format_type", "visual"),
