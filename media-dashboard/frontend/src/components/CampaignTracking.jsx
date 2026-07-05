@@ -684,7 +684,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           )}
         </div>
         <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px" }}>
-          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Segment (Advertiser)", campaign.segment_adv], ["Publisher Metrics", selectedPubMetrics], ["Advertiser Metrics", selectedAdvMetrics]].map(([label, val]) => (
+          {[["Advertiser Data URL", campaign.advertiser_data_url], ["Segment (Advertiser)", campaign.segment_adv], ["Publisher Data URL", campaign.publisher_data_url], ["Segment (Publisher)", campaign.segment_pub], ["Publisher Metrics", selectedPubMetrics], ["Advertiser Metrics", selectedAdvMetrics]].map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: `1px solid #F7F8FA`, fontSize: 12 }}>
               <span style={{ color: c.muted, minWidth: 140 }}>{label}</span>
               <span style={{ color: c.ink, fontWeight: 500, textAlign: "right", maxWidth: "60%", wordBreak: "break-all" }}>{val && val.startsWith && val.startsWith("http") ? <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: c.blue }}>{val}</a> : (val || "—")}</span>
@@ -735,8 +735,11 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           )}
           {pubDataUrl && <a href={pubDataUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: c.blue, marginTop: 3, display: "inline-block" }}>Open sheet ↗</a>}
         </div>
-        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)} placeholder="e.g. Razorpay_Boat" /></div>
+        {/* Order matters: this is a 2-col grid, so Segment (Advertiser) sits
+            under the Advertiser URL and Segment (Publisher) under the
+            Publisher URL. */}
         <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Advertiser) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentAdv} onChange={(e) => setSegmentAdv(e.target.value)} placeholder="e.g. Partnership_Razorpay" /></div>
+        <div><label style={{ fontSize: 11, fontWeight: 600, color: c.muted, display: "block", marginBottom: 4 }}>Segment (Publisher) *</label><input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }} value={segmentPub} onChange={(e) => setSegmentPub(e.target.value)} placeholder="e.g. Razorpay_Boat" /></div>
       </div>
 
       {/* Metric Selection */}
