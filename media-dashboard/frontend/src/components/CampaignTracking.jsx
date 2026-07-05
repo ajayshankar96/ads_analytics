@@ -192,6 +192,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   const [dateCell, setDateCell] = useState(null);
   const [metricCells, setMetricCells] = useState({});
   const [segCell, setSegCell] = useState(null);
+  // "cell" → the clicked cell is a LABEL naming the segment for the whole
+  // tab/block; "column" → per-row segment values (rows get filtered);
+  // null → user just clicked and must confirm which one it is.
+  const [segScope, setSegScope] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(false);
@@ -232,6 +236,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       setDateCell(null);
       setMetricCells({});
       setSegCell(null);
+      setSegScope(null);
       setMatchMode("exact");
       setTabPattern("");
       getColumnMappings(name, pickerType, sheetUrl, campaignId).then((d) => {
@@ -246,8 +251,12 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             const startRow = mapping.date_start_row || mapping.data_start_row || 1;
             setDateCell({ row: startRow - 1, col: mapping.date_col_index });
           }
-          if (mapping.segment_col_index != null) {
+          if (mapping.segment_cell && mapping.segment_cell.col != null) {
+            setSegCell({ row: (mapping.segment_cell.row || 1) - 1, col: mapping.segment_cell.col, value: mapping.segment_cell.value || "" });
+            setSegScope("cell");
+          } else if (mapping.segment_col_index != null) {
             setSegCell({ col: mapping.segment_col_index });
+            setSegScope("column");
           }
           // Saved fingerprint carries the sheet's segment values — surface them
           // so the Setup segment dropdown works without a live sheet read.
@@ -290,7 +299,13 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
 
   const handleCellClick = (rowIdx, colIdx) => {
     if (mode === "date") setDateCell({ row: rowIdx, col: colIdx });
-    else if (mode === "segment") setSegCell({ col: colIdx });
+    else if (mode === "segment") {
+      // Remember exactly what was clicked — the user then confirms whether the
+      // segment is just this cell (a label naming the whole tab/block) or the
+      // whole column (per-row segment values that filter rows on sync).
+      setSegCell({ row: rowIdx, col: colIdx, value: String((rows[rowIdx] || [])[colIdx] ?? "").trim() });
+      setSegScope(null);
+    }
     else setMetricCells((prev) => ({ ...prev, [mode]: { row: rowIdx, col: colIdx } }));
   };
 
@@ -309,10 +324,16 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     // generically, and the Setup form needs sheet segments for both parties.
     // Self-targeted sheets have no segment column: force null so sync never
     // row-filters on the brand-name segment.
-    const segIdx = !selfTargeted && segCell ? segCell.col : null;
+    // "column" scope → per-row segment values (segment_col_index, rows filtered);
+    // "cell" scope → a single label cell names the segment for the whole tab
+    // (segment_cell, sync skips the tab if the label doesn't match the filter).
+    const segIdx = !selfTargeted && segCell && segScope === "column" ? segCell.col : null;
+    const segCellCfg = !selfTargeted && segCell && segScope === "cell" && segCell.row != null
+      ? { row: segCell.row + 1, col: segCell.col, value: segCell.value || "" }
+      : null;
     return isPub
-      ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segIdx, metrics: metricsMapping }
-      : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, segment_col_index: segIdx, metrics: metricsMapping };
+      ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segIdx, segment_cell: segCellCfg, metrics: metricsMapping }
+      : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, segment_col_index: segIdx, segment_cell: segCellCfg, metrics: metricsMapping };
   };
 
   // overrides lets the dry-run's "confirm detected pattern" flow re-preview
@@ -354,6 +375,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     if (mappedMetrics.length === 0) { alert("Please select at least one metric column"); return; }
     if (!selfTargeted && !segCell) {
       alert("Select the Segment column in the sheet — the campaign's segment must come from the sheet.\n(If this sheet has no segment column, choose “Self-targeted” in the segment dropdown in the setup above.)");
+      return;
+    }
+    if (!selfTargeted && segCell && !segScope) {
+      alert("Confirm the segment selection — is the segment name just the selected cell, or the whole column?");
       return;
     }
     if (matchMode !== "exact" && !tabPattern.trim()) {
@@ -506,7 +531,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             })}
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
-            {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click any cell in the Segment column — the campaign's segment below is then chosen from this column's values" : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
+            {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click the segment name in the sheet — either the single label cell that names the segment, or any cell in the per-row Segment column. You'll confirm which one it is after clicking." : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
             <span style={{ opacity: 0.8 }}> · drag a column header's edge to resize it, hover a cell to see its full value</span>
           </div>
 
@@ -536,7 +561,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       const cellVal = row[colIdx] || "";
                       const isDateSel = dateCell && dateCell.row === rowIdx && dateCell.col === colIdx;
                       const isDateCol = dateCell && dateCell.col === colIdx && rowIdx >= dateCell.row;
-                      const isSegCol = segCell && segCell.col === colIdx;
+                      // "cell" scope highlights only the clicked label cell;
+                      // "column" (or unconfirmed) tints the whole column.
+                      const isSegSel = segCell && segCell.row != null && segCell.row === rowIdx && segCell.col === colIdx && segScope !== "column";
+                      const isSegCol = segCell && segCell.col === colIdx && segScope !== "cell";
                       let metricMatch = null;
                       let metricColMatch = null;
                       for (const [mk, mc] of Object.entries(metricCells)) {
@@ -548,6 +576,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       let color = c.ink;
                       if (isDateSel) { bg = "#BFDBFE"; fontW = 700; color = c.blue; }
                       else if (metricMatch) { bg = `${getMetricColor(metricMatch)}20`; fontW = 700; color = getMetricColor(metricMatch); }
+                      else if (isSegSel) { bg = "#FBE3B8"; fontW = 700; color = c.amber; }
                       else if (isSegCol) { bg = "#FEF3E2"; }
                       else if (isDateCol) { bg = "#EFF6FF"; }
                       else if (metricColMatch) { bg = `${getMetricColor(metricColMatch)}08`; }
@@ -565,9 +594,44 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             </table>
           </div>
 
+          {!selfTargeted && segCell && segScope === null && (
+            <div style={{ border: `1px solid ${c.amber}88`, background: "#FDF3E3", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 8 }}>
+                Segment: you clicked {colLetters[segCell.col]}{(segCell.row ?? 0) + 1}{segCell.value ? <> — “{segCell.value}”</> : null}. Is the segment name just this cell, or the whole column?
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => {
+                    setSegScope("cell");
+                    // The label IS the segment value — feed it straight to the
+                    // Setup segment dropdown so the user can pick it there.
+                    if (onSegmentValues && segCell.value) onSegmentValues([segCell.value]);
+                  }}
+                  style={{ background: c.amber, color: "#fff", border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Just this cell — it names the segment for the whole tab
+                </button>
+                <button
+                  onClick={() => setSegScope("column")}
+                  style={{ background: "#fff", color: c.amber, border: `1px solid ${c.amber}`, borderRadius: 7, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Whole column — each row has its own segment value
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ fontSize: 12, color: c.muted, marginBottom: 12, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <span>Date: <strong style={{ color: dateCell ? c.blue : c.muted }}>{dateCell ? `${colLetters[dateCell.col]}${dateCell.row + 1}` : "—"}</strong></span>
-            {isPub && segCell && <span>Segment: <strong style={{ color: c.amber }}>Col {colLetters[segCell.col]}</strong></span>}
+            {!selfTargeted && segCell && (
+              <span>Segment: <strong style={{ color: c.amber }}>
+                {segScope === "cell"
+                  ? `${colLetters[segCell.col]}${(segCell.row ?? 0) + 1}${segCell.value ? ` (cell “${segCell.value}”)` : " (cell)"}`
+                  : segScope === "column"
+                    ? `Col ${colLetters[segCell.col]}`
+                    : `${colLetters[segCell.col]}${segCell.row != null ? segCell.row + 1 : ""} — confirm cell vs column`}
+              </strong></span>
+            )}
             {metrics.map((m, i) => {
               const cell = metricCells[m.key];
               const col = METRIC_COLORS[i % METRIC_COLORS.length];

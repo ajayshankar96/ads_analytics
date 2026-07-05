@@ -422,6 +422,28 @@ def _self_targeted(campaign, side: str = "advertiser") -> bool:
     return bool(getattr(campaign, attr, False))
 
 
+def _segment_cell_cfg(mapping: Dict) -> Optional[tuple]:
+    """(row_1based, col) of a single-cell segment LABEL, or None.
+
+    A sheet declares its segment one of two ways: a per-row segment COLUMN
+    (segment_col_index — rows get filtered), or ONE label cell above/beside
+    the data block that names the segment for the whole tab (segment_cell,
+    picked via "just this cell" in the visual picker)."""
+    sc = mapping.get("segment_cell") or {}
+    try:
+        return (int(sc["row"]), int(sc["col"]))
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _read_segment_cell(rows: List[List], seg_cell: Optional[tuple]) -> str:
+    if not seg_cell:
+        return ""
+    r, col = seg_cell
+    row = rows[r - 1] if 0 < r <= len(rows) else []
+    return str(row[col]).strip() if len(row) > col else ""
+
+
 def _matches_segment(row_segment: str, target_segments: str) -> bool:
     if not target_segments or not target_segments.strip():
         return True
@@ -786,6 +808,7 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
     seg_col = mapping.get("segment_col_index")
     if seg_col is not None:
         seg_col = int(seg_col)
+    seg_cell = _segment_cell_cfg(mapping)
     metrics_cfg = mapping.get("metrics", {})
 
     converted_id = None
@@ -815,6 +838,18 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
             rows = result.get('values', [])
             if len(rows) < data_start:
                 continue
+
+            # Single-cell segment label: the whole tab belongs to one segment.
+            # If the label no longer matches this campaign's segment, the block
+            # was reshuffled/repurposed — skip rather than ingest foreign data.
+            # (Blank label = benign, e.g. an unfilled month tab.)
+            if seg_cell and segment_filter:
+                label = _read_segment_cell(rows, seg_cell)
+                if label and not _matches_segment(label, segment_filter):
+                    logger.warning(
+                        f"  Tab {tab_name}: segment label cell reads '{label}' which "
+                        f"doesn't match '{segment_filter}' — skipping tab")
+                    continue
 
             data_rows = rows[data_start - 1:]
             slash_order = _detect_slash_order(
@@ -1190,6 +1225,7 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
             seg_col = int(seg_col)
         except (TypeError, ValueError):
             seg_col = None
+    seg_cell = _segment_cell_cfg(mapping)
     seg_values_seen: set = set()
 
     converted_id = None
@@ -1255,6 +1291,11 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
                 entry["note"] = f"could not read tab ({e})"
                 report["matched"].append(entry)
                 continue
+
+            if seg_col is None and seg_cell:
+                v = _read_segment_cell(rows, seg_cell)
+                if v:
+                    seg_values_seen.add(v)
 
             data_rows = rows[data_start - 1:] if len(rows) >= data_start else []
             filled = [r for r in data_rows
@@ -1409,6 +1450,7 @@ def _scan_sheet(service, sheet_url: str, col_mapping: Dict) -> Dict[str, Any]:
                                  mapping.get("date_start_row", 1)) or 1)
     date_col = cols.get("date", 0)
     seg_col = cols.get("segment")
+    seg_cell = _segment_cell_cfg(mapping)
     metric_cols = {k: v for k, v in cols.items() if k not in ("date", "segment")}
 
     converted_id = None
@@ -1461,6 +1503,11 @@ def _scan_sheet(service, sheet_url: str, col_mapping: Dict) -> Dict[str, Any]:
                     if len(r) > ci and str(r[ci]).strip() and _safe_float(r[ci]) != 0:
                         data_dates.append(ds)
                         break
+            # Single-cell segment label counts as the tab's segment value.
+            if seg_col is None and seg_cell:
+                v = _read_segment_cell(rows, seg_cell)
+                if v:
+                    seg_vals.add(v)
             # Header detection anchors on the first REAL data row — a
             # mis-clicked data_start_row otherwise reads a totals row.
             info["headers"] = _header_cells(rows, data_start, cols, first_parsed_idx)
@@ -1591,12 +1638,13 @@ def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
     # no segment column; the segment IS the brand).
     live_segments = sorted({v for t in readable for v in t["segment_values"]})
     out["segment_values"] = live_segments
-    seg_col_mapped = "segment" in _mapped_columns(col_mapping.get("mapping", {}) or {})
-    if not self_targeted and seg_col_mapped and segment_filter and readable:
+    m0 = col_mapping.get("mapping", {}) or {}
+    seg_configured = ("segment" in _mapped_columns(m0)) or bool(_segment_cell_cfg(m0))
+    if not self_targeted and seg_configured and segment_filter and readable:
         if live_segments and not any(_matches_segment(v, segment_filter) for v in live_segments):
             alert("segment_not_found", "error",
                   f"Configured segment “{segment_filter}” no longer appears in "
-                  f"the sheet's segment column (found: "
+                  f"the sheet's segment column/label (found: "
                   f"{', '.join(live_segments[:8])}{'…' if len(live_segments) > 8 else ''}) "
                   f"— rows will be filtered out and metrics will flatline.")
 
