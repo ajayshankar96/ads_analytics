@@ -342,6 +342,8 @@ export const getAllocations = (advId, month) =>
 export const getAllAllocationsForMonth = (month) =>
   apiFetch(`/api/allocations${buildQuery({ month })}`);
 
+export const getAllocationSummary = () => apiFetch("/api/allocations/summary");
+
 export const saveAllocations = (advId, month, allocations) =>
   apiFetch(`/api/advertisers/${advId}/allocations`, {
     method: "POST",

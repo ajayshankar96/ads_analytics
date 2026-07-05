@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { getAdvertisers, getPublishers, getAllAllocationsForMonth, saveAllocations, createPublisher } from "../api";
+import { getAdvertisers, getPublishers, getAllAllocationsForMonth, getAllocationSummary, saveAllocations, createPublisher } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", amber: "#B7791F", bg: "#F7F8FA" };
 
@@ -115,6 +115,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
   const [advertisers, setAdvertisers] = useState([]);
   const [publishers, setPublishers] = useState([]);
   const [allocMap, setAllocMap] = useState({});
+  const [monthlyAllocated, setMonthlyAllocated] = useState({}); // {"2026-06": 125000}
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState({});
   const [savingAdv, setSavingAdv] = useState(null);
@@ -123,10 +124,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
   const load = async () => {
     setLoading(true);
     try {
-      const [advRes, pubRes, allocRes] = await Promise.all([
+      const [advRes, pubRes, allocRes, summaryRes] = await Promise.all([
         getAdvertisers(),
         getPublishers(),
         getAllAllocationsForMonth(month),
+        getAllocationSummary(),
       ]);
       const advs = (advRes.advertisers || []).filter((a) => a.status === "ONBOARDED");
       const pubs = pubRes.publishers || [];
@@ -139,6 +141,9 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         map[al.advertiser_id][al.publisher_id] = al;
       });
       setAllocMap(map);
+      const summary = {};
+      (summaryRes.summary || []).forEach((r) => { summary[r.month] = r.allocated; });
+      setMonthlyAllocated(summary);
       setDirty({});
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -224,14 +229,25 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     await load();
   };
 
-  // "Budget loaded" is month-scoped: an advertiser's budget counts toward the
-  // month they were onboarded (onboarded_at; created_at as fallback for rows
-  // predating the field).
+  // "Budget loaded" is month-scoped with carry-forward: an advertiser's budget
+  // counts toward the month they were onboarded (onboarded_at; created_at as
+  // fallback for rows predating the field), and whatever was left unallocated
+  // in earlier months rolls into the selected month's available budget.
   const onboardMonth = (a) => (a.onboarded_at || a.created_at || "").slice(0, 7);
   const monthAdvertisers = advertisers.filter((a) => onboardMonth(a) === month);
-  const totalBudgetLoaded = monthAdvertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const newBudget = monthAdvertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const priorLoaded = advertisers.reduce((s, a) => {
+    const m = onboardMonth(a);
+    return m && m < month ? s + parseBudget(a.budget_hint) : s;
+  }, 0);
+  const priorAllocated = Object.entries(monthlyAllocated).reduce(
+    (s, [m, v]) => (m < month ? s + v : s), 0
+  );
+  const carryIn = priorLoaded - priorAllocated;
+  const totalBudgetLoaded = newBudget + carryIn;
   const tableBudgetTotal = advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
   const totalAllocatedAll = grandTotal;
+  const fmtAmt = (n) => (n === 0 ? "₹0" : `${n < 0 ? "−" : ""}${fmtInr(Math.abs(n))}`);
   const allocationPct = totalBudgetLoaded > 0 ? (totalAllocatedAll / totalBudgetLoaded * 100) : 0;
   const activePubs = publishers.filter((p) => pubTotals[p.id] > 0).length;
   const unallocated = totalBudgetLoaded - totalAllocatedAll;
@@ -262,8 +278,8 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Budget Loaded</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtInr(totalBudgetLoaded)}</div>
-            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{monthAdvertisers.length} advertiser{monthAdvertisers.length === 1 ? "" : "s"} onboarded this month</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtAmt(totalBudgetLoaded)}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{fmtAmt(newBudget)} new · {fmtAmt(carryIn)} carried forward</div>
           </div>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Allocated</div>
@@ -277,8 +293,8 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           </div>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Unallocated</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: unallocated > 0 ? c.red : c.green }}>{fmtInr(unallocated)}</div>
-            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{unallocated > 0 ? "Needs attention" : "Fully allocated"}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: unallocated > 0 ? c.amber : c.green }}>{fmtAmt(unallocated)}</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{unallocated > 0 ? "Carries forward to next month" : "Fully allocated"}</div>
           </div>
         </div>
       )}

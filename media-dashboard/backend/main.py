@@ -1758,6 +1758,19 @@ async def get_all_allocations(month: str, db: AsyncSession = Depends(get_db)):
     return {"allocations": allocs}
 
 
+@app.get("/api/allocations/summary")
+async def allocations_monthly_summary(db: AsyncSession = Depends(get_db)):
+    """Total allocated per month across all advertisers. Budget Allocation uses
+    this for carry-forward: unallocated budget from prior months rolls into the
+    selected month's available budget."""
+    result = await db.execute(text(
+        "SELECT month, COALESCE(SUM(amount), 0) FROM rmn_budget_allocations "
+        "WHERE status IS DISTINCT FROM 'CANT_GO_LIVE' "
+        "GROUP BY month ORDER BY month"
+    ))
+    return {"summary": [{"month": r[0], "allocated": int(r[1])} for r in result.fetchall()]}
+
+
 class AllocationItem(BaseModel):
     publisher_id: str
     amount: Optional[int] = None
