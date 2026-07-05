@@ -1967,22 +1967,29 @@ async def pg_aggregates(
     params = {}
     where = _pg_where(params, advertiser, publisher, dateFrom, dateTo, segment)
     revenue_expr = f"COALESCE(NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Revenue', {PG_ADVERTISER_METRICS_EXPR}->>'revenue'), '')::float, 0)"
+    # Advertiser-side clicks live in the advertiser_metrics JSON (only populated when
+    # the campaign's advertiser mapping includes a clicks column); the `clicks` column
+    # itself always holds publisher-sheet clicks.
+    adv_clicks_expr = f"COALESCE(NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Clicks', {PG_ADVERTISER_METRICS_EXPR}->>'clicks'), '')::float, 0)"
     direct_adv_spends_expr = f"NULLIF(COALESCE({PG_ADVERTISER_METRICS_EXPR}->>'Spends', {PG_ADVERTISER_METRICS_EXPR}->>'spends'), '')::float"
     adv_spends_expr = (
         "CASE "
         "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
         f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
     )
-    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM({adv_clicks_expr}),0) as adv_clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, pub_spends, orders = int(row.impressions), int(row.clicks), float(row.pub_spends), int(row.orders)
+    adv_clicks = int(row.adv_clicks)
     # Count distinct advertisers/publishers
     count_sql = f"SELECT COUNT(DISTINCT advertiser) as adv_count, COUNT(DISTINCT publisher) as pub_count, COALESCE(SUM(distribution),0) as distribution, COALESCE(SUM(redirections),0) as redirections, COUNT(*) as total_rows FROM rmn_campaign_metrics{where}"
     counts = (await db.execute(text(count_sql), params)).one()
     dist = int(counts.distribution)
     return {
         "impressions": imp, "distribution": dist, "impressionsAndDistribution": imp + dist,
-        "clicks": clicks, "spends": round(pub_spends, 2), "raw_spends": round(float(row.raw_spends), 2), "orders": orders,
+        # clicks = pub + adv total (card headline); split fields drive the card subtext.
+        "clicks": clicks + adv_clicks, "publisher_clicks": clicks, "advertiser_clicks": adv_clicks,
+        "spends": round(pub_spends, 2), "raw_spends": round(float(row.raw_spends), 2), "orders": orders,
         "ctr": round((clicks / imp * 100) if imp > 0 else 0, 2),
         "cpm": round((pub_spends / imp * 1000) if imp > 0 else 0, 2),
         "cpc": round((pub_spends / clicks) if clicks > 0 else 0, 2),

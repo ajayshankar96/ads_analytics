@@ -146,7 +146,15 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
       {/* KPI Cards */}
       <div style={s.grid}>
         <KPICard label="Imp + Distribution" value={fmt(aggs.impressionsAndDistribution)} sub={`Imp: ${fmt(aggs.impressions)} | Dist: ${fmt(aggs.distribution)}`} />
-        <KPICard label="Clicks" value={fmt(aggs.clicks)} sub={`CTR: ${aggs.ctr}%`} />
+        <KPICard
+          label="Clicks"
+          value={fmt(aggs.clicks)}
+          // Postgres source returns the adv/pub split; sheet source doesn't, so fall back to CTR there.
+          sub={aggs.publisher_clicks != null
+            ? `Adv: ${fmt(aggs.advertiser_clicks || 0)} | Pub: ${fmt(aggs.publisher_clicks)}`
+            : `CTR: ${aggs.ctr}%`}
+        />
+
         <KPICard label="Pub Spends" value={`₹${fmt(aggs.spends)}`} sub={`CPM: ₹${aggs.cpm}`} />
         {aggs.hasQL && <KPICard label="QL" value={fmt(aggs.ql)} sub={`CPQL: ₹${aggs.cpql}`} />}
         {aggs.hasQQG && <KPICard label="QQG" value={fmt(aggs.qqg)} sub={`CPQQG: ₹${aggs.cpqqg}`} />}
