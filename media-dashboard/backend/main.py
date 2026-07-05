@@ -562,6 +562,29 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
                 health = await asyncio.to_thread(
                     etl_worker.check_sheet_health, service, url, cm,
                     cm.get("sheet_fingerprint"), seg or "", bool(self_targeted))
+                # Mappings saved before fingerprints existed have no baseline.
+                # If the sheet looks clean (no error-severity alerts), capture
+                # one now so drift detection works from the next scan onward.
+                if (cm.get("sheet_fingerprint") is None and cm.get("id") is not None
+                        and not any(a.get("severity") == "error"
+                                    for a in health.get("alerts", []))):
+                    try:
+                        fp = await asyncio.to_thread(
+                            etl_worker.capture_sheet_fingerprint, service, url, cm)
+                        if fp:
+                            await db.execute(text(
+                                "UPDATE rmn_column_mappings SET sheet_fingerprint = :fp "
+                                "WHERE id = :id"
+                            ), {"fp": json.dumps(fp), "id": cm["id"]})
+                            await db.commit()
+                            cm["sheet_fingerprint"] = fp
+                            health["alerts"] = [a for a in health["alerts"]
+                                                if a.get("type") != "no_baseline"]
+                            health["fingerprint_captured_at"] = fp.get("captured_at")
+                            health["baseline_auto_captured"] = True
+                    except Exception as fp_err:
+                        logger.warning(f"Baseline auto-capture failed for "
+                                       f"{cid}/{side}: {fp_err}")
                 scan_cache[cache_key] = health
             entry.update(health)
             sheets.append(entry)

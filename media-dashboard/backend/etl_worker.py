@@ -707,7 +707,7 @@ async def _load_column_mapping(
     order_sql = "CASE " + " ".join(order_parts + ["ELSE 2"]) + " END, updated_at DESC"
     result = await db.execute(text(
         "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, "
-        "tab_pattern, tab_match_mode, sheet_fingerprint "
+        "tab_pattern, tab_match_mode, sheet_fingerprint, id "
         f"FROM rmn_column_mappings WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 1"
     ), params)
     row = result.fetchone()
@@ -718,6 +718,7 @@ async def _load_column_mapping(
     except (TypeError, ValueError):
         fingerprint = None
     return {
+        "id": row[10],
         "campaign_id": row[0],
         "sheet_url": row[1],
         "tab_name": row[2],
@@ -1493,15 +1494,32 @@ def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
         alert("sheet_unreadable", "error", f"Could not read sheet: {scan['error']}")
         return out
 
+    # Legacy mappings saved without a tab selection fall back to reading ALL
+    # tabs. Per-tab date alerts are pure noise there (junk tabs like "Summary"
+    # were never meant to be tracked) — collapse to ONE actionable alert.
+    tab_configured = bool((col_mapping.get("tab_pattern") or "").strip()
+                          or (col_mapping.get("tab_name") or "").strip())
+
     readable = [t for t in scan["tabs"] if not t["read_error"]]
     for t in scan["tabs"]:
         if t["read_error"]:
             alert("tab_unreadable", "error",
                   f"Tab “{t['tab']}” could not be read: {t['read_error']}")
-        elif t["dates_unparseable"]:
+        elif t["dates_unparseable"] and tab_configured:
             alert("dates_unparseable", "error",
                   f"Tab “{t['tab']}”: date column has values but none parse as "
                   f"dates — column moved or format changed?")
+
+    if not tab_configured and scan["resolved"]:
+        names = scan["resolved"]
+        # error when nothing parses anywhere (config is effectively dead);
+        # warning when data still flows but junk tabs ride along.
+        sev = "warning" if any(t["dated_rows"] > 0 for t in readable) else "error"
+        alert("no_tab_configured", sev,
+              f"No tab is selected in the saved sheet config — sync reads ALL "
+              f"{len(names)} tabs ({', '.join(names[:6])}{'…' if len(names) > 6 else ''}). "
+              f"Re-save the sheet config choosing the right tab (or a monthly pattern) "
+              f"so only intended tabs are tracked.")
 
     if not scan["resolved"]:
         cfg = (col_mapping.get("tab_pattern") or col_mapping.get("tab_name") or "").strip()
