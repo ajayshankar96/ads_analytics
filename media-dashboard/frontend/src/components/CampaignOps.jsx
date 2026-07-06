@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   getWorkflowCampaigns,
   getWorkflowStages,
@@ -82,6 +82,145 @@ function fmtBudget(n) {
   if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
   if (v >= 100000) return `₹${(v / 100000).toFixed(2)} L`;
   return `₹${v.toLocaleString("en-IN")}`;
+}
+
+// ── Asset form building blocks ───────────────────────────────────────────────
+const inputBase = { border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", boxSizing: "border-box", color: c.ink, background: "#fff" };
+
+function FieldBlock({ label, hint, filled, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        {label}
+        <span title={filled ? "Filled" : "Missing"} style={{ width: 7, height: 7, borderRadius: "50%", background: filled ? c.green : "#D3DCE6", display: "inline-block", flexShrink: 0 }} />
+      </label>
+      {children}
+      {hint && <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function SectionCard({ num, title, done, total, children }) {
+  const complete = done >= total;
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "16px 18px 6px", marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <span style={{ width: 22, height: 22, borderRadius: "50%", background: complete ? "#E3F6EE" : "#EAF0FF", color: complete ? c.green : c.blue, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {complete ? "✓" : num}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: c.ink, textTransform: "uppercase", letterSpacing: ".05em" }}>{title}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: complete ? c.green : c.muted }}>{done}/{total}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// Creative / logo: Drive upload (backend endpoint already existed, was never
+// wired to the UI) + live image preview + dimension check against the spec.
+function CreativeField({ campaignId, field, label, dims, value, onChange, canEdit }) {
+  const [uploading, setUploading] = useState(false);
+  const [imgSize, setImgSize] = useState(null); // {w,h} | "error" | null
+  const fileRef = useRef(null);
+  const mismatch = value && imgSize && imgSize !== "error" && (imgSize.w !== dims.w || imgSize.h !== dims.h);
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png"].includes(file.type)) { alert("Only JPG/PNG files are allowed"); return; }
+    setUploading(true);
+    try {
+      const res = await uploadCampaignAsset(campaignId, field, file);
+      setImgSize(null);
+      onChange(res.url);
+    } catch (e) { alert("Upload failed: " + e.message); }
+    finally { setUploading(false); }
+  };
+
+  return (
+    <div style={{ flex: 1, minWidth: 240, marginBottom: 14 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        {label}
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: value ? c.green : "#D3DCE6", display: "inline-block" }} />
+      </label>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ width: 96, height: 96, border: `1px solid ${c.line}`, borderRadius: 8, background: c.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+          {value ? (
+            <img src={value} alt={label}
+              style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+              onLoad={(e) => setImgSize({ w: e.target.naturalWidth, h: e.target.naturalHeight })}
+              onError={() => setImgSize("error")} />
+          ) : (
+            <span style={{ fontSize: 10, color: c.muted, textAlign: "center", lineHeight: 1.5 }}>{dims.w}×{dims.h}<br />preview</span>
+          )}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {canEdit && (
+            <>
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png" style={{ display: "none" }}
+                onChange={(e) => { handleFile(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+              <button onClick={() => fileRef.current && fileRef.current.click()} disabled={uploading}
+                style={{ border: `1.5px dashed ${c.blue}`, background: "#fff", color: c.blue, borderRadius: 7, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%", opacity: uploading ? 0.6 : 1 }}>
+                {uploading ? "Uploading…" : "⬆ Upload JPG/PNG"}
+              </button>
+            </>
+          )}
+          <input style={{ ...inputBase, fontSize: 12, marginTop: canEdit ? 6 : 0 }} disabled={!canEdit}
+            value={value || ""} onChange={(e) => { setImgSize(null); onChange(e.target.value); }}
+            placeholder={canEdit ? "…or paste image URL" : "—"} />
+          {value && imgSize === "error" && <div style={{ fontSize: 11, color: c.red, marginTop: 3 }}>⚠ Couldn't load an image from this URL</div>}
+          {mismatch && <div style={{ fontSize: 11, color: c.amber, marginTop: 3 }}>⚠ Image is {imgSize.w}×{imgSize.h} — expected {dims.w}×{dims.h}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function promoCodesSummary(raw) {
+  if (!raw) return "—";
+  try {
+    const d = JSON.parse(raw);
+    if (d.type === "none") return "No Code";
+    const validity = d.start_date || d.end_date ? ` · valid ${d.start_date || "…"} → ${d.end_date || "…"}` : "";
+    if (d.type === "dynamic") return `Dynamic (${(d.sheets_links || []).filter(Boolean).length} sheet${(d.sheets_links || []).filter(Boolean).length === 1 ? "" : "s"})${validity}`;
+    return `${d.codes || "Static Codes"}${validity}`;
+  } catch { return raw; }
+}
+
+// Read-only assets summary (post-handoff stages, or viewers): tidy label/value
+// grid instead of the edit checklist.
+function AssetsSummary({ assets }) {
+  const model = (assets.publisher_billing_model || "cpc").toUpperCase();
+  const billing = assets.publisher_billing_rate ? `${model} ₹${assets.publisher_billing_rate}` : "—";
+  const link = (url) => url ? <a href={url} target="_blank" rel="noreferrer" style={{ color: c.blue, wordBreak: "break-all", textDecoration: "none" }}>{url}</a> : "—";
+  const img = (url) => url ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <img src={url} alt="" style={{ width: 44, height: 44, objectFit: "contain", border: `1px solid ${c.line}`, borderRadius: 6, background: c.bg }} />
+      {link(url)}
+    </div>
+  ) : "—";
+  const text = (v) => v ? <span style={{ whiteSpace: "pre-wrap" }}>{v}</span> : "—";
+  const rows = [
+    ["Offer Title", text(assets.offer_title)],
+    ["Landing Link (UTM)", link(assets.landing_link)],
+    ["Details / T&C", text(assets.details_tc)],
+    ["How to Redeem", text(assets.how_to_redeem)],
+    ["Promo Code(s)", promoCodesSummary(assets.promo_codes)],
+    ["Creative (600×600)", img(assets.creative_url)],
+    ["Logo (300×300)", img(assets.logo_url)],
+    ["Targeting / Persona", text(assets.targeting)],
+    ["Daily Budget", fmtBudget(assets.daily_budget)],
+    ["Publisher Billing", billing],
+  ];
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "6px 18px", marginBottom: 12 }}>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ display: "flex", gap: 14, padding: "10px 0", borderBottom: `1px solid ${c.bg}`, fontSize: 13 }}>
+          <div style={{ width: 170, flexShrink: 0, color: c.muted, fontWeight: 600, fontSize: 12, paddingTop: 1 }}>{label}</div>
+          <div style={{ flex: 1, color: c.ink, minWidth: 0 }}>{value}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── Kanban Card ──────────────────────────────────────────────────────────────
@@ -273,6 +412,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   };
 
   const handleMarkAssetsReceived = async () => {
+    if (assetsDone < ASSET_TOTAL && !window.confirm(`${ASSET_TOTAL - assetsDone} field(s) are still empty. Mark assets received anyway?`)) return;
     await handleSave();
     try {
       await transitionCampaign(campaign.campaign_id, { to_stage: "ASSETS_RECEIVED" });
@@ -328,6 +468,28 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
   const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
   const isLive = stage === "LIVE";
 
+  // Asset completeness — 10 asks: 8 simple fields + promo codes + billing pair.
+  const has = (k) => !!String(assets[k] ?? "").trim();
+  const codeData = (() => { try { return JSON.parse(assets.promo_codes || "{}"); } catch { return {}; } })();
+  const codesFilled = codeData.type === "none"
+    || (codeData.type === "static" && !!(codeData.codes || "").trim())
+    || (codeData.type === "dynamic" && (codeData.sheets_links || []).some((l) => l && l.trim()));
+  const assetFilled = {
+    offer_title: has("offer_title"), details_tc: has("details_tc"), how_to_redeem: has("how_to_redeem"),
+    landing_link: has("landing_link"), promo_codes: codesFilled,
+    creative_url: has("creative_url"), logo_url: has("logo_url"),
+    targeting: has("targeting"), daily_budget: has("daily_budget"),
+    publisher_billing: !!(assets.publisher_billing_model && has("publisher_billing_rate")),
+  };
+  const secDone = {
+    offer: ["offer_title", "details_tc", "how_to_redeem"].filter((k) => assetFilled[k]).length,
+    tracking: ["landing_link", "promo_codes"].filter((k) => assetFilled[k]).length,
+    creatives: ["creative_url", "logo_url"].filter((k) => assetFilled[k]).length,
+    budget: ["targeting", "daily_budget", "publisher_billing"].filter((k) => assetFilled[k]).length,
+  };
+  const assetsDone = Object.values(assetFilled).filter(Boolean).length;
+  const ASSET_TOTAL = Object.keys(assetFilled).length;
+
   return (
     <div>
       {/* Header */}
@@ -352,79 +514,107 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
         )}
       </div>
 
-      {/* Assets list */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 10 }}>
-        Assets {stage === "OPS_SETUP" ? "· Fill all fields" : stage === "LIVE" ? "· Edit directly" : "· Received"}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-        {ASSET_FIELDS.filter((f) => f.type !== "hidden" && f.type !== "codes").map((f) => {
-          const rawVal = assets[f.key];
-          const val = rawVal === null || rawVal === undefined ? "" : String(rawVal);
-          const model = assets.publisher_billing_model || "cpc";
-          const filled = f.type === "publisher_billing" ? !!model && !!val.trim() : !!val.trim();
-          return (
-            <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: "50%", background: filled ? "#E3F6EE" : "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {filled ? <span style={{ color: c.green, fontSize: 13 }}>✓</span> : <span style={{ color: c.muted, fontSize: 13 }}>○</span>}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>{f.label}</div>
-                {filled && <div style={{ fontSize: 12, color: c.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 400 }}>{f.type === "publisher_billing" ? `${model.toUpperCase()} ₹${val}` : val}</div>}
-              </div>
-              {isAssetStage && canEdit && (
-                f.type === "publisher_billing" ? (
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <select
-                      value={model}
-                      onChange={(e) => setAssets({ ...assets, publisher_billing_model: e.target.value })}
-                      style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, outline: "none" }}
-                    >
-                      {PUBLISHER_BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
-                    <input
-                      style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 120, outline: "none" }}
-                      type="number"
-                      step="0.01"
-                      value={val}
-                      onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })}
-                      placeholder="Rate"
-                    />
-                  </div>
-                ) : f.type === "textarea" ? (
-                  <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 300, minHeight: 40, resize: "vertical", outline: "none" }}
-                    value={val} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })} placeholder="—" />
-                ) : (
-                  <input style={{ border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 250, outline: "none",
-                    ...(f.key === "offer_title" && campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
-                    value={val} onChange={(e) => setAssets({ ...assets, [f.key]: e.target.value })}
-                    disabled={f.key === "offer_title" && !!campaign.offer_title} placeholder="—" />
-                )
-              )}
-            </div>
-          );
-        })}
-        {/* Promo Code Section */}
+      {/* Assets: progress header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em" }}>
+          Assets {stage === "OPS_SETUP" ? "· fill all fields" : stage === "LIVE" ? "· edit directly" : "· received"}
+        </div>
         {isAssetStage && canEdit && (
-          <div style={{ padding: "14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
-            <CodesSection assets={assets} setAssets={setAssets} />
-          </div>
-        )}
-        {!isAssetStage && assets.promo_codes && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fff", border: `1px solid ${c.line}`, borderRadius: 8 }}>
-            <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#E3F6EE", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ color: c.green, fontSize: 13 }}>✓</span>
+          <>
+            <div style={{ flex: "0 1 200px", height: 6, background: "#EDF1F6", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ width: `${Math.round((assetsDone / ASSET_TOTAL) * 100)}%`, height: "100%", background: assetsDone === ASSET_TOTAL ? c.green : c.blue, borderRadius: 3, transition: "width .25s" }} />
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: c.ink }}>Promo Codes</div>
-              <div style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{(() => { try { const d = JSON.parse(assets.promo_codes); return d.type === "none" ? "No Code" : d.type === "dynamic" ? "Dynamic Codes" : d.codes || "Static Codes"; } catch { return assets.promo_codes; } })()}</div>
-            </div>
-          </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: assetsDone === ASSET_TOTAL ? c.green : c.sub }}>{assetsDone}/{ASSET_TOTAL} complete</span>
+          </>
         )}
       </div>
 
-      {/* Action buttons */}
+      {!(isAssetStage && canEdit) ? (
+        <AssetsSummary assets={assets} />
+      ) : (
+        <>
+          <SectionCard num={1} title="Offer Details" done={secDone.offer} total={3}>
+            <FieldBlock label="Offer Title" filled={assetFilled.offer_title} hint={campaign.offer_title ? "Set at campaign creation." : undefined}>
+              <input style={{ ...inputBase, ...(campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
+                value={assets.offer_title ?? ""} disabled={!!campaign.offer_title}
+                onChange={(e) => setAssets({ ...assets, offer_title: e.target.value })}
+                placeholder="e.g. Flat ₹150 off on orders above ₹999" />
+            </FieldBlock>
+            <FieldBlock label="Details / T&C" filled={assetFilled.details_tc}>
+              <textarea style={{ ...inputBase, minHeight: 110, resize: "vertical", lineHeight: 1.5 }} value={assets.details_tc ?? ""}
+                onChange={(e) => setAssets({ ...assets, details_tc: e.target.value })}
+                placeholder="Paste the full offer terms & conditions…" />
+            </FieldBlock>
+            <FieldBlock label="How to Redeem" filled={assetFilled.how_to_redeem}>
+              <textarea style={{ ...inputBase, minHeight: 90, resize: "vertical", lineHeight: 1.5 }} value={assets.how_to_redeem ?? ""}
+                onChange={(e) => setAssets({ ...assets, how_to_redeem: e.target.value })}
+                placeholder={"1. Add items to cart\n2. Apply code at checkout…"} />
+            </FieldBlock>
+          </SectionCard>
+
+          <SectionCard num={2} title="Tracking & Codes" done={secDone.tracking} total={2}>
+            <FieldBlock label="Landing Link (UTM)" filled={assetFilled.landing_link}
+              hint="Final landing-page URL with UTM parameters — this goes into the publisher email.">
+              <input style={inputBase} value={assets.landing_link ?? ""}
+                onChange={(e) => setAssets({ ...assets, landing_link: e.target.value })}
+                placeholder="https://brand.com/offer?utm_source=…" />
+            </FieldBlock>
+            <div style={{ borderTop: `1px solid ${c.bg}`, paddingTop: 12, marginBottom: 14 }}>
+              <CodesSection assets={assets} setAssets={setAssets} />
+            </div>
+          </SectionCard>
+
+          <SectionCard num={3} title="Creatives" done={secDone.creatives} total={2}>
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              <CreativeField campaignId={campaign.campaign_id} field="creative_url" label="Creative (600×600)" dims={{ w: 600, h: 600 }}
+                value={assets.creative_url} onChange={(v) => setAssets((prev) => ({ ...prev, creative_url: v }))} canEdit={canEdit} />
+              <CreativeField campaignId={campaign.campaign_id} field="logo_url" label="Logo (300×300)" dims={{ w: 300, h: 300 }}
+                value={assets.logo_url} onChange={(v) => setAssets((prev) => ({ ...prev, logo_url: v }))} canEdit={canEdit} />
+            </div>
+          </SectionCard>
+
+          <SectionCard num={4} title="Targeting & Budget" done={secDone.budget} total={3}>
+            <FieldBlock label="Targeting / Persona" filled={assetFilled.targeting}>
+              <textarea style={{ ...inputBase, minHeight: 70, resize: "vertical", lineHeight: 1.5 }} value={assets.targeting ?? ""}
+                onChange={(e) => setAssets({ ...assets, targeting: e.target.value })}
+                placeholder="Audience / cohort this campaign targets…" />
+            </FieldBlock>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <FieldBlock label="Daily Budget" filled={assetFilled.daily_budget}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ position: "relative", flex: 1 }}>
+                      <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
+                      <input type="number" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={assets.daily_budget ?? ""}
+                        onChange={(e) => setAssets({ ...assets, daily_budget: e.target.value })} placeholder="0" />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: assetFilled.daily_budget ? c.green : c.muted, whiteSpace: "nowrap" }}>{fmtBudget(assets.daily_budget)}</span>
+                  </div>
+                </FieldBlock>
+              </div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <FieldBlock label="Publisher Billing" filled={assetFilled.publisher_billing}>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select style={{ ...inputBase, width: 90, flexShrink: 0 }} value={assets.publisher_billing_model || "cpc"}
+                      onChange={(e) => setAssets({ ...assets, publisher_billing_model: e.target.value })}>
+                      {PUBLISHER_BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                    <div style={{ position: "relative", flex: 1 }}>
+                      <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
+                      <input type="number" step="0.01" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={assets.publisher_billing_rate ?? ""}
+                        onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })} placeholder="Rate" />
+                    </div>
+                  </div>
+                </FieldBlock>
+              </div>
+            </div>
+          </SectionCard>
+        </>
+      )}
+
+      {/* Sticky action bar */}
       {isAssetStage && canEdit && !showEmail && (
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ position: "sticky", bottom: 0, background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "12px 16px", display: "flex", gap: 10, alignItems: "center", zIndex: 5, boxShadow: "0 -4px 14px rgba(15,23,36,0.08)" }}>
           <button onClick={handleSave} disabled={saving} style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             {saving ? "Saving…" : "Save Assets"}
           </button>
@@ -433,6 +623,9 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
               Mark Assets Received & Draft Email →
             </button>
           )}
+          <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 600, color: assetsDone === ASSET_TOTAL ? c.green : c.muted }}>
+            {assetsDone === ASSET_TOTAL ? "✓ All fields complete" : `${ASSET_TOTAL - assetsDone} field${ASSET_TOTAL - assetsDone === 1 ? "" : "s"} remaining`}
+          </span>
         </div>
       )}
 
