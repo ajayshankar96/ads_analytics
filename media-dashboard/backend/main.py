@@ -1739,9 +1739,13 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
     """Budget governance for onboarded advertisers: only the owner (or an
     admin) may change budget settings, and MONTHLY budgets lock the current
     month once its value is set — past months are read-only, future months
-    stay editable. Admins bypass the month lock as an escape hatch."""
+    stay editable. Admins bypass the month lock as an escape hatch.
+
+    Returns an actor-context dict {email, is_owner, is_admin} when budget
+    fields on an onboarded advertiser are touched (used for changelog
+    attribution), else None."""
     if not (_BUDGET_FIELDS & set(payload.keys())) or adv.status != "ONBOARDED":
-        return
+        return None
     email = (getattr(request.state, "user_email", None) or payload.get("changed_by") or "").strip().lower()
     is_owner = bool(email and adv.owner_email and email == adv.owner_email.strip().lower())
     is_admin = False
@@ -1750,10 +1754,11 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
         is_admin = bool(user and (user.role or "").upper() == "ADMIN")
     if email and not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Only the advertiser owner or an admin can change budget settings")
+    ctx = {"email": email or None, "is_owner": is_owner, "is_admin": is_admin}
     if is_admin:
         # Admins bypass the month locks even when they also own the
         # advertiser — otherwise an admin-owner would have no escape hatch.
-        return
+        return ctx
 
     cur = repo.datetime.now(repo.timezone.utc).strftime("%Y-%m")
     old_type = (adv.budget_type or "AGNOSTIC").upper()
@@ -1773,6 +1778,48 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
                 raise HTTPException(status_code=400, detail=f"Budget for {m} is in the past and can't be changed")
             if m == cur and old_v:
                 raise HTTPException(status_code=400, detail=f"Budget for {m} is locked for the current month — it unlocks next month")
+    return ctx
+
+
+async def _log_budget_changes(db: AsyncSession, adv, old_budget: tuple, ctx: dict) -> None:
+    """Write one rmn_advertiser_changelog row per budget value that actually
+    changed. Monthly budgets log each month as its own field
+    ("budget_months.YYYY-MM"). Changes that bypassed a month lock (only
+    admins get past enforcement with those) are tagged source=admin_override;
+    otherwise source is owner/admin by actor role."""
+    old_hint, old_type, old_months = old_budget
+    new_hint = adv.budget_hint
+    new_type = (adv.budget_type or "AGNOSTIC").upper()
+    new_months = repo.parse_budget_months(adv)
+    cur = repo.datetime.now(repo.timezone.utc).strftime("%Y-%m")
+
+    rows = []  # (field_name, old, new, bypassed_lock)
+    if str(old_hint or "").strip() != str(new_hint or "").strip():
+        rows.append(("budget_hint", old_hint, new_hint, False))
+    if old_type != new_type:
+        locked = old_type == "MONTHLY" and str(old_months.get(cur, "")).strip() != ""
+        rows.append(("budget_type", old_type, new_type, locked))
+    for m in sorted(set(old_months) | set(new_months)):
+        old_v = str(old_months.get(m, "")).strip()
+        new_v = str(new_months.get(m, "")).strip()
+        if old_v == new_v:
+            continue
+        bypassed = m < cur or (m == cur and bool(old_v))
+        rows.append((f"budget_months.{m}", old_v or None, new_v or None, bypassed))
+    if not rows:
+        return
+
+    role_source = "owner" if ctx["is_owner"] else ("admin" if ctx["is_admin"] else None)
+    for field, old_v, new_v, bypassed in rows:
+        db.add(models.AdvertiserChangelog(
+            advertiser_id=adv.id,
+            field_name=field,
+            old_value=None if old_v is None else str(old_v),
+            new_value=None if new_v is None else str(new_v),
+            changed_by=ctx["email"],
+            source="admin_override" if bypassed else role_source,
+        ))
+    await db.commit()
 
 
 @app.patch("/api/advertisers/{adv_id}")
@@ -1780,12 +1827,15 @@ async def update_advertiser(adv_id: str, payload: dict, request: Request, db: As
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
-    await _enforce_budget_rules(db, adv, payload, request)
+    budget_ctx = await _enforce_budget_rules(db, adv, payload, request)
+    old_budget = (adv.budget_hint, (adv.budget_type or "AGNOSTIC").upper(), repo.parse_budget_months(adv)) if budget_ctx else None
     old_terms = _advertiser_default_terms(adv)
     try:
         adv = await repo.update_advertiser(db, adv, payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if budget_ctx:
+        await _log_budget_changes(db, adv, old_budget, budget_ctx)
     billing_updated = 0
     if _billing_terms_changed(old_terms, _advertiser_default_terms(adv)):
         changed_by = getattr(request.state, "user_email", None) or payload.get("changed_by")
@@ -2076,6 +2126,25 @@ async def workflow_get_changelog(campaign_id: str, db: AsyncSession = Depends(ge
         select(models.CampaignChangelog)
         .where(models.CampaignChangelog.campaign_id == campaign_id)
         .order_by(models.CampaignChangelog.changed_at.desc())
+        .limit(100)
+    )).scalars().all()
+    return {"entries": [
+        {"id": r.id, "field": r.field_name, "old_value": r.old_value,
+         "new_value": r.new_value, "changed_by": r.changed_by,
+         "source": r.source,
+         "changed_at": r.changed_at.isoformat() if r.changed_at else None}
+        for r in rows
+    ]}
+
+
+@app.get("/api/advertisers/{adv_id}/changelog")
+async def advertiser_changelog(adv_id: str, db: AsyncSession = Depends(get_db)):
+    """Field-level change history for an advertiser (budget edits)."""
+    from sqlalchemy import select
+    rows = (await db.execute(
+        select(models.AdvertiserChangelog)
+        .where(models.AdvertiserChangelog.advertiser_id == adv_id)
+        .order_by(models.AdvertiserChangelog.changed_at.desc())
         .limit(100)
     )).scalars().all()
     return {"entries": [
