@@ -1745,12 +1745,14 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
     email = (getattr(request.state, "user_email", None) or payload.get("changed_by") or "").strip().lower()
     is_owner = bool(email and adv.owner_email and email == adv.owner_email.strip().lower())
     is_admin = False
-    if email and not is_owner:
+    if email:
         user = await repo.get_user_role(db, email)
         is_admin = bool(user and (user.role or "").upper() == "ADMIN")
     if email and not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Only the advertiser owner or an admin can change budget settings")
     if is_admin:
+        # Admins bypass the month locks even when they also own the
+        # advertiser — otherwise an admin-owner would have no escape hatch.
         return
 
     cur = repo.datetime.now(repo.timezone.utc).strftime("%Y-%m")
