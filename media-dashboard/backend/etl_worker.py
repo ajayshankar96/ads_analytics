@@ -1909,7 +1909,14 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
                  :coins_burned, :redirections, :spends, :publisher_spends,
                  :advertiser_spends, :publisher_spends_source, :advertiser_spends_source,
                  :advertiser_metrics, :synced_at)
+            -- Labels (advertiser/publisher/segment) come from the campaign
+            -- config, so refresh them on conflict too: otherwise renaming a
+            -- segment (e.g. "Seg1A" -> "Seg 1A") leaves old rows stamped with
+            -- the stale name forever, and filter dropdowns show both variants.
             ON CONFLICT (campaign_id, date) DO UPDATE SET
+                advertiser = EXCLUDED.advertiser,
+                publisher = EXCLUDED.publisher,
+                segment = EXCLUDED.segment,
                 impressions = EXCLUDED.impressions,
                 distribution = EXCLUDED.distribution,
                 clicks = EXCLUDED.clicks,
