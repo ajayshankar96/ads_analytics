@@ -112,6 +112,13 @@ function RagBadge({ status, goal }) {
 // ROAS as a "8.5x" multiple; "—" when not computable (no revenue / no spend).
 const fmtRoas = (v) => (v === null || v === undefined ? "—" : `${v}x`);
 
+// The advertiser's configured goal, e.g. "ROAS ≥ 8.5x" or "CAC ≤ ₹100".
+const fmtGoal = (goal) => {
+  if (!goal || !goal.goal_type) return "—";
+  if (goal.goal_type === "CAC") return goal.target_cac != null ? `CAC ≤ ₹${goal.target_cac}` : "CAC";
+  return goal.target_roas != null ? `ROAS ≥ ${goal.target_roas}x` : "ROAS";
+};
+
 function PubRow({ item, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
@@ -137,6 +144,7 @@ function PubRow({ item, depth = 0 }) {
         <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
         <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
         <td style={s.td}>₹{fmt(item.revenue)}<Delta pct={item.deltas?.revenue} /></td>
+        <td style={{ ...s.td, whiteSpace: "nowrap", color: "#64748b" }}>{fmtGoal(item.goal)}</td>
         <td style={s.td}>{fmtRoas(item.roas)}</td>
         <td style={s.td}>{item.cac != null ? `₹${fmt(item.cac)}` : "—"}</td>
       </tr>
@@ -223,6 +231,7 @@ export default function PublisherPerformance({ filters }) {
                 <th style={s.th}>QL</th>
                 <th style={s.th}>QQG</th>
                 <th style={s.th}>Revenue</th>
+                <th style={s.th}>Goal</th>
                 <th style={s.th}>ROAS</th>
                 <th style={s.th}>CAC</th>
               </tr>

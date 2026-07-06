@@ -467,14 +467,16 @@ def _derive(totals):
     e["ctr"] = round(e.get("clicks", 0) / imp * 100, 2) if imp > 0 else 0
     if "ql" in e:
         e["cpql"] = round(e["spends"] / e["ql"], 2) if e["ql"] > 0 else None
-    # ROAS is always revenue ÷ advertiser-side spends (return on the advertiser's
-    # money), independent of which "spends" figure the tab displays.
-    if "revenue" in e and "adv_spends" in e:
-        adv_spd = e.get("adv_spends", 0)
-        e["roas"] = round(e.get("revenue", 0) / adv_spd, 2) if adv_spd > 0 else None
-    # CAC formula is pending (acquisition-count logic TBD) — expose the field so
-    # the column and CAC-goal RAG light up automatically once it's wired.
-    e["cac"] = None
+    # Formulas per the Account X Publisher KPI sheet ("Budget consumed" = publisher
+    # spends): ROAS = Revenue ÷ Publisher_Spends, CAC = Publisher_Spends ÷ Orders.
+    pub_spd = e.get("pub_spends", 0)
+    if "revenue" in e and "pub_spends" in e:
+        e["roas"] = round(e.get("revenue", 0) / pub_spd, 2) if pub_spd > 0 else None
+    if "orders" in e and "pub_spends" in e:
+        orders = e.get("orders", 0)
+        e["cac"] = round(pub_spd / orders, 2) if orders > 0 else None
+    else:
+        e["cac"] = None
     return e
 
 
@@ -642,6 +644,7 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     advertisers = []
     for adv, pubs in sorted(curr.items()):
         adv_tot = {k: 0 for k in ADV_METRICS}
+        _goal = goals.get(adv)
         pub_list = []
         for pub, segs in sorted(pubs.items()):
             pub_tot = {k: 0 for k in ADV_METRICS}
@@ -668,6 +671,10 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
             pe = _derive(pub_tot)
             pe["name"] = pub
             pe["segments"] = seg_list
+            # KPI-sheet grain is advertiser × publisher, so each publisher row
+            # under an advertiser also gets the goal + RAG status.
+            pe["goal"] = _goal
+            pe["rag"] = _rag(pe, _goal)
             if compare:
                 pe["deltas"] = _deltas(pub_tot, (prev_l2 or {}).get((adv, pub)), ADV_METRICS)
             pub_list.append(pe)
@@ -676,7 +683,6 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         ae = _derive(adv_tot)
         ae["name"] = adv
         ae["publishers"] = pub_list
-        _goal = goals.get(adv)
         ae["goal"] = _goal
         ae["rag"] = _rag(ae, _goal)
         if compare:
