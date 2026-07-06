@@ -48,6 +48,16 @@ function parseBudget(hint) {
   return isNaN(n) ? 0 : n;
 }
 
+// An advertiser's budget for a given "YYYY-MM" month: MONTHLY advertisers load
+// the value set for that month (unset months load nothing); date-agnostic
+// advertisers keep their single budget_hint.
+function budgetForMonth(a, month) {
+  if ((a.budget_type || "AGNOSTIC") === "MONTHLY") {
+    return parseBudget((a.budget_months || {})[month]);
+  }
+  return parseBudget(a.budget_hint);
+}
+
 function currentMonth() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -229,14 +239,23 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     await load();
   };
 
-  // "Budget loaded" is month-scoped with carry-forward: an advertiser's budget
-  // counts toward the month they were onboarded (onboarded_at; created_at as
-  // fallback for rows predating the field), and whatever was left unallocated
-  // in earlier months rolls into the selected month's available budget.
+  // "Budget loaded" is month-scoped with carry-forward: a date-agnostic
+  // advertiser's budget counts toward the month they were onboarded
+  // (onboarded_at; created_at as fallback for rows predating the field), a
+  // MONTHLY advertiser loads each month's budget in that month itself, and
+  // whatever was left unallocated in earlier months rolls into the selected
+  // month's available budget.
   const onboardMonth = (a) => (a.onboarded_at || a.created_at || "").slice(0, 7);
-  const monthAdvertisers = advertisers.filter((a) => onboardMonth(a) === month);
-  const newBudget = monthAdvertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const isMonthly = (a) => (a.budget_type || "AGNOSTIC") === "MONTHLY";
+  const newBudget = advertisers.reduce((s, a) => {
+    if (isMonthly(a)) return s + budgetForMonth(a, month);
+    return onboardMonth(a) === month ? s + parseBudget(a.budget_hint) : s;
+  }, 0);
   const priorLoaded = advertisers.reduce((s, a) => {
+    if (isMonthly(a)) {
+      return s + Object.entries(a.budget_months || {}).reduce(
+        (t, [m, v]) => (m < month ? t + parseBudget(v) : t), 0);
+    }
     const m = onboardMonth(a);
     return m && m < month ? s + parseBudget(a.budget_hint) : s;
   }, 0);
@@ -245,7 +264,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
   );
   const carryIn = priorLoaded - priorAllocated;
   const totalBudgetLoaded = newBudget + carryIn;
-  const tableBudgetTotal = advertisers.reduce((s, a) => s + parseBudget(a.budget_hint), 0);
+  const tableBudgetTotal = advertisers.reduce((s, a) => s + budgetForMonth(a, month), 0);
   const totalAllocatedAll = grandTotal;
   const fmtAmt = (n) => (n === 0 ? "₹0" : `${n < 0 ? "−" : ""}${fmtInr(Math.abs(n))}`);
   const allocationPct = totalBudgetLoaded > 0 ? (totalAllocatedAll / totalBudgetLoaded * 100) : 0;
@@ -318,7 +337,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
             </thead>
             <tbody>
               {advertisers.map((a) => {
-                const budget = parseBudget(a.budget_hint);
+                const budget = budgetForMonth(a, month);
                 const allocated = rowTotal(a.id);
                 const pct = budget > 0 ? (allocated / budget) * 100 : 0;
                 const isDirty = !!dirty[a.id];
