@@ -136,6 +136,7 @@ function PubRow({ item, depth = 0 }) {
         <td style={s.td}>₹{fmt(item.pub_spends)}<Delta pct={item.deltas?.pub_spends} /></td>
         <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
         <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
+        <td style={s.td}>₹{fmt(item.revenue)}<Delta pct={item.deltas?.revenue} /></td>
         <td style={s.td}>{fmtRoas(item.roas)}</td>
         <td style={s.td}>{item.cac != null ? `₹${fmt(item.cac)}` : "—"}</td>
       </tr>
@@ -221,6 +222,7 @@ export default function PublisherPerformance({ filters }) {
                 <th style={s.th}>CPM</th>
                 <th style={s.th}>QL</th>
                 <th style={s.th}>QQG</th>
+                <th style={s.th}>Revenue</th>
                 <th style={s.th}>ROAS</th>
                 <th style={s.th}>CAC</th>
               </tr>

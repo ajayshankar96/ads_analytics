@@ -174,6 +174,7 @@ function AdvRow({ adv, depth = 0 }) {
         <td style={s.td}>₹{fmt(adv.pub_spends)}<Delta pct={adv.deltas?.pub_spends} /></td>
         <td style={s.td}>{fmt(adv.ql)}<Delta pct={adv.deltas?.ql} /></td>
         <td style={s.td}>{adv.cpql ? `₹${adv.cpql}` : "—"}</td>
+        <td style={s.td}>₹{fmt(adv.revenue)}<Delta pct={adv.deltas?.revenue} /></td>
         <td style={s.td}>{fmtRoas(adv.roas)}</td>
         <td style={s.td}>{adv.cac != null ? `₹${fmt(adv.cac)}` : "—"}</td>
       </tr>
@@ -269,6 +270,7 @@ export default function AdvertiserPerformance({ filters }) {
                 <th style={s.th}>Pub Spends</th>
                 <th style={s.th}>QL</th>
                 <th style={s.th}>CPQL</th>
+                <th style={s.th}>Revenue</th>
                 <th style={s.th}>ROAS</th>
                 <th style={s.th}>CAC</th>
               </tr>
