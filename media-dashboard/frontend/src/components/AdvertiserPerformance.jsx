@@ -125,6 +125,28 @@ function Delta({ pct }) {
   );
 }
 
+const RAG_COLORS = { GREEN: "#0F8C6A", AMBER: "#B7791F", RED: "#C8321E" };
+
+// Red/Amber/Green chip vs the advertiser's brand goal (only on advertiser rows).
+function RagBadge({ status, goal }) {
+  if (!status) return null;
+  const col = RAG_COLORS[status] || "#64748b";
+  const title = goal
+    ? (goal.goal_type === "CAC"
+        ? `Goal: CAC ≤ ₹${goal.target_cac}`
+        : `Goal: ROAS ≥ ${goal.target_roas}x`)
+    : "";
+  return (
+    <span title={title} style={{
+      marginLeft: 8, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 800,
+      letterSpacing: ".03em", color: "#fff", background: col, verticalAlign: "middle",
+    }}>{status}</span>
+  );
+}
+
+// ROAS as a "8.5x" multiple; "—" when not computable (no revenue / no spend).
+const fmtRoas = (v) => (v === null || v === undefined ? "—" : `${v}x`);
+
 function AdvRow({ adv, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
@@ -143,6 +165,7 @@ function AdvRow({ adv, depth = 0 }) {
             <span style={s.expandBtn}>{open ? "▼" : "▶"}</span>
           )}
           {adv.name}
+          <RagBadge status={adv.rag} goal={adv.goal} />
         </td>
         <td style={s.td}>{fmt(adv.impressions)}<Delta pct={adv.deltas?.impressions} /></td>
         <td style={s.td}>{fmt(adv.clicks)}<Delta pct={adv.deltas?.clicks} /></td>
@@ -151,6 +174,8 @@ function AdvRow({ adv, depth = 0 }) {
         <td style={s.td}>{adv.cpm ? `₹${adv.cpm}` : "—"}<Delta pct={adv.deltas?.cpm} /></td>
         <td style={s.td}>{fmt(adv.ql)}<Delta pct={adv.deltas?.ql} /></td>
         <td style={s.td}>{adv.cpql ? `₹${adv.cpql}` : "—"}</td>
+        <td style={s.td}>{fmtRoas(adv.roas)}</td>
+        <td style={s.td}>{adv.cac != null ? `₹${fmt(adv.cac)}` : "—"}</td>
       </tr>
       {open && children.map((child, i) => (
         <AdvRow key={i} adv={child} depth={depth + 1} />
@@ -244,6 +269,8 @@ export default function AdvertiserPerformance({ filters }) {
                 <th style={s.th}>CPM</th>
                 <th style={s.th}>QL</th>
                 <th style={s.th}>CPQL</th>
+                <th style={s.th}>ROAS</th>
+                <th style={s.th}>CAC</th>
               </tr>
             </thead>
             <tbody>

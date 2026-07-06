@@ -189,6 +189,47 @@ def load_from_postgres(strict: bool = False):
         return load_master_report_cache()
 
 
+# ── Advertiser goals (for RAG status on the performance tabs) ──────────────────
+_goals_cache = {"data": None, "ts": 0}
+
+def load_advertiser_goals():
+    """{advertiser_name: {goal_type, target_roas, target_cac}} from rmn_advertisers.
+
+    Sync loader (mirrors load_from_postgres' engine) so the synchronous
+    performance endpoints can attach a Red/Amber/Green status keyed by the
+    advertiser name that appears in the metric rows. Empty dict on any failure —
+    RAG simply doesn't render. Cached 60s.
+    """
+    import time
+    now = time.time()
+    if _goals_cache["data"] is not None and (now - _goals_cache["ts"]) < 60:
+        return _goals_cache["data"]
+
+    from sqlalchemy import create_engine, text as _text
+    db_url = os.environ.get("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql+pg8000://").replace("postgresql://", "postgresql+pg8000://")
+    goals = {}
+    if not db_url:
+        return goals
+    try:
+        eng = create_engine(db_url, pool_pre_ping=True)
+        with eng.connect() as conn:
+            for name, goal_type, t_roas, t_cac in conn.execute(_text(
+                "SELECT name, goal_type, target_roas, target_cac FROM rmn_advertisers"
+            )).fetchall():
+                if not name:
+                    continue
+                goals[name] = {
+                    "goal_type": goal_type or "ROAS",
+                    "target_roas": float(t_roas) if t_roas is not None else None,
+                    "target_cac": float(t_cac) if t_cac is not None else None,
+                }
+        _goals_cache["data"] = goals
+        _goals_cache["ts"] = now
+    except Exception as e:
+        logger.warning(f"Advertiser goals load failed: {e}")
+    return goals
+
+
 _active_source = {"value": "postgres"}  # default to postgres
 
 def load_data(source: str = None):
@@ -786,7 +827,7 @@ def advertiser_performance(
         "compare": compare,
         "comparePeriods": comparePeriods,
     }
-    result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
+    result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals())
     result["cacheAge"] = data.get("cache_age", 0)
     return result
 
@@ -812,7 +853,7 @@ def publisher_performance(
         "compare": compare,
         "comparePeriods": comparePeriods,
     }
-    result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode)
+    result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals())
     result["cacheAge"] = data.get("cache_age", 0)
     return result
 

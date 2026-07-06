@@ -435,8 +435,11 @@ def prepare_table_data(rows: List, headers: List[str], offset: int = 0, limit: i
 
 # ── Advertiser Performance ────────────────────────────────────────────────────
 
-ADV_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue"]
-PUB_METRICS = ["impressions", "clicks", "spends", "ql", "qqg"]
+# adv_spends is carried alongside spends on both hierarchies so ROAS
+# (revenue ÷ advertiser spends) resolves the same way in the publisher view,
+# where the displayed "spends" is the publisher-side figure.
+ADV_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends"]
+PUB_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends"]
 
 
 def _shift_months(d, delta):
@@ -458,14 +461,55 @@ def _shift_window(view_mode, dfrom, dto, n, explicit):
 
 
 def _derive(totals):
-    """Round totals + add derived ctr/cpm/cpql for a display entry."""
+    """Round totals + add derived ctr/cpm/cpql/roas/cac for a display entry."""
     e = {k: round(v) for k, v in totals.items()}
     imp = e.get("impressions", 0)
     e["ctr"] = round(e.get("clicks", 0) / imp * 100, 2) if imp > 0 else 0
     e["cpm"] = round(e.get("spends", 0) / (imp / 1000), 2) if imp > 0 else 0
     if "ql" in e:
         e["cpql"] = round(e["spends"] / e["ql"], 2) if e["ql"] > 0 else None
+    # ROAS is always revenue ÷ advertiser-side spends (return on the advertiser's
+    # money), independent of which "spends" figure the tab displays.
+    if "revenue" in e and "adv_spends" in e:
+        adv_spd = e.get("adv_spends", 0)
+        e["roas"] = round(e.get("revenue", 0) / adv_spd, 2) if adv_spd > 0 else None
+    # CAC formula is pending (acquisition-count logic TBD) — expose the field so
+    # the column and CAC-goal RAG light up automatically once it's wired.
+    e["cac"] = None
     return e
+
+
+def _rag(entry, goal):
+    """Red/Amber/Green status vs the advertiser's brand goal.
+
+    ROAS goal (higher is better): GREEN actual ≥ target · AMBER actual ≥ 75% of
+    target · RED below that. CAC goal (lower is better): GREEN actual ≤ target ·
+    AMBER actual ≤ 125% of target · RED above. Returns None when the goal or the
+    actual metric isn't available (e.g. CAC while its formula is still pending).
+    """
+    if not goal:
+        return None
+    gt = (goal.get("goal_type") or "ROAS").upper()
+    if gt == "CAC":
+        target = goal.get("target_cac")
+        actual = entry.get("cac")
+        if not target or actual is None:
+            return None
+        if actual <= target:
+            return "GREEN"
+        if actual <= target * 1.25:
+            return "AMBER"
+        return "RED"
+    # default: ROAS goal
+    target = goal.get("target_roas")
+    actual = entry.get("roas")
+    if not target or actual is None:
+        return None
+    if actual >= target:
+        return "GREEN"
+    if actual >= target * 0.75:
+        return "AMBER"
+    return "RED"
 
 
 def _deltas(curr, prev, metric_keys):
@@ -514,11 +558,15 @@ def _flatten_totals(agg, metric_keys):
     return l1_t, l2_t, l3_t, l4_t
 
 
-def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly") -> dict:
+def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None) -> dict:
     """
-    Hierarchical advertiser performance: Advertiser → Publisher → Segment.
+    Hierarchical advertiser performance: Advertiser → Publisher → Segment → Offer.
     Supports period-over-period comparison (compare / comparePeriods).
+
+    `goals` is an optional {advertiser_name: {goal_type, target_roas, target_cac}}
+    map used to attach a Red/Amber/Green status to each advertiser row.
     """
+    goals = goals or {}
     adv_filter = set(filters.get("advertisers", []))
     pub_filter = set(filters.get("publishers", []))
     seg_filter = set(filters.get("segments", []))
@@ -551,6 +599,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         ("qqg", hcol("QQG", COL["QQG"])),
         ("orders", hcol("Orders", COL["ORDERS"])),
         ("revenue", hcol("Revenue", COL["REVENUE"])),
+        # Kept separate from "spends" so ROAS uses advertiser spends explicitly.
+        ("adv_spends", hcol("Advertiser_Spends", COL["ADVERTISER_SPENDS"])),
     ]
 
     def aggregate(dfrom, dto):
@@ -628,6 +678,9 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         ae = _derive(adv_tot)
         ae["name"] = adv
         ae["publishers"] = pub_list
+        _goal = goals.get(adv)
+        ae["goal"] = _goal
+        ae["rag"] = _rag(ae, _goal)
         if compare:
             ae["deltas"] = _deltas(adv_tot, (prev_l1 or {}).get(adv), ADV_METRICS)
         advertisers.append(ae)
@@ -643,11 +696,15 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
 
 # ── Publisher Performance ──────────────────────────────────────────────────────
 
-def get_publisher_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly") -> dict:
+def get_publisher_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None) -> dict:
     """
-    Publisher → Advertiser → Segment hierarchy.
+    Publisher → Advertiser → Segment → Offer hierarchy.
     Mirrors getPublisherPerformanceData() from Code.gs.
+
+    `goals` is an optional {advertiser_name: {goal_type, target_roas, target_cac}}
+    map used to attach a Red/Amber/Green status to each advertiser row.
     """
+    goals = goals or {}
     pub_filter = set(filters.get("publishers", []))
     seg_filter = set(filters.get("segments", []))
     adv_filter = set(filters.get("advertisers", []))
@@ -678,6 +735,10 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         ("spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
         ("ql", hcol("QL", COL["QL"])),
         ("qqg", hcol("QQG", COL["QQG"])),
+        ("orders", hcol("Orders", COL["ORDERS"])),
+        ("revenue", hcol("Revenue", COL["REVENUE"])),
+        # Advertiser-side spends carried for ROAS (revenue ÷ advertiser spends).
+        ("adv_spends", hcol("Advertiser_Spends", COL["ADVERTISER_SPENDS"])),
     ]
 
     def aggregate(dfrom, dto):
@@ -747,6 +808,9 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
             ae = _derive(adv_tot)
             ae["name"] = adv
             ae["segments"] = seg_list
+            _goal = goals.get(adv)
+            ae["goal"] = _goal
+            ae["rag"] = _rag(ae, _goal)
             if compare:
                 ae["deltas"] = _deltas(adv_tot, (prev_l2 or {}).get((pub, adv)), PUB_METRICS)
             adv_list.append(ae)

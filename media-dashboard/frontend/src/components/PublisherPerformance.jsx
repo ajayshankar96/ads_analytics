@@ -90,6 +90,28 @@ function Delta({ pct }) {
   );
 }
 
+const RAG_COLORS = { GREEN: "#0F8C6A", AMBER: "#B7791F", RED: "#C8321E" };
+
+// Red/Amber/Green chip vs the advertiser's brand goal (only on advertiser rows).
+function RagBadge({ status, goal }) {
+  if (!status) return null;
+  const col = RAG_COLORS[status] || "#64748b";
+  const title = goal
+    ? (goal.goal_type === "CAC"
+        ? `Goal: CAC ≤ ₹${goal.target_cac}`
+        : `Goal: ROAS ≥ ${goal.target_roas}x`)
+    : "";
+  return (
+    <span title={title} style={{
+      marginLeft: 8, padding: "1px 7px", borderRadius: 10, fontSize: 10, fontWeight: 800,
+      letterSpacing: ".03em", color: "#fff", background: col, verticalAlign: "middle",
+    }}>{status}</span>
+  );
+}
+
+// ROAS as a "8.5x" multiple; "—" when not computable (no revenue / no spend).
+const fmtRoas = (v) => (v === null || v === undefined ? "—" : `${v}x`);
+
 function PubRow({ item, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
@@ -105,6 +127,7 @@ function PubRow({ item, depth = 0 }) {
         <td style={{ ...s.td, ...indent, fontWeight: 700 - depth * 100 }}>
           {hasChildren && <span style={s.expandBtn}>{open ? "▼" : "▶"}</span>}
           {item.name}
+          <RagBadge status={item.rag} goal={item.goal} />
         </td>
         <td style={s.td}>{fmt(item.impressions)}<Delta pct={item.deltas?.impressions} /></td>
         <td style={s.td}>{fmt(item.clicks)}<Delta pct={item.deltas?.clicks} /></td>
@@ -113,6 +136,8 @@ function PubRow({ item, depth = 0 }) {
         <td style={s.td}>{item.cpm ? `₹${item.cpm}` : "—"}<Delta pct={item.deltas?.cpm} /></td>
         <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
         <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
+        <td style={s.td}>{fmtRoas(item.roas)}</td>
+        <td style={s.td}>{item.cac != null ? `₹${fmt(item.cac)}` : "—"}</td>
       </tr>
       {open && children.map((child, i) => (
         <PubRow key={i} item={child} depth={depth + 1} />
@@ -196,6 +221,8 @@ export default function PublisherPerformance({ filters }) {
                 <th style={s.th}>CPM</th>
                 <th style={s.th}>QL</th>
                 <th style={s.th}>QQG</th>
+                <th style={s.th}>ROAS</th>
+                <th style={s.th}>CAC</th>
               </tr>
             </thead>
             <tbody>
