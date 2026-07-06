@@ -31,14 +31,9 @@ const TAB_GROUPS = [
     label: "Analytics",
     color: "#2563eb",
     tabs: [
-      { id: "dashboard",   label: "Dashboard",         icon: "📊" },
-      {
-        id: "performance", label: "Performance",        icon: "📈",
-        children: [
-          { id: "adv-perf", label: "Advertiser Performance", icon: "🏢" },
-          { id: "pub-perf", label: "Publisher Performance",  icon: "📡" },
-        ],
-      },
+      { id: "dashboard", label: "Dashboard",              icon: "📊" },
+      { id: "adv-perf",  label: "Advertiser Performance", icon: "🏢" },
+      { id: "pub-perf",  label: "Publisher Performance",  icon: "📡" },
     ],
   },
   {
@@ -78,7 +73,6 @@ const NO_FILTER = new Set([
 // ── Tab pill ──────────────────────────────────────────────────────────────────
 function TabPill({ tab, active, groupColor, onClick }) {
   const [hovered, setHovered] = useState(false);
-  const hasChildren = !!(tab.children?.length);
 
   const style = {
     display: "inline-flex",
@@ -118,45 +112,6 @@ function TabPill({ tab, active, groupColor, onClick }) {
       onMouseLeave={() => setHovered(false)}
     >
       <span style={{ fontSize: 12, lineHeight: 1 }}>{tab.icon}</span>
-      {tab.label}
-      {hasChildren && (
-        <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 1 }}>
-          {active ? "▲" : "▼"}
-        </span>
-      )}
-    </button>
-  );
-}
-
-// ── Sub-tab pill (for Performance children) ───────────────────────────────────
-function SubTabPill({ tab, active, groupColor, onClick }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <button
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "5px 14px",
-        borderRadius: 16,
-        border: active ? "none" : `1px solid ${groupColor}30`,
-        cursor: "pointer",
-        fontSize: 12,
-        fontWeight: active ? 600 : 400,
-        whiteSpace: "nowrap",
-        outline: "none",
-        transition: "all 0.15s ease",
-        ...(active
-          ? { background: `${groupColor}18`, color: groupColor, borderBottom: `2px solid ${groupColor}` }
-          : hovered
-          ? { background: `${groupColor}0c`, color: groupColor }
-          : { background: "transparent", color: "#64748b" }),
-      }}
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <span style={{ fontSize: 12 }}>{tab.icon}</span>
       {tab.label}
     </button>
   );
@@ -259,21 +214,6 @@ const S = {
     padding: "2px 10px 0 10px",
   },
 
-  // Sub-tab bar (for Performance dropdown)
-  subTabBar: {
-    background: "#f8fafc",
-    borderBottom: "1px solid #e2e8f0",
-    display: "flex",
-    alignItems: "center",
-    padding: "5px 28px",
-    gap: 4,
-    overflowX: "auto",
-  },
-  subTabLabel: {
-    fontSize: 10, fontWeight: 600, letterSpacing: 0.5,
-    textTransform: "uppercase", marginRight: 8, flexShrink: 0,
-  },
-
   content: { padding: "20px 24px" },
   errorBanner: {
     background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6,
@@ -284,7 +224,6 @@ const S = {
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab]         = useState("dashboard");
-  const [activeSubTab, setActiveSubTab]   = useState(null);
   const [filters, setFilters]             = useState(() => {
     const now = new Date();
     const y = now.getFullYear();
@@ -343,26 +282,9 @@ export default function App() {
 
   const handleFilterChange = useCallback((f) => setFilters(f), []);
 
-  const handleTabClick = (tab) => {
-    setActiveTab(tab.id);
-    if (tab.children?.length) {
-      setActiveSubTab(tab.children[0].id);
-    } else {
-      setActiveSubTab(null);
-    }
-  };
+  const handleTabClick = (tab) => setActiveTab(tab.id);
 
-  const effectiveTab = activeSubTab || activeTab;
-
-  // Find active parent's children + color for sub-bar
-  let activeParent = null;
-  for (const group of TAB_GROUPS) {
-    for (const tab of group.tabs) {
-      if (tab.id === activeTab && tab.children?.length) {
-        activeParent = { tab, color: group.color };
-      }
-    }
-  }
+  const effectiveTab = activeTab;
 
   const renderContent = () => {
     const props = { filters, dataSource };
@@ -378,7 +300,6 @@ export default function App() {
       case "sheet-health":   return <SheetHealth />;
       case "adv-reporting":  return <AdvertiserReporting filterOptions={filterOptions} />;
       case "pub-reporting":  return <PublisherReporting filterOptions={filterOptions} />;
-      case "performance":    return <AdvertiserPerformance {...props} />;
       default:               return null;
     }
   };
@@ -491,24 +412,6 @@ export default function App() {
           </div>
         ))}
       </nav>
-
-      {/* ── Sub-tab bar (Performance only) ── */}
-      {activeParent && (
-        <div style={S.subTabBar}>
-          <span style={{ ...S.subTabLabel, color: activeParent.color }}>
-            {activeParent.tab.label} →
-          </span>
-          {activeParent.tab.children.map((child) => (
-            <SubTabPill
-              key={child.id}
-              tab={child}
-              active={activeSubTab === child.id}
-              groupColor={activeParent.color}
-              onClick={() => setActiveSubTab(child.id)}
-            />
-          ))}
-        </div>
-      )}
 
       {/* ── Filter bar ── */}
       {!NO_FILTER.has(effectiveTab) && (
