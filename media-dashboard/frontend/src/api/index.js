@@ -72,9 +72,6 @@ export const getPublisherPerformance = (params = {}) =>
   apiFetch(`/api/publisher-performance${buildQuery(params)}`);
 
 // Health & Freshness
-export const getAdvertiserHealth = (viewMode = "weekly") =>
-  apiFetch(`/api/advertiser-health${buildQuery({ viewMode })}`);
-
 export const getDataFreshness = () => apiFetch("/api/data-freshness");
 
 // Analysis

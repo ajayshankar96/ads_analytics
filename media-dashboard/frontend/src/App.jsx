@@ -2,10 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import Dashboard from "./components/Dashboard";
 import AdvertiserPerformance from "./components/AdvertiserPerformance";
 import PublisherPerformance from "./components/PublisherPerformance";
-import AdvertiserHealth from "./components/AdvertiserHealth";
 import FilterBar from "./components/FilterBar";
 import ChatBot from "./components/ChatBot";
-import CampaignOnboarding from "./components/CampaignOnboarding";
 import AdvertiserReporting from "./components/AdvertiserReporting";
 import PublisherReporting from "./components/PublisherReporting";
 import SalesPipeline from "./components/SalesPipeline";
@@ -41,14 +39,12 @@ const TAB_GROUPS = [
           { id: "pub-perf", label: "Publisher Performance",  icon: "📡" },
         ],
       },
-      { id: "adv-health",  label: "Advertiser Health",  icon: "❤️" },
     ],
   },
   {
     label: "Manage",
     color: "#7c3aed",
     tabs: [
-      { id: "onboarding",   label: "Campaign Onboarding", icon: "📋" },
       { id: "sheet-health", label: "Sheet Health",        icon: "🩺" },
       { id: "roles",        label: "User Roles",          icon: "🔑" },
     ],
@@ -76,7 +72,7 @@ const STAT_ITEMS = [
 ];
 
 const NO_FILTER = new Set([
-  "onboarding", "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles", "sheet-health",
+  "adv-reporting", "pub-reporting", "sales", "ops", "pub-allocation", "tracking", "roles", "sheet-health",
 ]);
 
 // ── Tab pill ──────────────────────────────────────────────────────────────────
@@ -374,8 +370,6 @@ export default function App() {
       case "dashboard":      return <Dashboard {...props} />;
       case "adv-perf":       return <AdvertiserPerformance {...props} />;
       case "pub-perf":       return <PublisherPerformance {...props} />;
-      case "adv-health":     return <AdvertiserHealth />;
-      case "onboarding":     return <CampaignOnboarding filterOptions={filterOptions} />;
       case "sales":          return <SalesPipeline userRole={userRole} userEmail={userEmail} />;
       case "ops":            return <CampaignOps userRole={userRole} />;
       case "pub-allocation": return <BudgetAllocation userRole={userRole} />;
