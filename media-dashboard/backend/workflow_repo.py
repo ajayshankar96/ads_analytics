@@ -4,6 +4,7 @@ FastAPI endpoints stay thin and JSON-serialisable. No ORM relationships — join
 are explicit, per python-foundation convention.
 """
 
+import json
 import re
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -83,12 +84,33 @@ def ops_task_dict(t: models.OpsTask) -> Dict[str, Any]:
 
 _ADV_FIELDS = [
     "name", "owner_email", "category", "description", "logo_name",
-    "buy_type", "roas_multiplier", "cpc_rate", "budget_hint", "gst", "pan",
+    "buy_type", "roas_multiplier", "cpc_rate", "budget_hint", "budget_type", "budget_months", "gst", "pan",
     "goal_type", "target_roas", "target_cac",
     "poc_name", "poc_designation", "poc_email", "poc_phone", "cc_finance",
     "agreement_name", "po_name", "po_ref",
 ]
 _ADV_FLOAT = {"roas_multiplier", "cpc_rate", "target_roas", "target_cac"}
+
+
+def parse_budget_months(a: models.Advertiser) -> Dict[str, str]:
+    if not a.budget_months:
+        return {}
+    try:
+        d = json.loads(a.budget_months)
+        return d if isinstance(d, dict) else {}
+    except ValueError:
+        return {}
+
+
+def effective_budget(a: models.Advertiser) -> Optional[str]:
+    """The budget in force right now: MONTHLY → current month's value (falling
+    back to the most recent earlier month), AGNOSTIC → budget_hint."""
+    if (a.budget_type or "AGNOSTIC") != "MONTHLY":
+        return a.budget_hint
+    months = parse_budget_months(a)
+    cur = datetime.now(timezone.utc).strftime("%Y-%m")
+    upto = sorted(m for m in months if m <= cur)
+    return months[upto[-1]] if upto else None
 
 
 def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
@@ -98,6 +120,9 @@ def advertiser_dict(a: models.Advertiser) -> Dict[str, Any]:
         "category": a.category, "description": a.description, "logo_name": a.logo_name,
         "buy_type": a.buy_type, "roas_multiplier": a.roas_multiplier, "cpc_rate": a.cpc_rate,
         "budget_hint": a.budget_hint, "gst": a.gst, "pan": a.pan,
+        "budget_type": a.budget_type or "AGNOSTIC",
+        "budget_months": parse_budget_months(a),
+        "budget_effective": effective_budget(a),
         "goal_type": a.goal_type, "target_roas": a.target_roas, "target_cac": a.target_cac,
         "poc_name": a.poc_name, "poc_designation": a.poc_designation,
         "poc_email": a.poc_email, "poc_phone": a.poc_phone, "cc_finance": a.cc_finance,
@@ -143,6 +168,21 @@ def _coerce_adv(payload: Dict[str, Any]) -> Dict[str, Any]:
                 out[f] = None
         elif f == "cc_finance":
             out[f] = bool(val)
+        elif f == "budget_type":
+            v = str(val).strip().upper()
+            out[f] = v if v in ("AGNOSTIC", "MONTHLY") else "AGNOSTIC"
+        elif f == "budget_months":
+            if isinstance(val, str):
+                try:
+                    val = json.loads(val)
+                except ValueError:
+                    val = {}
+            months = {}
+            for k, amount in (val or {}).items():
+                k = str(k).strip()
+                if re.fullmatch(r"\d{4}-\d{2}", k) and str(amount).strip():
+                    months[k] = str(amount).strip()
+            out[f] = json.dumps(months) if months else None
         else:
             out[f] = val
     if "contract_start" in payload and payload["contract_start"]:

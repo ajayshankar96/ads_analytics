@@ -1732,11 +1732,53 @@ async def create_advertiser(request: Request, payload: dict, db: AsyncSession = 
     return {"success": True, "advertiser": repo.advertiser_dict(adv)}
 
 
+_BUDGET_FIELDS = {"budget_hint", "budget_type", "budget_months"}
+
+
+async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: Request):
+    """Budget governance for onboarded advertisers: only the owner (or an
+    admin) may change budget settings, and MONTHLY budgets lock the current
+    month once its value is set — past months are read-only, future months
+    stay editable. Admins bypass the month lock as an escape hatch."""
+    if not (_BUDGET_FIELDS & set(payload.keys())) or adv.status != "ONBOARDED":
+        return
+    email = (getattr(request.state, "user_email", None) or payload.get("changed_by") or "").strip().lower()
+    is_owner = bool(email and adv.owner_email and email == adv.owner_email.strip().lower())
+    is_admin = False
+    if email and not is_owner:
+        user = await repo.get_user_role(db, email)
+        is_admin = bool(user and (user.role or "").upper() == "ADMIN")
+    if email and not (is_owner or is_admin):
+        raise HTTPException(status_code=403, detail="Only the advertiser owner or an admin can change budget settings")
+    if is_admin:
+        return
+
+    cur = repo.datetime.now(repo.timezone.utc).strftime("%Y-%m")
+    old_type = (adv.budget_type or "AGNOSTIC").upper()
+    old_months = repo.parse_budget_months(adv)
+    new_type = str(payload.get("budget_type") or old_type).strip().upper()
+    if old_type == "MONTHLY" and new_type != "MONTHLY" and str(old_months.get(cur, "")).strip():
+        raise HTTPException(status_code=400, detail=f"Budget for {cur} is locked — the budget type can't be changed mid-month (ask an admin)")
+    if "budget_months" in payload:
+        raw = payload.get("budget_months") or {}
+        new_months = {str(k).strip(): str(v).strip() for k, v in raw.items()} if isinstance(raw, dict) else {}
+        for m in set(old_months) | set(new_months):
+            old_v = str(old_months.get(m, "")).strip()
+            new_v = str(new_months.get(m, "")).strip()
+            if old_v == new_v:
+                continue
+            if m < cur:
+                raise HTTPException(status_code=400, detail=f"Budget for {m} is in the past and can't be changed")
+            if m == cur and old_v:
+                raise HTTPException(status_code=400, detail=f"Budget for {m} is locked for the current month — it unlocks next month")
+
+
 @app.patch("/api/advertisers/{adv_id}")
 async def update_advertiser(adv_id: str, payload: dict, request: Request, db: AsyncSession = Depends(get_db)):
     adv = await repo.get_advertiser(db, adv_id)
     if not adv:
         raise HTTPException(status_code=404, detail=f"advertiser {adv_id} not found")
+    await _enforce_budget_rules(db, adv, payload, request)
     old_terms = _advertiser_default_terms(adv)
     try:
         adv = await repo.update_advertiser(db, adv, payload)

@@ -159,7 +159,9 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
     owner_email: a.owner_email || userEmail,
     // Commercial
     buy_type: a.buy_type || "ROAS", roas_multiplier: a.roas_multiplier ?? "", cpc_rate: a.cpc_rate ?? "",
-    budget_hint: a.budget_hint || "", gst: a.gst || "", pan: a.pan || "",
+    budget_hint: a.budget_hint || "", budget_type: a.budget_type || "AGNOSTIC",
+    budget_months: a.budget_months && typeof a.budget_months === "object" ? a.budget_months : {},
+    gst: a.gst || "", pan: a.pan || "",
     // Performance goal
     goal_type: a.goal_type || "ROAS", target_roas: a.target_roas ?? "", target_cac: a.target_cac ?? "",
     // POC
@@ -327,6 +329,43 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
 
     if (step === 2) {
       const isRoas = data.buy_type === "ROAS";
+      const isMonthly = data.budget_type === "MONTHLY";
+      const curMonth = new Date().toISOString().slice(0, 7);
+      const months = data.budget_months || {};
+      const monthKeys = Object.keys(months).sort();
+      const nextMonthOf = (m) => {
+        const [y, mo] = m.split("-").map(Number);
+        return new Date(Date.UTC(y, mo, 1)).toISOString().slice(0, 7);
+      };
+      const budgetTab = (active) => ({
+        padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+        borderRadius: 6, border: "none",
+        background: active ? c.blue : "#F1F5F9", color: active ? "#fff" : c.sub,
+      });
+      const pickAgnostic = () => set({ budget_type: "AGNOSTIC" });
+      const pickMonthly = () => set({
+        budget_type: "MONTHLY",
+        // Seed the current month from the hint so the map is never empty.
+        budget_months: monthKeys.length ? months : { [curMonth]: data.budget_hint || "" },
+      });
+      const setMonthAmount = (m, amt) => set({ budget_months: { ...months, [m]: amt } });
+      const renameMonth = (oldM, newM) => {
+        if (!newM || newM === oldM) return;
+        const next = { ...months };
+        const amt = next[oldM];
+        delete next[oldM];
+        next[newM] = amt;
+        set({ budget_months: next });
+      };
+      const removeMonth = (m) => {
+        const next = { ...months };
+        delete next[m];
+        set({ budget_months: next });
+      };
+      const addMonth = () => {
+        const start = monthKeys.length ? nextMonthOf(monthKeys[monthKeys.length - 1]) : curMonth;
+        set({ budget_months: { ...months, [start]: "" } });
+      };
       return (
         <>
           <div style={s.secTitle}>Commercial terms</div>
@@ -362,11 +401,45 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
               </div>
             )}
             <div style={s.field}>
-              <label style={s.label}>Default campaign budget hint (₹)</label>
-              <input style={s.input} placeholder="e.g. 5,00,000" value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
-              <div style={s.help}>Pre-fills the budget field when creating new campaigns. Optional.</div>
+              <label style={s.label}>Default campaign budget (₹)</label>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <button type="button" style={budgetTab(!isMonthly)} onClick={pickAgnostic}>Date-agnostic</button>
+                <button type="button" style={budgetTab(isMonthly)} onClick={pickMonthly}>Monthly</button>
+              </div>
+              {!isMonthly && (
+                <>
+                  <input style={s.input} placeholder="e.g. 5,00,000" value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
+                  <div style={s.help}>Pre-fills the budget field when creating new campaigns. The owner can change it anytime. Optional.</div>
+                </>
+              )}
+              {isMonthly && (
+                <div style={s.help}>Set a budget per calendar month below. Once the advertiser is onboarded, the current month's value locks — only future months stay editable.</div>
+              )}
             </div>
           </div>
+          {isMonthly && (
+            <div style={{ ...s.field, marginBottom: 22 }}>
+              <label style={s.label}>Monthly budgets</label>
+              {monthKeys.map((m) => (
+                <div key={m} style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                  <input style={{ ...s.input, width: 160 }} type="month" value={m} onChange={(e) => renameMonth(m, e.target.value)} />
+                  <input style={{ ...s.input, flex: 1 }} placeholder="e.g. 5,00,000" value={months[m]} onChange={(e) => setMonthAmount(m, e.target.value)} />
+                  <button
+                    type="button"
+                    onClick={() => removeMonth(m)}
+                    style={{ border: "none", background: "transparent", color: c.muted, fontSize: 16, cursor: "pointer", padding: "0 4px" }}
+                    title="Remove month"
+                  >×</button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addMonth}
+                style={{ alignSelf: "flex-start", border: `1px dashed ${c.line}`, background: "#fff", color: c.blue, fontSize: 12.5, fontWeight: 600, borderRadius: 8, padding: "8px 14px", cursor: "pointer" }}
+              >+ Add month</button>
+              <div style={s.help}>Months without a value are ignored on save.</div>
+            </div>
+          )}
           <div style={s.secLabel}>Tax & registration</div>
           <div style={s.grid2}>
             <div style={s.field}>
@@ -534,10 +607,15 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
       // Review
       const v = (x) => (x === "" || x === undefined || x === null ? "—" : x);
       const rate = data.buy_type === "ROAS" ? (data.roas_multiplier ? `${data.roas_multiplier}x ROAS` : "—") : (data.cpc_rate ? `₹${data.cpc_rate} / click` : "—");
+      const bm = data.budget_months || {};
+      const bmKeys = Object.keys(bm).filter((m) => String(bm[m]).trim()).sort();
+      const budgetSummary = data.budget_type === "MONTHLY"
+        ? (bmKeys.length ? bmKeys.map((m) => `${m}: ₹${bm[m]}`).join(" · ") : "Monthly — not set")
+        : (data.budget_hint ? `₹${data.budget_hint} (date-agnostic)` : "—");
       const target = data.goal_type === "ROAS" ? (data.target_roas ? `${data.target_roas}x` : "—") : (data.target_cac ? `₹${data.target_cac}` : "—");
       const groups = [
         { step: 1, title: "Basics", rows: [["Advertiser name", v(data.name)], ["Industry / Category", v(data.category)], ["Brand logo", logo ? logo.name : "—"], ["Description", v(data.description)]] },
-        { step: 2, title: "Commercial", rows: [["Buy type", data.buy_type], ["Rate", rate], ["Budget hint", data.budget_hint ? `₹${data.budget_hint}` : "—"], ["GST", v(data.gst)], ["PAN", v(data.pan)]] },
+        { step: 2, title: "Commercial", rows: [["Buy type", data.buy_type], ["Rate", rate], ["Default budget", budgetSummary], ["GST", v(data.gst)], ["PAN", v(data.pan)]] },
         { step: 3, title: "Performance Goal", rows: [["Goal type", data.goal_type], ["Target", target]] },
         { step: 4, title: "Point of contact", rows: [["Name", v(data.poc_name)], ["Designation", v(data.poc_designation)], ["Email", v(data.poc_email)], ["Phone", data.poc_phone ? `+91 ${data.poc_phone}` : "—"], ["CC finance", data.cc_finance ? "Yes" : "No"]] },
         { step: 5, title: "Agreement & PO", rows: [["Legal agreement", agreementFile ? agreementFile.name : "—"], ["PO", poFile ? poFile.name : "—"], ["PO reference", v(data.po_ref)], ["Contract start", v(data.contract_start)]] },

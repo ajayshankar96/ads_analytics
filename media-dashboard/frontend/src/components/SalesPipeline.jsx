@@ -69,12 +69,17 @@ function ownerText(a) {
   return { name: ownerNameFromEmail(email), email };
 }
 function budgetText(a) {
-  if (!a.budget_hint) return dash;
-  const n = parseFloat(String(a.budget_hint).replace(/[^\d.]/g, ""));
-  if (isNaN(n) || n === 0) return a.budget_hint;
-  if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)} Cr`;
-  if (n >= 100000) return `₹${(n / 100000).toFixed(2)} L`;
-  return `₹${n.toLocaleString("en-IN")}`;
+  // MONTHLY advertisers surface the effective (current-month) budget with
+  // a /mo suffix; AGNOSTIC ones keep the plain hint.
+  const monthly = a.budget_type === "MONTHLY";
+  const raw = monthly ? a.budget_effective : (a.budget_effective ?? a.budget_hint);
+  if (!raw) return dash;
+  const suffix = monthly ? "/mo" : "";
+  const n = parseFloat(String(raw).replace(/[^\d.]/g, ""));
+  if (isNaN(n) || n === 0) return `${raw}${suffix}`;
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)} Cr${suffix}`;
+  if (n >= 100000) return `₹${(n / 100000).toFixed(2)} L${suffix}`;
+  return `₹${n.toLocaleString("en-IN")}${suffix}`;
 }
 
 function fmtDateTime(iso) {
@@ -212,7 +217,7 @@ export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
         )}
       </div>
       {wizard !== null && <AdvertiserWizard advertiser={wizard && wizard.id ? wizard : undefined} onClose={closeWizard} userEmail={userEmail} />}
-      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} userEmail={userEmail} />}
+      {viewAdv !== null && <AdvertiserDetails advertiser={viewAdv} onClose={() => { setViewAdv(null); load(); }} userEmail={userEmail} userRole={userRole} />}
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No advertisers yet. Click “+ New Advertiser” to onboard one.</div>

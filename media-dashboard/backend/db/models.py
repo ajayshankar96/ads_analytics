@@ -60,6 +60,10 @@ class Advertiser(Base):
     roas_multiplier: Mapped[Optional[float]] = mapped_column(Float, default=None)
     cpc_rate: Mapped[Optional[float]] = mapped_column(Float, default=None)
     budget_hint: Mapped[Optional[str]] = mapped_column(String(64), default=None)
+    # AGNOSTIC: budget_hint changeable anytime. MONTHLY: budget_months JSON map
+    # {"YYYY-MM": amount}; the current month locks once its value is set.
+    budget_type: Mapped[str] = mapped_column(String(16), default="AGNOSTIC")
+    budget_months: Mapped[Optional[str]] = mapped_column(Text, default=None)
     gst: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     pan: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     # Step 3 — Performance goal
