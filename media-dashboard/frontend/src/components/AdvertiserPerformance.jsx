@@ -127,18 +127,18 @@ function Delta({ pct }) {
 
 function AdvRow({ adv, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
-  const indent = depth === 0 ? {} : depth === 1 ? { paddingLeft: 24 } : { paddingLeft: 48 };
-  const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : "#fafafa";
+  const indent = { paddingLeft: depth * 24 };
+  const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : depth === 2 ? "#fafafa" : "#f4f6f8";
 
-  const hasChildren = (adv.publishers || adv.advertisers || adv.segments || []).length > 0;
-  const children = adv.publishers || adv.advertisers || adv.segments || [];
-  const childKey = adv.publishers ? "publishers" : adv.advertisers ? "advertisers" : "segments";
+  // Hierarchy: advertiser → publishers → segments → offers.
+  const children = adv.publishers || adv.advertisers || adv.segments || adv.offers || [];
+  const hasChildren = children.length > 0;
 
   return (
     <>
       <tr style={{ background: bg, cursor: hasChildren ? "pointer" : "default" }}
           onClick={() => hasChildren && setOpen(!open)}>
-        <td style={{ ...s.td, ...indent, fontWeight: depth === 0 ? 700 : depth === 1 ? 600 : 400 }}>
+        <td style={{ ...s.td, ...indent, fontWeight: depth === 0 ? 700 : depth === 1 ? 600 : depth === 2 ? 500 : 400 }}>
           {hasChildren && (
             <span style={s.expandBtn}>{open ? "▼" : "▶"}</span>
           )}

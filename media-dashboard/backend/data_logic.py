@@ -488,21 +488,30 @@ def _deltas(curr, prev, metric_keys):
 
 
 def _flatten_totals(agg, metric_keys):
-    """From a nested l1→l2→l3→metrics dict, return totals keyed by path tuple."""
-    l1_t, l2_t, l3_t = {}, {}, {}
+    """From a nested l1→l2→l3→l4→metrics dict, return totals keyed by path tuple.
+
+    Used to look up previous-period totals for period-over-period deltas at every
+    level of the hierarchy (advertiser/publisher/segment/offer).
+    """
+    l1_t, l2_t, l3_t, l4_t = {}, {}, {}, {}
     for k1, sub in agg.items():
         a = {k: 0 for k in metric_keys}
         for k2, segs in sub.items():
             p = {k: 0 for k in metric_keys}
-            for k3, m in segs.items():
-                l3_t[(k1, k2, k3)] = m
+            for k3, offers in segs.items():
+                seg_tot = {k: 0 for k in metric_keys}
+                for k4, m in offers.items():
+                    l4_t[(k1, k2, k3, k4)] = m
+                    for k in metric_keys:
+                        seg_tot[k] += m[k]
+                l3_t[(k1, k2, k3)] = seg_tot
                 for k in metric_keys:
-                    p[k] += m[k]
+                    p[k] += seg_tot[k]
             l2_t[(k1, k2)] = p
             for k in metric_keys:
                 a[k] += p[k]
         l1_t[k1] = a
-    return l1_t, l2_t, l3_t
+    return l1_t, l2_t, l3_t, l4_t
 
 
 def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly") -> dict:
@@ -531,6 +540,7 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     adv_idx = hcol("Advertiser", COL["ADVERTISER"])
     pub_idx = hcol("Publisher", COL["PUBLISHER"])
     seg_idx = hcol("Segment", COL["SEGMENT"])
+    offer_idx = hcol("Offer", COL["OFFER"])
     date_idx = hcol("Date", COL["DATE"])
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
@@ -550,6 +560,7 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
             adv = _safe_str(row[adv_idx])
             pub = _safe_str(row[pub_idx])
             seg = _safe_str(row[seg_idx]) or "Unknown"
+            offer = (_safe_str(row[offer_idx]) if len(row) > offer_idx else "") or "Unknown"
             if adv_filter and adv not in adv_filter:
                 continue
             if pub_filter and pub not in pub_filter:
@@ -564,7 +575,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
                     continue
                 if dto and d > dto:
                     continue
-            m = agg.setdefault(adv, {}).setdefault(pub, {}).setdefault(seg, {k: 0 for k in ADV_METRICS})
+            m = (agg.setdefault(adv, {}).setdefault(pub, {})
+                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in ADV_METRICS}))
             for key, col in mcols:
                 if len(row) > col:
                     m[key] += _to_float(row[col])
@@ -572,11 +584,11 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
 
     curr = aggregate(date_from, date_to)
 
-    prev_l1 = prev_l2 = prev_l3 = None
+    prev_l1 = prev_l2 = prev_l3 = prev_l4 = None
     cmp_from = cmp_to = None
     if compare:
         cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
-        prev_l1, prev_l2, prev_l3 = _flatten_totals(aggregate(cmp_from, cmp_to), ADV_METRICS)
+        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), ADV_METRICS)
 
     advertisers = []
     for adv, pubs in sorted(curr.items()):
@@ -585,14 +597,25 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         for pub, segs in sorted(pubs.items()):
             pub_tot = {k: 0 for k in ADV_METRICS}
             seg_list = []
-            for seg, m in sorted(segs.items()):
-                rm = _derive(m)
+            for seg, offers in sorted(segs.items()):
+                seg_tot = {k: 0 for k in ADV_METRICS}
+                offer_list = []
+                for offer, m in sorted(offers.items()):
+                    om = _derive(m)
+                    om["name"] = offer
+                    if compare:
+                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((adv, pub, seg, offer)), ADV_METRICS)
+                    offer_list.append(om)
+                    for k in seg_tot:
+                        seg_tot[k] += m[k]
+                rm = _derive(seg_tot)
                 rm["name"] = seg
+                rm["offers"] = offer_list
                 if compare:
-                    rm["deltas"] = _deltas(m, (prev_l3 or {}).get((adv, pub, seg)), ADV_METRICS)
+                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((adv, pub, seg)), ADV_METRICS)
                 seg_list.append(rm)
                 for k in pub_tot:
-                    pub_tot[k] += m[k]
+                    pub_tot[k] += seg_tot[k]
             pe = _derive(pub_tot)
             pe["name"] = pub
             pe["segments"] = seg_list
@@ -645,6 +668,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     adv_idx = hcol("Advertiser", COL["ADVERTISER"])
     pub_idx = hcol("Publisher", COL["PUBLISHER"])
     seg_idx = hcol("Segment", COL["SEGMENT"])
+    offer_idx = hcol("Offer", COL["OFFER"])
     date_idx = hcol("Date", COL["DATE"])
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
@@ -662,6 +686,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
             pub = _safe_str(row[pub_idx])
             adv = _safe_str(row[adv_idx])
             seg = _safe_str(row[seg_idx]) or "Unknown"
+            offer = (_safe_str(row[offer_idx]) if len(row) > offer_idx else "") or "Unknown"
             if pub_filter and pub not in pub_filter:
                 continue
             if adv_filter and adv not in adv_filter:
@@ -676,7 +701,8 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
                     continue
                 if dto and d > dto:
                     continue
-            m = agg.setdefault(pub, {}).setdefault(adv, {}).setdefault(seg, {k: 0 for k in PUB_METRICS})
+            m = (agg.setdefault(pub, {}).setdefault(adv, {})
+                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in PUB_METRICS}))
             for key, col in mcols:
                 if len(row) > col:
                     m[key] += _to_float(row[col])
@@ -684,11 +710,11 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
 
     curr = aggregate(date_from, date_to)
 
-    prev_l1 = prev_l2 = prev_l3 = None
+    prev_l1 = prev_l2 = prev_l3 = prev_l4 = None
     cmp_from = cmp_to = None
     if compare:
         cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
-        prev_l1, prev_l2, prev_l3 = _flatten_totals(aggregate(cmp_from, cmp_to), PUB_METRICS)
+        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), PUB_METRICS)
 
     publishers = []
     for pub, advs in sorted(curr.items()):
@@ -697,14 +723,25 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         for adv, segs in sorted(advs.items()):
             adv_tot = {k: 0 for k in PUB_METRICS}
             seg_list = []
-            for seg, m in sorted(segs.items()):
-                rm = _derive(m)
+            for seg, offers in sorted(segs.items()):
+                seg_tot = {k: 0 for k in PUB_METRICS}
+                offer_list = []
+                for offer, m in sorted(offers.items()):
+                    om = _derive(m)
+                    om["name"] = offer
+                    if compare:
+                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((pub, adv, seg, offer)), PUB_METRICS)
+                    offer_list.append(om)
+                    for k in seg_tot:
+                        seg_tot[k] += m[k]
+                rm = _derive(seg_tot)
                 rm["name"] = seg
+                rm["offers"] = offer_list
                 if compare:
-                    rm["deltas"] = _deltas(m, (prev_l3 or {}).get((pub, adv, seg)), PUB_METRICS)
+                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((pub, adv, seg)), PUB_METRICS)
                 seg_list.append(rm)
                 for k in adv_tot:
-                    adv_tot[k] += m[k]
+                    adv_tot[k] += seg_tot[k]
             ae = _derive(adv_tot)
             ae["name"] = adv
             ae["segments"] = seg_list

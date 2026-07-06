@@ -93,8 +93,9 @@ function Delta({ pct }) {
 function PubRow({ item, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
-  const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : "#fafafa";
-  const children = item.advertisers || item.segments || [];
+  const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : depth === 2 ? "#fafafa" : "#f4f6f8";
+  // Hierarchy: publisher → advertisers → segments → offers.
+  const children = item.advertisers || item.segments || item.offers || [];
   const hasChildren = children.length > 0;
 
   return (
