@@ -461,11 +461,10 @@ def _shift_window(view_mode, dfrom, dto, n, explicit):
 
 
 def _derive(totals):
-    """Round totals + add derived ctr/cpm/cpql/roas/cac for a display entry."""
+    """Round totals + add derived ctr/cpql/roas/cac for a display entry."""
     e = {k: round(v) for k, v in totals.items()}
     imp = e.get("impressions", 0)
     e["ctr"] = round(e.get("clicks", 0) / imp * 100, 2) if imp > 0 else 0
-    e["cpm"] = round(e.get("spends", 0) / (imp / 1000), 2) if imp > 0 else 0
     if "ql" in e:
         e["cpql"] = round(e["spends"] / e["ql"], 2) if e["ql"] > 0 else None
     # ROAS is always revenue ÷ advertiser-side spends (return on the advertiser's
@@ -513,21 +512,18 @@ def _rag(entry, goal):
 
 
 def _deltas(curr, prev, metric_keys):
-    """Percent change per metric (+ ctr/cpm) vs previous; None if no prior data."""
+    """Percent change per metric (+ ctr) vs previous; None if no prior data."""
     if prev is None:
         return None
     out = {}
     for k in metric_keys:
         c, p = curr.get(k, 0), prev.get(k, 0)
         out[k] = round((c - p) / p * 100, 1) if p else None
-    def ratio(t, kind):
+    def ctr(t):
         imp = t.get("impressions", 0)
-        if imp <= 0:
-            return None
-        return t.get("clicks", 0) / imp * 100 if kind == "ctr" else t.get("spends", 0) / (imp / 1000)
-    for kind in ("ctr", "cpm"):
-        c, p = ratio(curr, kind), ratio(prev, kind)
-        out[kind] = round((c - p) / p * 100, 1) if (c is not None and p) else None
+        return t.get("clicks", 0) / imp * 100 if imp > 0 else None
+    c, p = ctr(curr), ctr(prev)
+    out["ctr"] = round((c - p) / p * 100, 1) if (c is not None and p) else None
     return out
 
 
