@@ -780,72 +780,9 @@ def _get_date_ranges(view_mode: str = "weekly") -> dict:
         }
 
 
-def get_advertiser_health(rows: List, headers: List[str], view_mode: str = "weekly") -> dict:
-    """
-    Summarise each advertiser's current-period vs prior-period performance.
-    Mirrors getAdvertiserHealthData() from Code.gs.
-    """
-    ranges = _get_date_ranges(view_mode)
-    curr_start = _parse_date(ranges["current"]["start"])
-    curr_end = _parse_date(ranges["current"]["end"])
-    prev = ranges.get("previous")
-    prev_start = _parse_date(prev["start"]) if prev else None
-    prev_end = _parse_date(prev["end"]) if prev else None
-
-    spd_idx = _get_col(headers, "Publisher_Spends")
-    if spd_idx < 0:
-        spd_idx = COL["PUBLISHER_SPENDS"]
-
-    curr_agg: Dict[str, dict] = defaultdict(lambda: {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0})
-    prev_agg: Dict[str, dict] = defaultdict(lambda: {"impressions": 0, "clicks": 0, "spends": 0, "ql": 0, "qqg": 0})
-
-    for row in rows:
-        if len(row) <= COL["ADVERTISER"]:
-            continue
-        adv = _safe_str(row[COL["ADVERTISER"]])
-        d = _parse_date(row[COL["DATE"]])
-        if d is None or not adv:
-            continue
-
-        def add_to(bucket):
-            bucket["impressions"] += _to_float(row[COL["IMPRESSIONS"]]) if len(row) > COL["IMPRESSIONS"] else 0
-            bucket["clicks"] += _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0
-            bucket["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
-            bucket["ql"] += _to_float(row[COL["QL"]]) if len(row) > COL["QL"] else 0
-            bucket["qqg"] += _to_float(row[COL["QQG"]]) if len(row) > COL["QQG"] else 0
-
-        if curr_start <= d <= curr_end:
-            add_to(curr_agg[adv])
-        elif prev_start and prev_end and prev_start <= d <= prev_end:
-            add_to(prev_agg[adv])
-
-    all_advs = set(curr_agg.keys()) | set(prev_agg.keys())
-    result = []
-    for adv in sorted(all_advs):
-        curr = curr_agg[adv]
-        prev_m = prev_agg[adv]
-
-        def pct_change(curr_val, prev_val):
-            if prev_val == 0:
-                return None
-            return round((curr_val - prev_val) / prev_val * 100, 1)
-
-        entry = {
-            "advertiser": adv,
-            "current": {k: round(v) for k, v in curr.items()},
-            "previous": {k: round(v) for k, v in prev_m.items()},
-            "change": {
-                "impressions": pct_change(curr["impressions"], prev_m["impressions"]),
-                "clicks": pct_change(curr["clicks"], prev_m["clicks"]),
-                "spends": pct_change(curr["spends"], prev_m["spends"]),
-                "ql": pct_change(curr["ql"], prev_m["ql"]),
-                "qqg": pct_change(curr["qqg"], prev_m["qqg"]),
-            },
-            "status": "active" if curr["impressions"] > 0 else "inactive",
-        }
-        result.append(entry)
-
-    return {"advertisers": result, "dateRanges": ranges, "viewMode": view_mode}
+# get_advertiser_health() removed along with the Advertiser Health tab and its
+# /api/advertiser-health endpoint. _get_date_ranges() above is retained — it is
+# still used by the advertiser/publisher performance builders.
 
 
 # ── Data Freshness ────────────────────────────────────────────────────────────
