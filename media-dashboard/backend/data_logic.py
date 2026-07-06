@@ -545,7 +545,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
         ("clicks", hcol("Clicks", COL["CLICKS"])),
-        ("spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
+        # Advertiser view → advertiser-side spends (what the advertiser is billed).
+        ("spends", hcol("Advertiser_Spends", COL["ADVERTISER_SPENDS"])),
         ("ql", hcol("QL", COL["QL"])),
         ("qqg", hcol("QQG", COL["QQG"])),
         ("orders", hcol("Orders", COL["ORDERS"])),
@@ -673,6 +674,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
         ("clicks", hcol("Clicks", COL["CLICKS"])),
+        # Publisher view → publisher-side spends (what the publisher is paid).
         ("spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
         ("ql", hcol("QL", COL["QL"])),
         ("qqg", hcol("QQG", COL["QQG"])),
