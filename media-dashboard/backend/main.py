@@ -89,8 +89,17 @@ logger = logging.getLogger(__name__)
 # ── Dual data source: Sheet cache OR Postgres ─────────────────────────────────
 _pg_cache = {"data": None, "ts": 0}
 
-def load_from_postgres():
-    """Load campaign metrics from Postgres in the same format as load_master_report_cache()."""
+def load_from_postgres(strict: bool = False):
+    """Load campaign metrics from Postgres in the same format as load_master_report_cache().
+
+    Offer / Advertiser_Segment / Advertiser_Industry and Week/Month start dates
+    are filled via joins to rmn_campaigns and rmn_advertisers (verified: every
+    metric row joins to a campaign, every campaign to an advertiser).
+
+    strict=True raises on failure instead of silently falling back to the
+    Google-Sheet cache — used by /api/reporting/* so generated reports are
+    guaranteed Postgres-sourced (the legacy sheet has 19k unrelated rows).
+    """
     import time
     now = time.time()
     if _pg_cache["data"] and (now - _pg_cache["ts"]) < 60:
@@ -99,36 +108,45 @@ def load_from_postgres():
     from sqlalchemy import create_engine
     db_url = os.environ.get("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql+pg8000://").replace("postgresql://", "postgresql+pg8000://")
     if not db_url:
+        if strict:
+            raise RuntimeError("DATABASE_URL not configured")
         return load_master_report_cache()
     try:
-        metrics_json_expr = "COALESCE(NULLIF(advertiser_metrics, ''), '{}')::jsonb"
+        metrics_json_expr = "COALESCE(NULLIF(m.advertiser_metrics, ''), '{}')::jsonb"
         direct_adv_spends_expr = f"NULLIF(COALESCE({metrics_json_expr}->>'Spends', {metrics_json_expr}->>'spends'), '')::float"
         publisher_spends_expr = (
             "CASE "
-            "WHEN publisher_spends_source IN ('sheet', 'calculated') THEN COALESCE(publisher_spends, 0) "
-            "WHEN publisher_spends != 0 THEN publisher_spends "
-            "ELSE COALESCE(spends, 0) END"
+            "WHEN m.publisher_spends_source IN ('sheet', 'calculated') THEN COALESCE(m.publisher_spends, 0) "
+            "WHEN m.publisher_spends != 0 THEN m.publisher_spends "
+            "ELSE COALESCE(m.spends, 0) END"
         )
         advertiser_spends_expr = (
             "CASE "
-            "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
+            "WHEN m.advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(m.advertiser_spends, 0) "
             f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
         )
         eng = create_engine(db_url, pool_pre_ping=True)
         with eng.connect() as conn:
             rows_raw = conn.execute(text(f"""
-                SELECT advertiser, publisher, '' as industry, date::text, '' as week, '' as month_start,
-                       segment, '' as adv_segment, '' as cohort, advertiser as brand, '' as offer,
-                       impressions, distribution, clicks,
-                       CASE WHEN impressions > 0 THEN clicks::float/impressions*100 ELSE 0 END as ctr,
-                       orders_pub, scratches, coins_burned, redirections, spends,
-                       CASE WHEN impressions > 0 THEN ({publisher_spends_expr})/impressions*1000 ELSE 0 END as cpm,
-                       CASE WHEN clicks > 0 THEN ({publisher_spends_expr})/clicks ELSE 0 END as cpc,
+                SELECT m.advertiser, m.publisher,
+                       COALESCE(a.category, '') as industry, m.date::text,
+                       to_char(date_trunc('week', m.date), 'YYYY-MM-DD') as week,
+                       to_char(date_trunc('month', m.date), 'YYYY-MM-DD') as month_start,
+                       m.segment, COALESCE(c.segment_adv, '') as adv_segment,
+                       '' as cohort, m.advertiser as brand,
+                       COALESCE(NULLIF(c.offer_title, ''), c.name, '') as offer,
+                       m.impressions, m.distribution, m.clicks,
+                       CASE WHEN m.impressions > 0 THEN m.clicks::float/m.impressions*100 ELSE 0 END as ctr,
+                       m.orders_pub, m.scratches, m.coins_burned, m.redirections, m.spends,
+                       CASE WHEN m.impressions > 0 THEN ({publisher_spends_expr})/m.impressions*1000 ELSE 0 END as cpm,
+                       CASE WHEN m.clicks > 0 THEN ({publisher_spends_expr})/m.clicks ELSE 0 END as cpc,
                        {publisher_spends_expr} as publisher_spends,
                        {advertiser_spends_expr} as advertiser_spends,
-                       advertiser_metrics
-                FROM rmn_campaign_metrics
-                ORDER BY date
+                       m.advertiser_metrics
+                FROM rmn_campaign_metrics m
+                LEFT JOIN rmn_campaigns c ON c.id = m.campaign_id
+                LEFT JOIN rmn_advertisers a ON a.id = c.advertiser_ref_id
+                ORDER BY m.date
             """)).fetchall()
 
         headers = ["Advertiser", "Publisher", "Advertiser_Industry", "Date", "Week_Start_Date", "Month_Start_Date", "Segment", "Advertiser_Segment", "Cohort_Name", "Brand", "Offer", "Impressions", "Distribution", "Clicks", "CTR", "Orders_pub", "Scratches", "Coins_Burned", "Redirections", "Spends", "CPM", "CPC", "Publisher_Spends", "Advertiser_Spends"]
@@ -146,7 +164,13 @@ def load_from_postgres():
             all_adv_metrics.update(metrics.keys())
             parsed_rows.append((row, metrics))
 
-        adv_metric_cols = sorted(all_adv_metrics)
+        # Dedupe dynamic JSON metrics against base headers: keys like "Clicks"
+        # or "Spends" would otherwise appear twice in the report column picker,
+        # and _get_col() always resolves to the base column so the JSON variant
+        # was unreachable anyway (JSON Spends is already folded into
+        # Advertiser_Spends above).
+        base_lower = {h.lower() for h in headers}
+        adv_metric_cols = sorted(k for k in all_adv_metrics if k.lower() not in base_lower)
         full_headers = headers + adv_metric_cols
 
         full_rows = []
@@ -160,6 +184,8 @@ def load_from_postgres():
         _pg_cache["ts"] = now
         return result
     except Exception as e:
+        if strict:
+            raise
         logger.warning(f"Postgres load failed, falling back to sheet: {e}")
         return load_master_report_cache()
 
@@ -172,6 +198,19 @@ def load_data(source: str = None):
     if src == "postgres":
         return load_from_postgres()
     return load_master_report_cache()
+
+
+def load_report_data():
+    """Data for /api/reporting/* — always Postgres, never the sheet fallback.
+
+    Reports are scoped to workflow-managed campaigns; silently swapping in the
+    legacy sheet would produce a wrong report, so failures surface as 503s.
+    """
+    try:
+        return load_from_postgres(strict=True)
+    except Exception as e:
+        logger.error(f"Report data load from Postgres failed: {e}")
+        raise HTTPException(status_code=503, detail=f"Report data source (Postgres) unavailable: {e}")
 
 
 app = FastAPI(title="Razorpay Media Dashboard API", version="1.0.0")
@@ -2950,7 +2989,7 @@ def list_advertiser_reports():
 
 @app.get("/api/reporting/advertiser/columns")
 def get_adv_columns():
-    data = load_data()
+    data = load_report_data()
     cols = get_available_columns(data["headers"])
     return {"columns": cols, "forcedColumns": FORCED_COLS}
 
@@ -2968,7 +3007,7 @@ def create_advertiser_report(config: AdvReportConfig):
     import json as _json
     from datetime import datetime as _dt
 
-    data = load_data()
+    data = load_report_data()
     rows = filter_by_advertiser(data["rows"], data["headers"], config.advertiser)
     rows = filter_by_date(rows, data["headers"], config.dateFrom)
 
@@ -3062,7 +3101,7 @@ def refresh_advertiser_report(report_id: str):
             ))
         raise HTTPException(status_code=404, detail="Report not found")
 
-    data = load_data()
+    data = load_report_data()
     rows = filter_by_advertiser(data["rows"], data["headers"], report["advertiser"])
     rows = filter_by_date(rows, data["headers"], report["dateFrom"] if report["dateFrom"] != "All" else None)
 
@@ -3134,7 +3173,7 @@ def list_publisher_reports():
 
 @app.get("/api/reporting/publisher/metrics")
 def get_pub_metrics():
-    data = load_data()
+    data = load_report_data()
     from reporting_logic import PUB_FIXED_METRICS
     extra = get_publisher_extra_metrics(data["headers"])
     return {"fixedMetrics": PUB_FIXED_METRICS, "extraMetrics": extra}
@@ -3146,7 +3185,7 @@ def get_pub_advertisers(
     dateFrom: Optional[str] = None,
     dateTo: Optional[str] = None,
 ):
-    data = load_data()
+    data = load_report_data()
     advertisers = get_publisher_advertisers(data["rows"], data["headers"], publisher, dateFrom, dateTo)
     return {"advertisers": advertisers}
 
@@ -3173,7 +3212,7 @@ def create_publisher_report(config: PubReportConfig):
     from datetime import datetime as _dt
     from reporting_logic import PUB_FIXED_METRICS
 
-    data = load_data()
+    data = load_report_data()
     rows = filter_by_publisher(data["rows"], data["headers"], config.publisher)
     rows = filter_by_date(rows, data["headers"], config.dateFrom, config.dateTo)
 
@@ -3268,7 +3307,7 @@ def refresh_publisher_report(report_id: str):
             ))
         raise HTTPException(status_code=404, detail="Publisher report not found")
 
-    data = load_data()
+    data = load_report_data()
     rows = filter_by_publisher(data["rows"], data["headers"], report["publisher"])
     date_from = report["dateFrom"] if report["dateFrom"] not in ("All", "") else None
     date_to = report["dateTo"] if report.get("dateTo") else None
