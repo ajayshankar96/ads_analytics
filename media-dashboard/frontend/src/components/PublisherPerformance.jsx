@@ -132,8 +132,8 @@ function PubRow({ item, depth = 0 }) {
         <td style={s.td}>{fmt(item.impressions)}<Delta pct={item.deltas?.impressions} /></td>
         <td style={s.td}>{fmt(item.clicks)}<Delta pct={item.deltas?.clicks} /></td>
         <td style={s.td}>{item.ctr}%<Delta pct={item.deltas?.ctr} /></td>
-        <td style={s.td}>₹{fmt(item.spends)}<Delta pct={item.deltas?.spends} /></td>
-        <td style={s.td}>{item.cpm ? `₹${item.cpm}` : "—"}<Delta pct={item.deltas?.cpm} /></td>
+        <td style={s.td}>₹{fmt(item.adv_spends)}<Delta pct={item.deltas?.adv_spends} /></td>
+        <td style={s.td}>₹{fmt(item.pub_spends)}<Delta pct={item.deltas?.pub_spends} /></td>
         <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
         <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
         <td style={s.td}>{fmtRoas(item.roas)}</td>

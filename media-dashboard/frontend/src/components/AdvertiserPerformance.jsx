@@ -170,8 +170,8 @@ function AdvRow({ adv, depth = 0 }) {
         <td style={s.td}>{fmt(adv.impressions)}<Delta pct={adv.deltas?.impressions} /></td>
         <td style={s.td}>{fmt(adv.clicks)}<Delta pct={adv.deltas?.clicks} /></td>
         <td style={s.td}>{adv.ctr}%<Delta pct={adv.deltas?.ctr} /></td>
-        <td style={s.td}>₹{fmt(adv.spends)}<Delta pct={adv.deltas?.spends} /></td>
-        <td style={s.td}>{adv.cpm ? `₹${adv.cpm}` : "—"}<Delta pct={adv.deltas?.cpm} /></td>
+        <td style={s.td}>₹{fmt(adv.adv_spends)}<Delta pct={adv.deltas?.adv_spends} /></td>
+        <td style={s.td}>₹{fmt(adv.pub_spends)}<Delta pct={adv.deltas?.pub_spends} /></td>
         <td style={s.td}>{fmt(adv.ql)}<Delta pct={adv.deltas?.ql} /></td>
         <td style={s.td}>{adv.cpql ? `₹${adv.cpql}` : "—"}</td>
         <td style={s.td}>{fmtRoas(adv.roas)}</td>
@@ -265,8 +265,8 @@ export default function AdvertiserPerformance({ filters }) {
                 <th style={s.th}>Impressions</th>
                 <th style={s.th}>Clicks</th>
                 <th style={s.th}>CTR</th>
-                <th style={s.th}>Spends</th>
-                <th style={s.th}>CPM</th>
+                <th style={s.th}>Adv Spends</th>
+                <th style={s.th}>Pub Spends</th>
                 <th style={s.th}>QL</th>
                 <th style={s.th}>CPQL</th>
                 <th style={s.th}>ROAS</th>

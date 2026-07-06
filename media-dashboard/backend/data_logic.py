@@ -435,11 +435,11 @@ def prepare_table_data(rows: List, headers: List[str], offset: int = 0, limit: i
 
 # ── Advertiser Performance ────────────────────────────────────────────────────
 
-# adv_spends is carried alongside spends on both hierarchies so ROAS
-# (revenue ÷ advertiser spends) resolves the same way in the publisher view,
-# where the displayed "spends" is the publisher-side figure.
-ADV_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends"]
-PUB_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends"]
+# adv_spends and pub_spends are both carried on each hierarchy so the two spend
+# figures can be shown side by side in either tab, and so ROAS (revenue ÷
+# advertiser spends) resolves the same way regardless of which tab is displayed.
+ADV_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends", "pub_spends"]
+PUB_METRICS = ["impressions", "clicks", "spends", "ql", "qqg", "orders", "revenue", "adv_spends", "pub_spends"]
 
 
 def _shift_months(d, delta):
@@ -601,6 +601,8 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         ("revenue", hcol("Revenue", COL["REVENUE"])),
         # Kept separate from "spends" so ROAS uses advertiser spends explicitly.
         ("adv_spends", hcol("Advertiser_Spends", COL["ADVERTISER_SPENDS"])),
+        # Also carry publisher spends so both spend figures show side by side.
+        ("pub_spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
     ]
 
     def aggregate(dfrom, dto):
@@ -739,6 +741,8 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         ("revenue", hcol("Revenue", COL["REVENUE"])),
         # Advertiser-side spends carried for ROAS (revenue ÷ advertiser spends).
         ("adv_spends", hcol("Advertiser_Spends", COL["ADVERTISER_SPENDS"])),
+        # Publisher-side spends carried so both spend figures show side by side.
+        ("pub_spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
     ]
 
     def aggregate(dfrom, dto):
