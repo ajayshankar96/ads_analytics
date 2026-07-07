@@ -212,6 +212,9 @@ export const cloneCampaign = (campaignId, overrides = {}) =>
 export const getCampaignChangelog = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/changelog`);
 
+export const getAdvertiserChangelog = (advId) =>
+  apiFetch(`/api/advertisers/${advId}/changelog`);
+
 export const updateCampaignAssets = (campaignId, payload) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/assets`, {
     method: "PATCH",

@@ -1763,6 +1763,11 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
     month once its value is set — past months are read-only, future months
     stay editable. Admins bypass the month lock as an escape hatch.
 
+    Budget type is a one-way switch once onboarded: AGNOSTIC → MONTHLY is
+    allowed (and logged), but MONTHLY can't revert to date-agnostic — that
+    would let the freely-editable hint bypass the month locks. This applies
+    to admins too (product decision, 2026-07).
+
     Returns an actor-context dict {email, is_owner, is_admin} when budget
     fields on an onboarded advertiser are touched (used for changelog
     attribution), else None."""
@@ -1777,17 +1782,17 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
     if email and not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Only the advertiser owner or an admin can change budget settings")
     ctx = {"email": email or None, "is_owner": is_owner, "is_admin": is_admin}
+    old_type = (adv.budget_type or "AGNOSTIC").upper()
+    new_type = str(payload.get("budget_type") or old_type).strip().upper()
+    if old_type == "MONTHLY" and new_type != "MONTHLY":
+        raise HTTPException(status_code=400, detail="Budget type is one-way — a Monthly budget can't be switched back to date-agnostic")
     if is_admin:
         # Admins bypass the month locks even when they also own the
         # advertiser — otherwise an admin-owner would have no escape hatch.
         return ctx
 
     cur = repo.datetime.now(repo.timezone.utc).strftime("%Y-%m")
-    old_type = (adv.budget_type or "AGNOSTIC").upper()
     old_months = repo.parse_budget_months(adv)
-    new_type = str(payload.get("budget_type") or old_type).strip().upper()
-    if old_type == "MONTHLY" and new_type != "MONTHLY" and str(old_months.get(cur, "")).strip():
-        raise HTTPException(status_code=400, detail=f"Budget for {cur} is locked — the budget type can't be changed mid-month (ask an admin)")
     if "budget_months" in payload:
         raw = payload.get("budget_months") or {}
         new_months = {str(k).strip(): str(v).strip() for k, v in raw.items()} if isinstance(raw, dict) else {}

@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { updateAdvertiser } from "../api";
+import React, { useState, useEffect } from "react";
+import { updateAdvertiser, getAdvertiserChangelog } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A" };
 
@@ -146,11 +146,82 @@ function BudgetMonths({ a, canEdit, isAdmin, onUpdate }) {
           >+ Add month</button>
         </div>
       ))}
-      {canEdit && !isAdmin && (
+      {canEdit && (
         <div style={{ fontSize: 11.5, color: c.muted, marginTop: 6, fontStyle: "italic" }}>
-          The current month locks once its budget is set — it unlocks next month. Past months can't be changed.
+          {!isAdmin && "The current month locks once its budget is set — it unlocks next month. Past months can't be changed. "}
+          Budget type is one-way: once Monthly, it can't be switched back to date-agnostic.
         </div>
       )}
+    </div>
+  );
+}
+
+// Field-level change history (budget edits + type switches) from
+// rmn_advertiser_changelog — same data the backend writes in
+// _log_budget_changes, so every switch/edit is visible, not just stored.
+function ChangeHistory({ advId }) {
+  const [entries, setEntries] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getAdvertiserChangelog(advId)
+      .then((r) => { if (alive) setEntries(r.entries || []); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, [advId]);
+
+  const fieldLabel = (f) => {
+    if (f === "budget_hint") return "Default budget";
+    if (f === "budget_type") return "Budget type";
+    if (f && f.startsWith("budget_months.")) {
+      const [y, mo] = f.slice("budget_months.".length).split("-").map(Number);
+      return `Budget · ${new Date(y, mo - 1, 1).toLocaleString("en-IN", { month: "short", year: "numeric" })}`;
+    }
+    return f || "—";
+  };
+  const fmtVal = (f, v) => {
+    if (v === null || v === undefined || String(v).trim() === "") return "—";
+    if (f === "budget_type") return v === "MONTHLY" ? "Monthly" : v === "AGNOSTIC" ? "Date-agnostic" : v;
+    return `₹${v}`;
+  };
+  const fmtWhen = (iso) => {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch { return iso; }
+  };
+  const sourceChip = (src) => {
+    if (!src) return null;
+    const isOverride = src === "admin_override";
+    return (
+      <span style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: isOverride ? "#FDF3E1" : "#F1F5F9", color: isOverride ? "#B7791F" : c.muted }}>
+        {src.replace("_", " ")}
+      </span>
+    );
+  };
+
+  return (
+    <div style={s.group}>
+      <div style={s.groupTitle}>Change History</div>
+      {!loaded && <div style={{ fontSize: 12.5, color: c.muted, padding: "4px 0" }}>Loading…</div>}
+      {loaded && entries.length === 0 && (
+        <div style={{ fontSize: 12.5, color: c.muted, padding: "4px 0" }}>No changes logged yet.</div>
+      )}
+      {entries.map((e) => (
+        <div key={e.id} style={{ padding: "8px 0", borderBottom: "1px solid #F7F8FA" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: c.ink }}>{fieldLabel(e.field)}</span>
+            {sourceChip(e.source)}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: c.muted, whiteSpace: "nowrap" }}>{fmtWhen(e.changed_at)}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: c.sub, marginTop: 2 }}>
+            {fmtVal(e.field, e.old_value)} → <strong style={{ color: c.ink }}>{fmtVal(e.field, e.new_value)}</strong>
+          </div>
+          {e.changed_by && <div style={{ fontSize: 11.5, color: c.muted, marginTop: 1 }}>{e.changed_by}</div>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -291,7 +362,10 @@ export default function AdvertiserDetails({ advertiser, onClose, userEmail = "",
     { title: "Commercial", rows: [
       { label: "Buy type", value: v(a.buy_type), field: "buy_type" },
       { label: "Rate", value: rate, field: a.buy_type === "ROAS" ? "roas_multiplier" : "cpc_rate" },
-      { label: "Budget type", value: isMonthly ? "Monthly" : "Date-agnostic", field: "budget_type", budget: true },
+      // One-way switch: date-agnostic can move to monthly (logged), but a
+      // monthly budget can't revert — the row locks once MONTHLY (server
+      // enforces this too).
+      { label: "Budget type", value: isMonthly ? "Monthly 🔒" : "Date-agnostic", field: isMonthly ? null : "budget_type", budget: true },
       ...(isMonthly
         ? [{ custom: "budget_months" }]
         : [{ label: "Default budget", value: a.budget_hint ? `₹${a.budget_hint}` : "—", field: "budget_hint", budget: true }]),
@@ -367,6 +441,7 @@ export default function AdvertiserDetails({ advertiser, onClose, userEmail = "",
               ))}
             </div>
           ))}
+          <ChangeHistory advId={a.id} />
         </div>
       </div>
     </div>

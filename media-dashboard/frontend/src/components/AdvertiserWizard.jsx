@@ -409,11 +409,11 @@ export default function AdvertiserWizard({ onClose, advertiser, userEmail = "" }
               {!isMonthly && (
                 <>
                   <input style={s.input} placeholder="e.g. 5,00,000" value={data.budget_hint} onChange={(e) => set({ budget_hint: e.target.value })} />
-                  <div style={s.help}>Pre-fills the budget field when creating new campaigns. The owner can change it anytime. Optional.</div>
+                  <div style={s.help}>Pre-fills the budget field when creating new campaigns. The owner can change it anytime, or switch to monthly later. Optional.</div>
                 </>
               )}
               {isMonthly && (
-                <div style={s.help}>Set a budget per calendar month below. Once the advertiser is onboarded, the current month's value locks — only future months stay editable.</div>
+                <div style={s.help}>Set a budget per calendar month below. Once the advertiser is onboarded, the current month's value locks — only future months stay editable — and monthly can't be switched back to date-agnostic.</div>
               )}
             </div>
           </div>
