@@ -1509,7 +1509,7 @@ def _today_ist():
 def _normalize_billing_model(side: str, model: str) -> str:
     side = (side or "").strip().lower()
     model = (model or "").strip().lower()
-    allowed_models = {"publisher": {"cpc", "cpm", "roas"}, "advertiser": {"roas", "cpc"}}
+    allowed_models = {"publisher": {"cpc", "cpm", "roas", "cpd"}, "advertiser": {"roas", "cpc"}}
     if side not in allowed_models:
         raise HTTPException(status_code=400, detail="side must be publisher or advertiser")
     if model not in allowed_models[side]:
@@ -1526,7 +1526,7 @@ def _safe_billing_rate(value) -> float:
 
 
 def _billing_summary(side: str, model: str, rate: float, start_date, source: str = None) -> str:
-    label = {"roas": "ROAS", "cpc": "CPC", "cpm": "CPM"}.get(model, model.upper())
+    label = {"roas": "ROAS", "cpc": "CPC", "cpm": "CPM", "cpd": "CPD"}.get(model, model.upper())
     parts = [f"{side}:{label}", f"rate={rate:g}", f"start={start_date.isoformat()}"]
     if source:
         parts.append(f"source={source}")
@@ -1548,7 +1548,7 @@ def _publisher_default_terms(campaign: models.Campaign) -> tuple:
     if not model and campaign.cpc_cpd:
         model = "cpc"
         rate = _safe_billing_rate(campaign.cpc_cpd)
-    if model not in {"cpc", "cpm", "roas"}:
+    if model not in {"cpc", "cpm", "roas", "cpd"}:
         return "", 0.0
     return model, rate
 
@@ -1676,8 +1676,8 @@ async def _validate_go_live_billing_defaults(db: AsyncSession, campaign: models.
     if adv_model not in {"roas", "cpc"} or adv_rate <= 0:
         raise HTTPException(status_code=400, detail="Advertiser billing default is missing ROAS/CPC rate")
     pub_model, pub_rate = _publisher_default_terms(campaign)
-    if pub_model not in {"cpc", "cpm", "roas"} or pub_rate <= 0:
-        raise HTTPException(status_code=400, detail="Publisher billing default is missing CPC/CPM/ROAS rate")
+    if pub_model not in {"cpc", "cpm", "roas", "cpd"} or pub_rate <= 0:
+        raise HTTPException(status_code=400, detail="Publisher billing default is missing CPC/CPM/ROAS/CPD rate")
 
 
 async def _seed_go_live_billing_defaults(db: AsyncSession, campaign: models.Campaign, changed_by: str = None) -> int:

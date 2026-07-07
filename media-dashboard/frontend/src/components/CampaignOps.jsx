@@ -38,13 +38,16 @@ const PUBLISHER_BILLING_MODELS = [
   { value: "cpc", label: "CPC" },
   { value: "cpm", label: "CPM" },
   { value: "roas", label: "ROAS" },
+  { value: "cpd", label: "CPD" },
 ];
 
 function publisherBillingText(campaign) {
   const model = (campaign.publisher_billing_model || (campaign.cpc_cpd ? "cpc" : "")).toUpperCase();
   const rate = campaign.publisher_billing_rate || campaign.cpc_cpd;
   if (!model || !rate) return "—";
-  return model === "ROAS" ? `${model} ${rate}x` : `${model} ₹${rate}`;
+  if (model === "ROAS") return `${model} ${rate}x`;
+  if (model === "CPD") return `${model} ₹${rate}/day`;
+  return `${model} ₹${rate}`;
 }
 
 function buildEmailDraft(campaign) {

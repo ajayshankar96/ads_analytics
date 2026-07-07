@@ -594,6 +594,10 @@ def _publisher_formula_from_terms(model: str, rate: float) -> str:
         return f'Impressions * {rate_str} / 1000'
     if billing_model == 'roas':
         return f'Revenue / {rate_str}'
+    if billing_model == 'cpd':
+        # Flat ₹/day placeholder — each synced row is one day, so spend = rate.
+        # Final CPD calculation logic is TBD (business to confirm).
+        return rate_str
     return ''
 
 

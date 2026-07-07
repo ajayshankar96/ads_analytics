@@ -1339,16 +1339,18 @@ const PUBLISHER_BILLING_MODELS = [
   { value: "cpc", label: "CPC (Cost Per Click)" },
   { value: "cpm", label: "CPM (Cost Per Mille)" },
   { value: "roas", label: "ROAS (Revenue / ROAS)" },
+  { value: "cpd", label: "CPD (Cost Per Day)" },
 ];
 const ADVERTISER_BILLING_MODELS = [
   { value: "roas", label: "ROAS (Revenue / ROAS)" },
   { value: "cpc", label: "CPC (Cost Per Click)" },
 ];
-const BILLING_MODEL_LABELS = { cpc: "CPC", cpm: "CPM", roas: "ROAS" };
+const BILLING_MODEL_LABELS = { cpc: "CPC", cpm: "CPM", roas: "ROAS", cpd: "CPD" };
 const BILLING_RATE_LABELS = {
   cpc: "Rate (₹ per click)",
   cpm: "Rate (₹ per 1000 impressions)",
   roas: "ROAS multiplier",
+  cpd: "Rate (₹ per day)",
 };
 const billingModelsForSide = (side) => side === "advertiser" ? ADVERTISER_BILLING_MODELS : PUBLISHER_BILLING_MODELS;
 

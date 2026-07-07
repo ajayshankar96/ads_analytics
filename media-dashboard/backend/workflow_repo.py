@@ -390,7 +390,7 @@ def _coerce_campaign_asset(field: str, value: Any) -> Any:
         return None
     if field == "publisher_billing_model":
         model = str(value).strip().lower()
-        return model if model in {"cpc", "cpm", "roas"} else None
+        return model if model in {"cpc", "cpm", "roas", "cpd"} else None
     if field in _ASSET_FLOAT:
         try:
             return float(str(value).replace(",", "").strip())
