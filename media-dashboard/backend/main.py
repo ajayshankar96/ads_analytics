@@ -1964,8 +1964,26 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
     return {"email": email, "role": "VIEWER", "name": None}
 
 
+async def _require_role_admin(request: Request, db: AsyncSession) -> None:
+    """ADMIN-only gate for role management (env ADMIN_EMAILS or DB ADMIN role).
+
+    The User Roles tab is already hidden from non-admins in the UI, but these
+    endpoints must enforce it server-side too — otherwise any signed-in user
+    could POST themselves an ADMIN role."""
+    if not auth_enabled():
+        return
+    email = (getattr(request.state, "user_email", None) or "").strip().lower()
+    if is_admin(email):
+        return
+    user = await repo.get_user_role(db, email)
+    if user and (user.role or "").upper() == "ADMIN":
+        return
+    raise HTTPException(status_code=403, detail="Admin access required")
+
+
 @app.get("/api/roles")
-async def list_roles(db: AsyncSession = Depends(get_db)):
+async def list_roles(request: Request, db: AsyncSession = Depends(get_db)):
+    await _require_role_admin(request, db)
     roles = await repo.list_user_roles(db)
     return {"roles": roles}
 
@@ -1977,7 +1995,8 @@ class SetRoleRequest(BaseModel):
 
 
 @app.post("/api/roles")
-async def set_role(req: SetRoleRequest, db: AsyncSession = Depends(get_db)):
+async def set_role(req: SetRoleRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    await _require_role_admin(request, db)
     if req.role not in repo.VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(repo.VALID_ROLES)}")
     result = await repo.set_user_role(db, email=req.email, role=req.role, name=req.name)
@@ -1985,7 +2004,8 @@ async def set_role(req: SetRoleRequest, db: AsyncSession = Depends(get_db)):
 
 
 @app.delete("/api/roles/{email}")
-async def delete_role(email: str, db: AsyncSession = Depends(get_db)):
+async def delete_role(email: str, request: Request, db: AsyncSession = Depends(get_db)):
+    await _require_role_admin(request, db)
     await repo.delete_user_role(db, email)
     return {"success": True}
 
