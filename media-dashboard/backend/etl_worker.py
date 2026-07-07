@@ -601,6 +601,8 @@ def _publisher_formula_from_terms(model: str, rate: float) -> str:
         return f'Clicks * {rate_str}'
     if billing_model == 'cpm':
         return f'Impressions * {rate_str} / 1000'
+    if billing_model == 'roas':
+        return f'Revenue / {rate_str}'
     return ''
 
 

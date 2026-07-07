@@ -37,13 +37,14 @@ const ASSET_FIELDS = [
 const PUBLISHER_BILLING_MODELS = [
   { value: "cpc", label: "CPC" },
   { value: "cpm", label: "CPM" },
+  { value: "roas", label: "ROAS" },
 ];
 
 function publisherBillingText(campaign) {
   const model = (campaign.publisher_billing_model || (campaign.cpc_cpd ? "cpc" : "")).toUpperCase();
   const rate = campaign.publisher_billing_rate || campaign.cpc_cpd;
   if (!model || !rate) return "—";
-  return `${model} ₹${rate}`;
+  return model === "ROAS" ? `${model} ${rate}x` : `${model} ₹${rate}`;
 }
 
 function buildEmailDraft(campaign) {
@@ -615,11 +616,19 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
                       onChange={(e) => setAssets({ ...assets, publisher_billing_model: e.target.value })}>
                       {PUBLISHER_BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
-                    <div style={{ position: "relative", flex: 1 }}>
-                      <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
-                      <input type="number" step="0.01" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={assets.publisher_billing_rate ?? ""}
-                        onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })} placeholder="Rate" />
-                    </div>
+                    {(assets.publisher_billing_model || "cpc") === "roas" ? (
+                      <div style={{ position: "relative", flex: 1 }}>
+                        <span style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>x</span>
+                        <input type="number" step="0.01" min="0" style={{ ...inputBase, paddingRight: 24 }} value={assets.publisher_billing_rate ?? ""}
+                          onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })} placeholder="Multiplier" />
+                      </div>
+                    ) : (
+                      <div style={{ position: "relative", flex: 1 }}>
+                        <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
+                        <input type="number" step="0.01" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={assets.publisher_billing_rate ?? ""}
+                          onChange={(e) => setAssets({ ...assets, publisher_billing_rate: e.target.value })} placeholder="Rate" />
+                      </div>
+                    )}
                   </div>
                 </FieldBlock>
               </div>

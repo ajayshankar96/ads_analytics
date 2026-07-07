@@ -1249,6 +1249,7 @@ function SyncTab({ campaign, canEdit }) {
 const PUBLISHER_BILLING_MODELS = [
   { value: "cpc", label: "CPC (Cost Per Click)" },
   { value: "cpm", label: "CPM (Cost Per Mille)" },
+  { value: "roas", label: "ROAS (Revenue / ROAS)" },
 ];
 const ADVERTISER_BILLING_MODELS = [
   { value: "roas", label: "ROAS (Revenue / ROAS)" },

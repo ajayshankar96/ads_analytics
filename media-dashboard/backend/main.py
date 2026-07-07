@@ -1509,7 +1509,7 @@ def _today_ist():
 def _normalize_billing_model(side: str, model: str) -> str:
     side = (side or "").strip().lower()
     model = (model or "").strip().lower()
-    allowed_models = {"publisher": {"cpc", "cpm"}, "advertiser": {"roas", "cpc"}}
+    allowed_models = {"publisher": {"cpc", "cpm", "roas"}, "advertiser": {"roas", "cpc"}}
     if side not in allowed_models:
         raise HTTPException(status_code=400, detail="side must be publisher or advertiser")
     if model not in allowed_models[side]:
@@ -1548,7 +1548,7 @@ def _publisher_default_terms(campaign: models.Campaign) -> tuple:
     if not model and campaign.cpc_cpd:
         model = "cpc"
         rate = _safe_billing_rate(campaign.cpc_cpd)
-    if model not in {"cpc", "cpm"}:
+    if model not in {"cpc", "cpm", "roas"}:
         return "", 0.0
     return model, rate
 
@@ -1656,6 +1656,8 @@ async def _validate_billing_metrics_if_configured(campaign: models.Campaign, sid
         raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks in publisher metrics")
     if side == "publisher" and billing_model == "cpm" and "impressions" not in publisher_metrics:
         raise HTTPException(status_code=400, detail="Publisher CPM requires Impressions in publisher metrics")
+    if side == "publisher" and billing_model == "roas" and "revenue" not in advertiser_metrics:
+        raise HTTPException(status_code=400, detail="Publisher ROAS requires Revenue in advertiser metrics")
     if side == "advertiser" and billing_model == "roas" and "revenue" not in advertiser_metrics:
         raise HTTPException(status_code=400, detail="Advertiser ROAS requires Revenue in advertiser metrics")
     if side == "advertiser" and billing_model == "cpc" and "clicks" not in publisher_metrics:
@@ -1674,8 +1676,8 @@ async def _validate_go_live_billing_defaults(db: AsyncSession, campaign: models.
     if adv_model not in {"roas", "cpc"} or adv_rate <= 0:
         raise HTTPException(status_code=400, detail="Advertiser billing default is missing ROAS/CPC rate")
     pub_model, pub_rate = _publisher_default_terms(campaign)
-    if pub_model not in {"cpc", "cpm"} or pub_rate <= 0:
-        raise HTTPException(status_code=400, detail="Publisher billing default is missing CPC/CPM rate")
+    if pub_model not in {"cpc", "cpm", "roas"} or pub_rate <= 0:
+        raise HTTPException(status_code=400, detail="Publisher billing default is missing CPC/CPM/ROAS rate")
 
 
 async def _seed_go_live_billing_defaults(db: AsyncSession, campaign: models.Campaign, changed_by: str = None) -> int:
