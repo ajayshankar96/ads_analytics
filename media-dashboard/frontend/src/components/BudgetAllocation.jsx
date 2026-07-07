@@ -163,7 +163,9 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         getAllAllocationsForMonth(month),
       ]);
       const advs = (advRes.advertisers || []).filter((a) => a.status === "ONBOARDED");
-      const pubs = pubRes.publishers || [];
+      const pubs = (pubRes.publishers || [])
+        .slice()
+        .sort((x, y) => (x.name || "").localeCompare(y.name || "", undefined, { sensitivity: "base" }));
       setAdvertisers(advs);
       setPublishers(pubs);
 
@@ -405,7 +407,6 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                         onChange={() => setHiddenPubs((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
                       />
                       <span style={{ fontWeight: 600 }}>{p.name}</span>
-                      <span style={{ fontSize: 11, color: c.muted }}>{p.code}</span>
                     </label>
                   ))}
                   {hiddenPubCount > 0 && (
@@ -466,7 +467,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                 <th style={{ ...s.th, minWidth: 150 }}>Advertiser</th>
                 <th style={{ ...s.th, ...s.thRight }}>Total Budget</th>
                 {visiblePublishers.map((p) => (
-                  <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}<br/><span style={{ fontWeight: 400, fontSize: 9 }}>{p.code}</span></th>
+                  <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}</th>
                 ))}
                 <th style={{ ...s.th, ...s.thRight }}>Allocated</th>
                 <th style={{ ...s.th, textAlign: "center" }}>%</th>
