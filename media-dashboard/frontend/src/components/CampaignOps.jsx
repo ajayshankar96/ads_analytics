@@ -262,10 +262,12 @@ function CodesSection({ assets, setAssets }) {
           <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Enter multiple codes separated by commas</div>
         </div>
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
-          <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
-          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL — UTM parameters will be extracted automatically</div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL(s)</label>
+          <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+            rows={Math.max(2, utmUrl.split("\n").length)}
+            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })}
+            placeholder={"https://example.com/?utm_source=alliance&utm_medium=...\nhttps://example.com/?utm_source=alliance&utm_medium=..."} />
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One tracking URL per line — add as many as the campaign needs</div>
         </div>
       </>)}
 
@@ -287,10 +289,12 @@ function CodesSection({ assets, setAssets }) {
           <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One sheet per Advertiser × Publisher × Segment × Offer combination.</div>
         </div>
         <div style={{ marginBottom: 10 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL</label>
-          <input style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none" }}
-            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })} placeholder="https://example.com/?utm_source=alliance&utm_medium=..." />
-          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>Paste the full tracking URL</div>
+          <label style={{ fontSize: 12, fontWeight: 600, color: c.ink, display: "block", marginBottom: 4 }}>UTM URL(s)</label>
+          <textarea style={{ border: `1px solid ${c.line}`, borderRadius: 7, padding: "9px 12px", fontSize: 13, width: "100%", outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+            rows={Math.max(2, utmUrl.split("\n").length)}
+            value={utmUrl} onChange={(e) => update({ utm_url: e.target.value })}
+            placeholder={"https://example.com/?utm_source=alliance&utm_medium=...\nhttps://example.com/?utm_source=alliance&utm_medium=..."} />
+          <div style={{ fontSize: 11, color: c.muted, marginTop: 3 }}>One tracking URL per line</div>
         </div>
       </>)}
 
