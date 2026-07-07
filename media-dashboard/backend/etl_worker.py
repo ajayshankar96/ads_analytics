@@ -499,10 +499,10 @@ def _add_metric_alias(row_data: Dict[str, float], key: str, value) -> None:
         row_data["advertiser_spends"] = numeric_value
         return
     if normalized_key == "clicks":
-        # Advertiser-side clicks must NOT overwrite row_data['Clicks'] — that key
-        # holds publisher-sheet clicks and drives PUBLISHER CPC billing
-        # ("Clicks * rate"). Advertiser CPC billing uses the advertiser sheet's
-        # own clicks, kept under this distinct name (see _advertiser_clicks).
+        # Clicks for billing are ALWAYS the publisher sheet's clicks —
+        # row_data['Clicks'] must never be overwritten by the advertiser
+        # sheet. Adv-reported clicks are kept under a distinct name for
+        # display/custom formulas only.
         row_data["Advertiser_Clicks"] = numeric_value
         row_data["advertiser_clicks"] = numeric_value
         return
@@ -527,15 +527,6 @@ def _get_metric_value(row_data: Dict[str, float], *names: str) -> float:
 
 def _fallback_advertiser_spends(row_data: Dict[str, float]) -> float:
     return _get_metric_value(row_data, "Advertiser_Spends", "advertiser_spends")
-
-
-def _advertiser_clicks(row_data: Dict[str, float]) -> float:
-    """Clicks used for ADVERTISER-side CPC billing.
-
-    Strictly the advertiser sheet's own clicks (stored as Advertiser_Clicks by
-    _add_metric_alias). If the adv sheet doesn't report clicks this is 0 —
-    publisher clicks are never used for advertiser billing."""
-    return _get_metric_value(row_data, "Advertiser_Clicks", "advertiser_clicks")
 
 
 def _evaluate_formula(formula_str: str, row_data: Dict[str, float], goals: Optional[Dict] = None) -> float:
@@ -612,10 +603,11 @@ def _advertiser_formula_from_terms(model: str, rate: float) -> str:
     billing_model = str(model).strip().lower().replace('_commit', '')
     rate_str = str(rate)
     if billing_model == 'cpc':
-        # Advertiser CPC bills strictly on the ADVERTISER sheet's clicks
-        # (0 when the adv sheet doesn't report clicks).
-        return f'Advertiser_Clicks * {rate_str}'
+        # Clicks for billing are ALWAYS the publisher sheet's clicks
+        # (row_data['Clicks']), on both sides.
+        return f'Clicks * {rate_str}'
     if billing_model == 'roas':
+        # Revenue for billing is ALWAYS the advertiser sheet's revenue.
         return f'Revenue / {rate_str}'
     return ''
 
@@ -661,11 +653,8 @@ def _billing_spend_from_config(config: Dict[str, Any], row_data: Dict[str, float
     model = str(config.get("billing_model") or "").strip().lower()
     rate = _safe_float(config.get("rate", 0))
     if model == "cpc":
-        # Publisher CPC bills on publisher-sheet clicks; advertiser CPC bills
-        # strictly on the advertiser sheet's own clicks (0 when the adv sheet
-        # reports none — see _advertiser_clicks).
-        if str(config.get("side") or "").strip().lower() == "advertiser":
-            return _advertiser_clicks(row_data) * rate
+        # Clicks for billing are ALWAYS the publisher sheet's clicks —
+        # both publisher CPC and advertiser CPC bill on row_data['Clicks'].
         return _get_metric_value(row_data, "Clicks") * rate
     if model == "cpd":
         return rate
@@ -674,6 +663,8 @@ def _billing_spend_from_config(config: Dict[str, Any], row_data: Dict[str, float
     if model == "cpa":
         return _get_metric_value(row_data, "Orders_pub", "Orders") * rate
     if model == "roas":
+        # Revenue for billing is ALWAYS the advertiser sheet's revenue
+        # (publisher custom "Revenue" columns are kept under Revenue_pub).
         revenue = _get_metric_value(row_data, "Revenue")
         return revenue / rate if rate else 0.0
     return 0.0
@@ -718,13 +709,7 @@ def _choose_advertiser_spends(
     if billing_config:
         return _billing_spend_from_config(billing_config, row_data), 'calculated'
     if fallback_formula:
-        eval_data = row_data
-        if not _has_metric(row_data, "Advertiser_Clicks", "advertiser_clicks"):
-            # Adv sheet reports no clicks: CPC formulas
-            # ("Advertiser_Clicks * rate") must compute 0 — advertiser
-            # billing never borrows publisher clicks.
-            eval_data = {**row_data, "Advertiser_Clicks": 0.0, "advertiser_clicks": 0.0}
-        return _evaluate_formula(fallback_formula, eval_data), 'calculated'
+        return _evaluate_formula(fallback_formula, row_data), 'calculated'
     fallback = _fallback_advertiser_spends(row_data)
     return fallback, ('calculated' if fallback else None)
 
@@ -1924,6 +1909,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
             if k not in _STD_PUB_RECORD_FIELDS
         }
         for k, v in custom_pub_metrics.items():
+            if str(k).strip().lower() == "revenue":
+                # Revenue for billing is ALWAYS the advertiser sheet's —
+                # a custom publisher "Revenue" column must never overwrite
+                # row_data['Revenue'] (drives ROAS spends). Keep it under a
+                # publisher-scoped key instead.
+                row_data["Revenue_pub"] = _safe_float(v)
+                continue
             _add_metric_alias(row_data, k, v)
 
         pub_billing_config = _active_billing_config(billing_configs, "publisher", date_obj)
