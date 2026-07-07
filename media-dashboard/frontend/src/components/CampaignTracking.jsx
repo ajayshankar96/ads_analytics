@@ -27,39 +27,79 @@ const DRIVE_CODES_FOLDER = "https://drive.google.com/drive/folders/1QCcZtxs_Keku
 function CampaignList({ campaigns, selected, onSelect }) {
   const [filter, setFilter] = useState("all");
   const [persona, setPersona] = useState("all");
+  const [advFilter, setAdvFilter] = useState("all");
+  const [pubFilter, setPubFilter] = useState("all");
 
   // Distinct Targeting / Persona values, filled via Campaign Ops assets and
   // carried on the campaign as `targeting`. Empty targeting is skipped.
   const personas = [...new Set(campaigns.map((c) => (c.targeting || "").trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
+  const advNames = [...new Set(campaigns.map((c) => (c.advertiser_name || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  const pubNames = [...new Set(campaigns.map((c) => (c.publisher_name || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 
   const filtered = campaigns.filter((cam) => {
     if (filter === "tracked" && !cam.tracking_submitted) return false;
     if (filter === "pending" && cam.tracking_submitted) return false;
+    if (advFilter !== "all" && (cam.advertiser_name || "").trim() !== advFilter) return false;
+    if (pubFilter !== "all" && (cam.publisher_name || "").trim() !== pubFilter) return false;
     if (persona !== "all" && (cam.targeting || "").trim() !== persona) return false;
     return true;
   });
 
   const truncate = (t, n = 40) => (t.length > n ? t.slice(0, n) + "…" : t);
+  const selStyle = (active) => ({ padding: "6px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", color: active ? c.blue : c.sub, border: `1px solid ${active ? c.blue : c.line}`, background: active ? "#EAF0FF" : "#fff" });
+  const filtersActive = advFilter !== "all" || pubFilter !== "all" || persona !== "all";
 
   return (
     <div style={{ width: 320, borderRight: `1px solid ${c.line}`, background: "#fff", overflowY: "auto", flexShrink: 0, height: "calc(100vh - 140px)" }}>
       <div style={{ padding: "12px 14px", borderBottom: `1px solid ${c.line}`, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {[["all", "All"], ["tracked", "Tracked"], ["pending", "Pending"]].map(([k, label]) => (
             <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 10px", borderRadius: 14, fontSize: 11, fontWeight: 600, border: `1px solid ${filter === k ? c.blue : c.line}`, background: filter === k ? "#EAF0FF" : "#fff", color: filter === k ? c.blue : c.sub, cursor: "pointer" }}>{label}</button>
           ))}
+          {filtersActive && (
+            <button
+              onClick={() => { setAdvFilter("all"); setPubFilter("all"); setPersona("all"); }}
+              title="Clear advertiser / publisher / targeting filters"
+              style={{ marginLeft: "auto", padding: "4px 8px", borderRadius: 14, fontSize: 10.5, fontWeight: 700, border: "none", background: "none", color: c.muted, cursor: "pointer" }}
+            >✕ Clear</button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <select
+            value={advFilter}
+            onChange={(e) => setAdvFilter(e.target.value)}
+            title="Filter by advertiser"
+            style={{ ...selStyle(advFilter !== "all"), flex: 1, minWidth: 0 }}
+          >
+            <option value="all">All Advertisers</option>
+            {advNames.map((a) => <option key={a} value={a}>{truncate(a, 28)}</option>)}
+          </select>
+          <select
+            value={pubFilter}
+            onChange={(e) => setPubFilter(e.target.value)}
+            title="Filter by publisher"
+            style={{ ...selStyle(pubFilter !== "all"), flex: 1, minWidth: 0 }}
+          >
+            <option value="all">All Publishers</option>
+            {pubNames.map((p) => <option key={p} value={p}>{truncate(p, 28)}</option>)}
+          </select>
         </div>
         {personas.length > 0 && (
           <select
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
             title="Filter by Targeting / Persona (set in Campaign Ops)"
-            style={{ marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", color: persona !== "all" ? c.blue : c.sub, border: `1px solid ${persona !== "all" ? c.blue : c.line}`, background: persona !== "all" ? "#EAF0FF" : "#fff" }}
+            style={{ ...selStyle(persona !== "all"), marginTop: 8, width: "100%" }}
           >
             <option value="all">All Targeting / Personas</option>
             {personas.map((p) => <option key={p} value={p}>{truncate(p)}</option>)}
           </select>
+        )}
+        {filtersActive && (
+          <div style={{ marginTop: 6, fontSize: 10.5, color: c.muted }}>{filtered.length} of {campaigns.length} campaigns</div>
         )}
       </div>
       {filtered.length === 0 && (
