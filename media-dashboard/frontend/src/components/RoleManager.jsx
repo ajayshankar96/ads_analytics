@@ -3,10 +3,11 @@ import { listRoles, setUserRole, deleteUserRole } from "../api";
 
 const c = { blue: "#2E5BFF", ink: "#0F1724", sub: "#52606D", line: "#E6EAF0", muted: "#768EA7", green: "#0F8C6A", red: "#C8321E", bg: "#F7F8FA" };
 
-const ROLES = ["ADMIN", "SALES", "OPS", "VIEWER"];
-const ROLE_COLORS = { ADMIN: "#7C3AED", SALES: "#2E5BFF", OPS: "#0F8C6A", VIEWER: "#768EA7" };
+const ROLES = ["CREATOR", "ADMIN", "SALES", "OPS", "VIEWER"];
+const ROLE_COLORS = { CREATOR: "#C026D3", ADMIN: "#7C3AED", SALES: "#2E5BFF", OPS: "#0F8C6A", VIEWER: "#768EA7" };
 const ROLE_DESC = {
-  ADMIN: "Full access — all edits + DB console",
+  CREATOR: "Full access — all edits, user access + DB query console",
+  ADMIN: "All edits + user access (no DB query console)",
   SALES: "Edit Sales Pipeline + Budget Allocation",
   OPS: "Edit Campaign Ops + Campaign Tracking",
   VIEWER: "View everything, edit nothing",

@@ -960,7 +960,7 @@ function CloneModal({ campaign, onClose, onCloned }) {
 
 // ── Main: Kanban Board ───────────────────────────────────────────────────────
 export default function CampaignOps({ userRole = "VIEWER" }) {
-  const canEdit = userRole === "ADMIN" || userRole === "OPS";
+  const canEdit = ["CREATOR", "ADMIN", "OPS"].includes(userRole);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);

@@ -264,7 +264,7 @@ export default function AdvertiserDetails({ advertiser, onClose, userEmail = "",
   const v = (x) => (x === "" || x === undefined || x === null ? "—" : String(x));
 
   const isOwner = userEmail && a.owner_email && userEmail.toLowerCase() === a.owner_email.toLowerCase();
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin = ["CREATOR", "ADMIN"].includes(userRole);
   // Budget fields: only the advertiser's owner may change them, with
   // ADMIN as the escape hatch (enforced server-side too).
   const canEditBudget = isOwner || isAdmin;

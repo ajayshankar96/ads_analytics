@@ -1396,7 +1396,7 @@ function AttributionTab({ campaign }) {
 
 // ── Main Component ───────────────────────────────────────────────────────────
 export default function CampaignTracking({ userRole = "VIEWER" }) {
-  const canEdit = userRole === "ADMIN" || userRole === "OPS";
+  const canEdit = ["CREATOR", "ADMIN", "OPS"].includes(userRole);
   const [campaigns, setCampaigns] = useState([]);
   const [segments, setSegments] = useState([]);
   const [loading, setLoading] = useState(true);

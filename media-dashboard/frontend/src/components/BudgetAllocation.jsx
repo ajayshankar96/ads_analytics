@@ -120,7 +120,7 @@ function AddPublisherModal({ onClose, onSave, existing = [] }) {
 }
 
 export default function BudgetAllocation({ userRole = "VIEWER" }) {
-  const canEdit = userRole === "ADMIN" || userRole === "SALES";
+  const canEdit = ["CREATOR", "ADMIN", "SALES"].includes(userRole);
   const [month, setMonth] = useState(currentMonth());
   const [advertisers, setAdvertisers] = useState([]);
   const [publishers, setPublishers] = useState([]);

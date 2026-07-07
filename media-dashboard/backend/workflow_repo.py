@@ -690,7 +690,9 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
 
 # ── user roles ────────────────────────────────────────────────────────────────
 
-VALID_ROLES = {"ADMIN", "SALES", "OPS", "VIEWER"}
+# CREATOR = ADMIN + query console. ADMIN can edit everything and manage
+# access, but doesn't get the DB console.
+VALID_ROLES = {"CREATOR", "ADMIN", "SALES", "OPS", "VIEWER"}
 
 
 async def get_user_role(db: AsyncSession, email: str) -> Optional[models.UserRole]:

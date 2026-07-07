@@ -143,7 +143,7 @@ function MarkSentIcon({ advertiser, userEmail, onMarked }) {
 }
 
 export default function SalesPipeline({ userRole = "VIEWER", userEmail = "" }) {
-  const canEdit = userRole === "ADMIN" || userRole === "SALES";
+  const canEdit = ["CREATOR", "ADMIN", "SALES"].includes(userRole);
   const [advertisers, setAdvertisers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wizard, setWizard] = useState(null);

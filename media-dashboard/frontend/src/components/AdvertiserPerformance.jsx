@@ -223,7 +223,7 @@ export default function AdvertiserPerformance({ filters, userRole }) {
   if (loading) return <div style={s.loading}>Loading advertiser performance…</div>;
   const advertisers = data?.advertisers || [];
   const columns = buildColumns(BUILTIN_COLUMNS, data?.metric_config);
-  const canManageMetrics = userRole === "ADMIN" || userRole === "OPS";
+  const canManageMetrics = ["CREATOR", "ADMIN", "OPS"].includes(userRole);
 
   return (
     <div>

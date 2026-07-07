@@ -955,8 +955,8 @@ async def save_metric_config(req: MetricConfigRequest, request: Request, db: Asy
     if auth_enabled():
         user = await repo.get_user_role(db, (email or "").strip().lower())
         role = (user.role or "").upper() if user else ""
-        if role not in ("ADMIN", "OPS") and not is_admin(email):
-            raise HTTPException(status_code=403, detail="Only ADMIN/OPS can change metric config")
+        if role not in ("CREATOR", "ADMIN", "OPS") and not is_admin(email):
+            raise HTTPException(status_code=403, detail="Only CREATOR/ADMIN/OPS can change metric config")
 
     # "name" (the hierarchy column) can never be hidden; ratios/goal can.
     hidden = [str(k).strip().lower() for k in req.hidden if str(k).strip().lower() not in ("", "name")]
@@ -1406,14 +1406,25 @@ async def close_lead(lead_id: str, req: CloseLeadRequest, db: AsyncSession = Dep
 
 
 # ── Admin: read-only query console ────────────────────────────────────────────
-# A SELECT-only SQL console for admins (ADMIN_EMAILS). Enforced read-only at the
-# DB level (READ ONLY transaction) + single-statement SELECT/WITH guard, capped
-# rows and a statement timeout.
+# A SELECT-only SQL console, CREATOR-role only (ADMINs manage everything else
+# but don't get raw DB access). Enforced read-only at the DB level (READ ONLY
+# transaction) + single-statement SELECT/WITH guard, capped rows and a
+# statement timeout.
 
-def _require_admin(request: Request):
-    email = getattr(request.state, "user_email", None)
-    if auth_enabled() and not is_admin(email):
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def _console_allowed(request: Request, db: AsyncSession) -> bool:
+    """Query console is restricted to the CREATOR role."""
+    if not auth_enabled():
+        return True
+    email = (getattr(request.state, "user_email", None) or "").strip().lower()
+    if not email:
+        return False
+    user = await repo.get_user_role(db, email)
+    return bool(user and (user.role or "").upper() == "CREATOR")
+
+
+async def _require_console(request: Request, db: AsyncSession) -> None:
+    if not await _console_allowed(request, db):
+        raise HTTPException(status_code=403, detail="Query console requires the CREATOR role")
 
 
 def _cell(v):
@@ -1433,14 +1444,14 @@ class QueryRequest(BaseModel):
 
 
 @app.get("/api/admin/console-access")
-async def console_access(request: Request):
-    email = getattr(request.state, "user_email", None)
-    return {"is_admin": (not auth_enabled()) or is_admin(email)}
+async def console_access(request: Request, db: AsyncSession = Depends(get_db)):
+    # Key name kept as "is_admin" for frontend compat; means "can use console".
+    return {"is_admin": await _console_allowed(request, db)}
 
 
 @app.get("/api/admin/tables")
-async def admin_tables(request: Request):
-    _require_admin(request)
+async def admin_tables(request: Request, db: AsyncSession = Depends(get_db)):
+    await _require_console(request, db)
     async with engine.connect() as conn:
         res = await conn.execute(text(
             "SELECT table_name FROM information_schema.tables "
@@ -1450,8 +1461,8 @@ async def admin_tables(request: Request):
 
 
 @app.post("/api/admin/query")
-async def admin_query(req: QueryRequest, request: Request):
-    _require_admin(request)
+async def admin_query(req: QueryRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    await _require_console(request, db)
     import re
     sql = (req.sql or "").strip().rstrip(";").strip()
     if not sql:
@@ -1760,7 +1771,7 @@ async def _enforce_budget_rules(db: AsyncSession, adv, payload: dict, request: R
     is_admin = False
     if email:
         user = await repo.get_user_role(db, email)
-        is_admin = bool(user and (user.role or "").upper() == "ADMIN")
+        is_admin = bool(user and (user.role or "").upper() in ("CREATOR", "ADMIN"))
     if email and not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Only the advertiser owner or an admin can change budget settings")
     ctx = {"email": email or None, "is_owner": is_owner, "is_admin": is_admin}
@@ -1965,7 +1976,8 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 async def _require_role_admin(request: Request, db: AsyncSession) -> None:
-    """ADMIN-only gate for role management (env ADMIN_EMAILS or DB ADMIN role).
+    """Gate for role management: CREATOR/ADMIN DB roles, or env ADMIN_EMAILS
+    (bootstrap fallback so access can be granted before any DB rows exist).
 
     The User Roles tab is already hidden from non-admins in the UI, but these
     endpoints must enforce it server-side too — otherwise any signed-in user
@@ -1976,7 +1988,7 @@ async def _require_role_admin(request: Request, db: AsyncSession) -> None:
     if is_admin(email):
         return
     user = await repo.get_user_role(db, email)
-    if user and (user.role or "").upper() == "ADMIN":
+    if user and (user.role or "").upper() in ("CREATOR", "ADMIN"):
         return
     raise HTTPException(status_code=403, detail="Admin access required")
 

@@ -188,7 +188,7 @@ export default function PublisherPerformance({ filters, userRole }) {
   if (loading) return <div style={s.loading}>Loading publisher performance…</div>;
   const publishers = data?.publishers || [];
   const columns = buildColumns(BUILTIN_COLUMNS, data?.metric_config);
-  const canManageMetrics = userRole === "ADMIN" || userRole === "OPS";
+  const canManageMetrics = ["CREATOR", "ADMIN", "OPS"].includes(userRole);
 
   return (
     <div>
