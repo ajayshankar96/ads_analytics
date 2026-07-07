@@ -315,6 +315,38 @@ function CodesSection({ assets, setAssets }) {
   );
 }
 
+// Paused / Stopped kanban columns collapse into slim vertical rails so the
+// three working columns keep their space. The rail shows a count pill (tinted
+// amber/red when non-empty); clicking it expands the full column.
+function HoldColumn({ label, icon, color, subtitle, items, expanded, onToggle, renderCard }) {
+  const n = items.length;
+  if (!expanded) {
+    return (
+      <div onClick={onToggle} title={`${label} (${n}) — click to expand`}
+        style={{ width: 46, minWidth: 46, flexShrink: 0, alignSelf: "stretch", minHeight: 220, background: "#fff", border: `1.5px solid ${n ? color : c.line}`, borderRadius: 12, padding: "14px 0", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        <span style={{ writingMode: "vertical-rl", fontSize: 12, fontWeight: 700, color: n ? color : c.muted, letterSpacing: ".08em" }}>{label}</span>
+        <span style={{ marginTop: "auto", fontSize: 11, fontWeight: 800, borderRadius: 10, padding: "2px 7px", background: n ? `${color}18` : c.bg, color: n ? color : c.muted }}>{n}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ flex: 1, minWidth: 260, background: "#fff", border: `1.5px solid ${color}`, borderRadius: 12, padding: "14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color }}>{icon} {label}</span>
+        <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{n}</span>
+        <button onClick={onToggle} title="Collapse column"
+          style={{ marginLeft: "auto", background: "none", border: `1px solid ${c.line}`, borderRadius: 6, color: c.muted, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "2px 8px" }}>
+          ⟨ collapse
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>{subtitle}</div>
+      {n === 0 && <div style={{ fontSize: 12, color: c.muted, textAlign: "center", padding: "18px 0" }}>Nothing here</div>}
+      {items.map(renderCard)}
+    </div>
+  );
+}
+
 function CampaignCard({ campaign, onClick, onClone }) {
   const avatarColor = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2"][
     (campaign.advertiser_name || "").charCodeAt(0) % 6
@@ -1025,6 +1057,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
   const [pubFilter, setPubFilter] = useState("all");
   const [publishers, setPublishers] = useState([]);
   const [cloneTarget, setCloneTarget] = useState(null);
+  const [expandedHold, setExpandedHold] = useState({}); // { PAUSED: bool, STOPPED: bool }
 
   const load = () => {
     setLoading(true);
@@ -1070,7 +1103,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
   const paused = filtered.filter((c) => c.current_stage === "PAUSED");
   const stopped = filtered.filter((c) => c.current_stage === "STOPPED");
 
-  const colStyle = { flex: 1, minWidth: 240, background: "#fff", border: `1.5px solid ${c.line}`, borderRadius: 12, padding: "14px" };
+  const colStyle = { flex: 1, minWidth: 280, background: "#fff", border: `1.5px solid ${c.line}`, borderRadius: 12, padding: "14px" };
   const colTitle = { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 };
 
   return (
@@ -1120,23 +1153,15 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
           {live.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
         </div>
 
-        <div style={colStyle}>
-          <div style={colTitle}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: c.amber }}>Paused</span>
-            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{paused.length}</span>
-          </div>
-          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>On hold — restart anytime</div>
-          {paused.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
-        </div>
+        <HoldColumn label="Paused" icon="⏸" color={c.amber} subtitle="On hold — restart anytime"
+          items={paused} expanded={!!expandedHold.PAUSED}
+          onToggle={() => setExpandedHold((p) => ({ ...p, PAUSED: !p.PAUSED }))}
+          renderCard={(cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />} />
 
-        <div style={colStyle}>
-          <div style={colTitle}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: c.red }}>Stopped</span>
-            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{stopped.length}</span>
-          </div>
-          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Halted — can be restarted</div>
-          {stopped.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
-        </div>
+        <HoldColumn label="Stopped" icon="⏹" color={c.red} subtitle="Halted — can be restarted"
+          items={stopped} expanded={!!expandedHold.STOPPED}
+          onToggle={() => setExpandedHold((p) => ({ ...p, STOPPED: !p.STOPPED }))}
+          renderCard={(cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />} />
       </div>
       {cloneModal}
     </div>
