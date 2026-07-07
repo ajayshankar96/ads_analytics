@@ -550,9 +550,9 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
       ) : (
         <>
           <SectionCard num={1} title="Offer Details" done={secDone.offer} total={3}>
-            <FieldBlock label="Offer Title" filled={assetFilled.offer_title} hint={campaign.offer_title ? "Set at campaign creation." : undefined}>
-              <input style={{ ...inputBase, ...(campaign.offer_title ? { background: "#F3F4F6", color: "#6B7280" } : {}) }}
-                value={assets.offer_title ?? ""} disabled={!!campaign.offer_title}
+            <FieldBlock label="Offer Title" filled={assetFilled.offer_title}>
+              <input style={inputBase}
+                value={assets.offer_title ?? ""}
                 onChange={(e) => setAssets({ ...assets, offer_title: e.target.value })}
                 placeholder="e.g. Flat ₹150 off on orders above ₹999" />
             </FieldBlock>
