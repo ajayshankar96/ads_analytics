@@ -157,9 +157,31 @@ function findMonthToken(tabName) {
   return null;
 }
 
+// Backend parity (_parse_tab_month): a month token touching a letter is
+// normally blocked (so "Maya"/"Rajan" never match), but a camelCase boundary
+// is a real word break — split and retry: "RzpJul26" → "Rzp Jul26" → Jul.
+// Lookahead-only replaces (no lookbehind — see MONTH_NAMES_RE_SRC comment).
+const camelSpace = (s) => String(s)
+  .replace(/([a-z0-9])(?=[A-Z])/g, "$1 ")
+  .replace(/([A-Z])(?=[A-Z][a-z])/g, "$1 ");
+
+// Returns { m: regex match, s: string the match indexes into } — callers must
+// slice `s`, not the original name, because the camelCase retry inserts spaces.
+function findMonthTokenSpaced(tabName) {
+  if (!tabName) return null;
+  const direct = findMonthToken(tabName);
+  if (direct) return { m: direct, s: tabName };
+  const spaced = camelSpace(tabName);
+  if (spaced !== tabName) {
+    const retry = findMonthToken(spaced);
+    if (retry) return { m: retry, s: spaced };
+  }
+  return null;
+}
+
 function tabHasMonth(tabName) {
   if (!tabName) return false;
-  if (findMonthToken(tabName)) return true;
+  if (findMonthTokenSpaced(tabName)) return true;
   return NUM_MONTH_YEAR_RE.test(tabName) || NUM_YEAR_MONTH_RE.test(tabName);
 }
 
@@ -170,12 +192,13 @@ function tabHasMonth(tabName) {
 function proposeTabPattern(tabName) {
   if (!tabName) return { pattern: "", hasMonth: false };
   let stripped = null;
-  const m = findMonthToken(tabName);
-  if (m) {
+  const hit = findMonthTokenSpaced(tabName);
+  if (hit) {
+    const { m, s } = hit;
     const end = m.index + m[0].length;
-    const tailYear = tabName.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
+    const tailYear = s.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
     const realEnd = tailYear ? end + tailYear[0].length : end;
-    stripped = tabName.slice(0, m.index) + tabName.slice(realEnd);
+    stripped = s.slice(0, m.index) + s.slice(realEnd);
   } else {
     const num = tabName.match(NUM_MONTH_YEAR_RE) || tabName.match(NUM_YEAR_MONTH_RE);
     if (num) stripped = tabName.slice(0, num.index) + tabName.slice(num.index + num[0].length);
@@ -194,12 +217,15 @@ const TEMPLATE_TOKEN = "{month}";
 const normalizeTemplate = (s) => String(s).trim().toLowerCase().replace(/[\s\-_.']+/g, "_").replace(/^_+|_+$/g, "");
 function tabTemplate(tabName) {
   if (!tabName) return null;
-  const m = findMonthToken(tabName);
-  if (m) {
+  const hit = findMonthTokenSpaced(tabName);
+  if (hit) {
+    const { m, s } = hit;
     let end = m.index + m[0].length;
-    const tailYear = tabName.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
+    const tailYear = s.slice(end).match(/^[\s\-_.']*((?:20)?\d{2})\b/);
     if (tailYear) end += tailYear[0].length;
-    return tabName.slice(0, m.index) + TEMPLATE_TOKEN + tabName.slice(end);
+    // Both tabs of a series go through the same camelCase spacing, and
+    // normalizeTemplate collapses separators — so templates stay comparable.
+    return s.slice(0, m.index) + TEMPLATE_TOKEN + s.slice(end);
   }
   const num = tabName.match(NUM_MONTH_YEAR_RE) || tabName.match(NUM_YEAR_MONTH_RE);
   if (num) return tabName.slice(0, num.index) + TEMPLATE_TOKEN + tabName.slice(num.index + num[0].length);
