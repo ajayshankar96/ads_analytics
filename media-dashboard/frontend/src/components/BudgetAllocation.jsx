@@ -34,6 +34,12 @@ const s = {
   label: { fontSize: 13, fontWeight: 600, color: c.ink, marginBottom: 6, display: "block" },
   modalInput: { border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, width: "100%", outline: "none", fontFamily: "inherit", boxSizing: "border-box" },
   modalFooter: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 },
+  filterBar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" },
+  filterInput: { border: `1px solid ${c.line}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none", width: 220, fontFamily: "inherit", boxSizing: "border-box" },
+  filterSel: { border: `1px solid ${c.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, fontWeight: 600, color: c.ink, outline: "none", cursor: "pointer", background: "#fff", fontFamily: "inherit" },
+  clearBtn: { background: "none", border: "none", color: c.blue, fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: "4px 6px" },
+  pubPanel: { position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 51, background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(15,23,36,0.14)", padding: "10px 12px", minWidth: 200, maxHeight: 280, overflowY: "auto" },
+  pubOption: { display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", fontSize: 13, color: c.ink, cursor: "pointer" },
 };
 
 function fmtInr(n) {
@@ -129,6 +135,15 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
   const [dirty, setDirty] = useState({});
   const [savingAdv, setSavingAdv] = useState(null);
   const [showAddPub, setShowAddPub] = useState(false);
+  // Filters — the matrix grows in both directions as advertisers/publishers
+  // scale: rows are filtered by search/status/category, columns by the
+  // publisher picker. Sorting reorders rows only.
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL"); // ALL | UNALLOCATED | PARTIAL | FULL | OVER
+  const [categoryFilter, setCategoryFilter] = useState("ALL"); // ALL | __NONE__ | <category>
+  const [sortKey, setSortKey] = useState("DEFAULT"); // DEFAULT | BUDGET_DESC | PCT_ASC | NAME_ASC
+  const [hiddenPubs, setHiddenPubs] = useState({}); // pub.id -> true when column hidden
+  const [showPubPicker, setShowPubPicker] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -185,10 +200,77 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     }, 0);
   };
 
+  // Classify a row for the allocation-status filter. "Allocated" is always
+  // computed across ALL publishers — hiding a column never changes a row's truth.
+  const rowStatusOf = (a) => {
+    const budget = budgetForMonth(a, month);
+    const allocated = rowTotal(a.id);
+    if (allocated <= 0) return "UNALLOCATED";
+    if (budget <= 0 || allocated > budget) return "OVER";
+    if (allocated >= budget) return "FULL";
+    return "PARTIAL";
+  };
+
+  const categories = useMemo(() => {
+    const set = new Set();
+    let hasNone = false;
+    advertisers.forEach((a) => {
+      const cat = (a.category || "").trim();
+      if (cat) set.add(cat); else hasNone = true;
+    });
+    return { list: Array.from(set).sort((x, y) => x.localeCompare(y)), hasNone };
+  }, [advertisers]);
+
+  const visibleAdvertisers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = advertisers.filter((a) => {
+      if (dirty[a.id]) return true; // a row with unsaved edits must never vanish mid-typing
+      if (q && !(`${a.name || ""} ${a.id || ""}`.toLowerCase().includes(q))) return false;
+      if (statusFilter !== "ALL" && rowStatusOf(a) !== statusFilter) return false;
+      if (categoryFilter !== "ALL") {
+        const cat = (a.category || "").trim();
+        if (categoryFilter === "__NONE__" ? cat !== "" : cat !== categoryFilter) return false;
+      }
+      return true;
+    });
+    if (sortKey === "DEFAULT") return filtered;
+    const sorted = [...filtered];
+    if (sortKey === "BUDGET_DESC") {
+      sorted.sort((x, y) => budgetForMonth(y, month) - budgetForMonth(x, month));
+    } else if (sortKey === "PCT_ASC") {
+      const pctOf = (a) => {
+        const b = budgetForMonth(a, month);
+        const al = rowTotal(a.id);
+        if (b <= 0) return al > 0 ? Infinity : 0; // allocated-without-budget sinks to the bottom
+        return (al / b) * 100;
+      };
+      sorted.sort((x, y) => pctOf(x) - pctOf(y));
+    } else if (sortKey === "NAME_ASC") {
+      sorted.sort((x, y) => (x.name || "").localeCompare(y.name || ""));
+    }
+    return sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [advertisers, publishers, search, statusFilter, categoryFilter, sortKey, dirty, allocMap, month]);
+
+  const visiblePublishers = useMemo(
+    () => publishers.filter((p) => !hiddenPubs[p.id]),
+    [publishers, hiddenPubs]
+  );
+  const hiddenPubCount = publishers.length - visiblePublishers.length;
+
+  const filtersActive = search.trim() !== "" || statusFilter !== "ALL" || categoryFilter !== "ALL" || sortKey !== "DEFAULT" || hiddenPubCount > 0;
+  const clearFilters = () => {
+    setSearch(""); setStatusFilter("ALL"); setCategoryFilter("ALL");
+    setSortKey("DEFAULT"); setHiddenPubs({}); setShowPubPicker(false);
+  };
+
+  // Column totals / KPIs reflect the rows currently in view, so the numbers
+  // always agree with the table below. Totals are still keyed for every
+  // publisher (incl. hidden columns) so row math stays whole.
   const pubTotals = useMemo(() => {
     const totals = {};
     publishers.forEach((p) => { totals[p.id] = 0; });
-    advertisers.forEach((a) => {
+    visibleAdvertisers.forEach((a) => {
       publishers.forEach((p) => {
         const cell = getCell(a.id, p.id);
         if (cell.status !== "CANT_GO_LIVE") {
@@ -198,7 +280,8 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
       });
     });
     return totals;
-  }, [advertisers, publishers, allocMap, dirty]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleAdvertisers, publishers, allocMap, dirty]);
 
   const grandTotal = useMemo(() => {
     return Object.values(pubTotals).reduce((s, v) => s + v, 0);
@@ -234,10 +317,9 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
     await load();
   };
 
-  // All KPI figures are scoped to the selected month only (no carry-forward):
-  // each advertiser contributes budgetForMonth(a, month), which matches the
-  // Total Budget column in the table below.
-  const totalBudgetLoaded = advertisers.reduce((s, a) => s + budgetForMonth(a, month), 0);
+  // All KPI figures are scoped to the selected month only (no carry-forward)
+  // and to the advertisers currently in view, so cards match the table below.
+  const totalBudgetLoaded = visibleAdvertisers.reduce((s, a) => s + budgetForMonth(a, month), 0);
   const tableBudgetTotal = totalBudgetLoaded;
   const totalAllocatedAll = grandTotal;
   const fmtAmt = (n) => (n === 0 ? "₹0" : `${n < 0 ? "−" : ""}${fmtInr(Math.abs(n))}`);
@@ -266,13 +348,81 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
         </div>
       </div>
 
+      {/* Filter bar — rows filter by search/status/category, columns by the publisher picker */}
+      {advertisers.length > 0 && (
+        <div style={s.filterBar}>
+          <input
+            style={s.filterInput}
+            placeholder="Search advertiser…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select style={s.filterSel} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="ALL">Status: All</option>
+            <option value="UNALLOCATED">Unallocated</option>
+            <option value="PARTIAL">Partially allocated</option>
+            <option value="FULL">Fully allocated</option>
+            <option value="OVER">Over-allocated</option>
+          </select>
+          {(categories.list.length > 0 || categories.hasNone) && (
+            <select style={s.filterSel} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+              <option value="ALL">Category: All</option>
+              {categories.list.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+              {categories.hasNone && <option value="__NONE__">No category</option>}
+            </select>
+          )}
+          <select style={s.filterSel} value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
+            <option value="DEFAULT">Sort: Default</option>
+            <option value="BUDGET_DESC">Budget (high → low)</option>
+            <option value="PCT_ASC">% allocated (low → high)</option>
+            <option value="NAME_ASC">Name (A → Z)</option>
+          </select>
+          <div style={{ position: "relative" }}>
+            <button
+              style={{ ...s.ghostBtn, ...(hiddenPubCount > 0 ? { borderColor: c.blue, color: c.blue, fontWeight: 700 } : {}) }}
+              onClick={() => setShowPubPicker((v) => !v)}
+            >
+              Publishers {visiblePublishers.length}/{publishers.length} ▾
+            </button>
+            {showPubPicker && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 50 }} onClick={() => setShowPubPicker(false)} />
+                <div style={s.pubPanel}>
+                  {publishers.map((p) => (
+                    <label key={p.id} style={s.pubOption}>
+                      <input
+                        type="checkbox"
+                        checked={!hiddenPubs[p.id]}
+                        onChange={() => setHiddenPubs((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                      />
+                      <span style={{ fontWeight: 600 }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: c.muted }}>{p.code}</span>
+                    </label>
+                  ))}
+                  {hiddenPubCount > 0 && (
+                    <button style={{ ...s.ghostBtn, width: "100%", marginTop: 8, padding: "6px 10px" }} onClick={() => setHiddenPubs({})}>
+                      Show all
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          {filtersActive && (
+            <button style={s.clearBtn} onClick={clearFilters}>✕ Clear filters</button>
+          )}
+        </div>
+      )}
+
       {/* KPI Summary Cards */}
       {advertisers.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Budget Loaded</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: c.ink }}>{fmtAmt(totalBudgetLoaded)}</div>
-            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>across {advertisers.length} advertiser{advertisers.length === 1 ? "" : "s"} this month</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>
+              across {visibleAdvertisers.length}{visibleAdvertisers.length !== advertisers.length ? ` of ${advertisers.length}` : ""} advertiser{visibleAdvertisers.length === 1 ? "" : "s"} this month
+            </div>
           </div>
           <div style={{ background: "#fff", border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px 16px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", marginBottom: 4 }}>Total Allocated</div>
@@ -294,6 +444,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
 
       {advertisers.length === 0 ? (
         <div style={s.empty}>No onboarded advertisers yet.</div>
+      ) : visibleAdvertisers.length === 0 ? (
+        <div style={s.empty}>
+          No advertisers match the current filters.{" "}
+          <button style={s.clearBtn} onClick={clearFilters}>Clear filters</button>
+        </div>
       ) : (
         <div style={s.wrap}>
           <table style={s.table}>
@@ -301,7 +456,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               <tr>
                 <th style={{ ...s.th, minWidth: 150 }}>Advertiser</th>
                 <th style={{ ...s.th, ...s.thRight }}>Total Budget</th>
-                {publishers.map((p) => (
+                {visiblePublishers.map((p) => (
                   <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}<br/><span style={{ fontWeight: 400, fontSize: 9 }}>{p.code}</span></th>
                 ))}
                 <th style={{ ...s.th, ...s.thRight }}>Allocated</th>
@@ -310,7 +465,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               </tr>
             </thead>
             <tbody>
-              {advertisers.map((a) => {
+              {visibleAdvertisers.map((a) => {
                 const budget = budgetForMonth(a, month);
                 const allocated = rowTotal(a.id);
                 const pct = budget > 0 ? (allocated / budget) * 100 : 0;
@@ -324,7 +479,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                       </div>
                     </td>
                     <td style={{ ...s.td, ...s.tdRight, fontWeight: 700 }}>{fmtInr(budget)}</td>
-                    {publishers.map((p) => {
+                    {visiblePublishers.map((p) => {
                       const cell = getCell(a.id, p.id);
                       const cantLive = cell.status === "CANT_GO_LIVE";
                       const hasValue = parseInt(cell.amount, 10) > 0;
@@ -366,7 +521,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               <tr style={s.totalRow}>
                 <td style={s.totalTd}>TOTAL</td>
                 <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(tableBudgetTotal)}</td>
-                {publishers.map((p) => (
+                {visiblePublishers.map((p) => (
                   <td key={p.id} style={{ ...s.totalTd, textAlign: "center" }}>{fmtInr(pubTotals[p.id])}</td>
                 ))}
                 <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(grandTotal)}</td>
@@ -375,6 +530,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+      {advertisers.length > 0 && visibleAdvertisers.length > 0 && hiddenPubCount > 0 && (
+        <div style={{ fontSize: 12, color: c.muted, marginTop: 8 }}>
+          {hiddenPubCount} publisher column{hiddenPubCount === 1 ? "" : "s"} hidden — Allocated, % and row totals still include hidden columns; saving a row keeps hidden allocations intact.
         </div>
       )}
 
