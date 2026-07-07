@@ -308,6 +308,28 @@ class AdvertiserChangelog(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MetricConfig(Base):
+    """User-managed metric configuration for the performance tabs.
+
+    One row per scope ('advertiser' | 'publisher' performance tab). config is
+    JSON: {"hidden": [built-in keys the tab hides],
+           "custom": [{"key", "label", "kind": "base"|"derived",
+                       "source": <data column, base only>,
+                       "formula": <expression over metric keys, derived only>,
+                       "fmt": "number"|"currency"|"percent"|"decimal"|"multiple"}]}
+    Validated in main.save_metric_config (formula parsed via data_logic AST
+    evaluator — never eval'd as Python).
+    """
+
+    __tablename__ = "rmn_metric_config"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    config: Mapped[Optional[str]] = mapped_column(Text, default=None)  # JSON
+    updated_by: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ColumnMapping(Base):
     __tablename__ = "rmn_column_mappings"
 

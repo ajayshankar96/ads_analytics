@@ -3,6 +3,7 @@ Data processing logic — port of Code.gs aggregation/filter functions.
 All functions operate on raw sheet rows (list of lists).
 """
 
+import ast
 import logging
 from collections import defaultdict
 from datetime import datetime, date, timedelta
@@ -480,6 +481,111 @@ def _derive(totals):
     return e
 
 
+# ── Custom (user-defined) metrics on the performance tabs ────────────────────
+# Config lives in rmn_metric_config (see main.py endpoints). "base" customs
+# read an extra data column and aggregate like built-ins (deltas included);
+# "derived" customs are formulas evaluated over each row's computed totals.
+
+_FORMULA_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div)
+
+
+def _safe_formula_eval(expr: str, values: dict):
+    """Evaluate a derived-metric formula over a metrics dict.
+
+    Only numbers, metric names (case-insensitive), + - * / and parentheses are
+    allowed — the expression is walked via ast, never eval'd as Python.
+    Returns None when the formula divides by zero or references a metric whose
+    value is missing/None (mirrors how roas/cac render as "—" when not
+    computable).
+    """
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except (SyntaxError, ValueError):
+        return None
+    vals = {str(k).lower(): v for k, v in values.items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+    def ev(node):
+        if isinstance(node, ast.Expression):
+            return ev(node.body)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, _FORMULA_OPS):
+            left, right = ev(node.left), ev(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            return left / right
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            v = ev(node.operand)
+            return -v if isinstance(node.op, ast.USub) else v
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+                and not isinstance(node.value, bool):
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            key = node.id.lower()
+            if key not in vals:
+                raise KeyError(node.id)
+            return float(vals[key])
+        raise ValueError("disallowed expression")
+
+    try:
+        result = ev(tree)
+    except (ZeroDivisionError, KeyError, ValueError, TypeError, OverflowError):
+        return None
+    if result != result or result in (float("inf"), float("-inf")):  # NaN / ±inf
+        return None
+    return round(result, 2)
+
+
+def validate_formula(expr: str, allowed_names) -> Optional[str]:
+    """Static check for a derived-metric formula; returns an error string or None.
+
+    Used by the metric-config save endpoint so a bad formula is rejected with a
+    clear message instead of silently rendering "—" everywhere.
+    """
+    allowed = {str(n).lower() for n in allowed_names}
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except (SyntaxError, ValueError):
+        return "Invalid formula syntax"
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Expression, ast.Load)):
+            continue
+        if isinstance(node, ast.BinOp) and isinstance(node.op, _FORMULA_OPS):
+            continue
+        if isinstance(node, _FORMULA_OPS + (ast.UAdd, ast.USub)):
+            continue
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+                and not isinstance(node.value, bool):
+            continue
+        if isinstance(node, ast.Name):
+            if node.id.lower() not in allowed:
+                return f"Unknown metric '{node.id}' — use: {', '.join(sorted(allowed))}"
+            continue
+        return "Only numbers, metric names, + - * / and parentheses are allowed"
+    return None
+
+
+def _split_custom_metrics(custom_metrics, builtin_keys):
+    """Split a custom-metric config list into (base, derived) after dropping
+    entries that clash with built-in keys (those would corrupt aggregation)."""
+    base, derived = [], []
+    for m in custom_metrics or []:
+        key = (m.get("key") or "").strip().lower()
+        if not key or key in builtin_keys:
+            continue
+        if m.get("kind") == "derived":
+            if m.get("formula"):
+                derived.append({**m, "key": key})
+        else:
+            base.append({**m, "key": key})
+    return base, derived
+
+
 def _rag(entry, goal):
     """Red/Amber/Green status vs the advertiser's brand goal.
 
@@ -556,15 +662,22 @@ def _flatten_totals(agg, metric_keys):
     return l1_t, l2_t, l3_t, l4_t
 
 
-def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None) -> dict:
+def get_advertiser_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None, custom_metrics: List[dict] = None) -> dict:
     """
     Hierarchical advertiser performance: Advertiser → Publisher → Segment → Offer.
     Supports period-over-period comparison (compare / comparePeriods).
 
     `goals` is an optional {advertiser_name: {goal_type, target_roas, target_cac}}
     map used to attach a Red/Amber/Green status to each advertiser row.
+
+    `custom_metrics` is the user-managed metric config for this tab: "base"
+    entries aggregate an extra data column (period deltas included, like
+    built-ins); "derived" entries evaluate a formula over each row's totals
+    (no deltas — consistent with roas/cac).
     """
     goals = goals or {}
+    base_customs, derived_customs = _split_custom_metrics(custom_metrics, set(ADV_METRICS))
+    metric_keys = ADV_METRICS + [m["key"] for m in base_customs]
     adv_filter = set(filters.get("advertisers", []))
     pub_filter = set(filters.get("publishers", []))
     seg_filter = set(filters.get("segments", []))
@@ -602,6 +715,15 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
         # Also carry publisher spends so both spend figures show side by side.
         ("pub_spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
     ]
+    # Custom base metrics read their configured data column; -1 (column not in
+    # the current dataset) keeps the key present with 0s instead of erroring.
+    mcols += [(m["key"], hcol(m.get("source") or m["key"], -1)) for m in base_customs]
+
+    def derive(totals):
+        e = _derive(totals)
+        for m in derived_customs:
+            e[m["key"]] = _safe_formula_eval(m.get("formula") or "", e)
+        return e
 
     def aggregate(dfrom, dto):
         agg = {}
@@ -627,9 +749,9 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
                 if dto and d > dto:
                     continue
             m = (agg.setdefault(adv, {}).setdefault(pub, {})
-                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in ADV_METRICS}))
+                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in metric_keys}))
             for key, col in mcols:
-                if len(row) > col:
+                if col >= 0 and len(row) > col:
                     m[key] += _to_float(row[col])
         return agg
 
@@ -639,36 +761,36 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     cmp_from = cmp_to = None
     if compare:
         cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
-        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), ADV_METRICS)
+        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), metric_keys)
 
     advertisers = []
     for adv, pubs in sorted(curr.items()):
-        adv_tot = {k: 0 for k in ADV_METRICS}
+        adv_tot = {k: 0 for k in metric_keys}
         _goal = goals.get(adv)
         pub_list = []
         for pub, segs in sorted(pubs.items()):
-            pub_tot = {k: 0 for k in ADV_METRICS}
+            pub_tot = {k: 0 for k in metric_keys}
             seg_list = []
             for seg, offers in sorted(segs.items()):
-                seg_tot = {k: 0 for k in ADV_METRICS}
+                seg_tot = {k: 0 for k in metric_keys}
                 offer_list = []
                 for offer, m in sorted(offers.items()):
-                    om = _derive(m)
+                    om = derive(m)
                     om["name"] = offer
                     if compare:
-                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((adv, pub, seg, offer)), ADV_METRICS)
+                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((adv, pub, seg, offer)), metric_keys)
                     offer_list.append(om)
                     for k in seg_tot:
                         seg_tot[k] += m[k]
-                rm = _derive(seg_tot)
+                rm = derive(seg_tot)
                 rm["name"] = seg
                 rm["offers"] = offer_list
                 if compare:
-                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((adv, pub, seg)), ADV_METRICS)
+                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((adv, pub, seg)), metric_keys)
                 seg_list.append(rm)
                 for k in pub_tot:
                     pub_tot[k] += seg_tot[k]
-            pe = _derive(pub_tot)
+            pe = derive(pub_tot)
             pe["name"] = pub
             pe["segments"] = seg_list
             # KPI-sheet grain is advertiser × publisher, so each publisher row
@@ -676,17 +798,17 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
             pe["goal"] = _goal
             pe["rag"] = _rag(pe, _goal)
             if compare:
-                pe["deltas"] = _deltas(pub_tot, (prev_l2 or {}).get((adv, pub)), ADV_METRICS)
+                pe["deltas"] = _deltas(pub_tot, (prev_l2 or {}).get((adv, pub)), metric_keys)
             pub_list.append(pe)
             for k in adv_tot:
                 adv_tot[k] += pub_tot[k]
-        ae = _derive(adv_tot)
+        ae = derive(adv_tot)
         ae["name"] = adv
         ae["publishers"] = pub_list
         ae["goal"] = _goal
         ae["rag"] = _rag(ae, _goal)
         if compare:
-            ae["deltas"] = _deltas(adv_tot, (prev_l1 or {}).get(adv), ADV_METRICS)
+            ae["deltas"] = _deltas(adv_tot, (prev_l1 or {}).get(adv), metric_keys)
         advertisers.append(ae)
 
     out = {"advertisers": advertisers, "viewMode": view_mode,
@@ -700,15 +822,19 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
 
 # ── Publisher Performance ──────────────────────────────────────────────────────
 
-def get_publisher_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None) -> dict:
+def get_publisher_performance(rows: List, headers: List[str], filters: dict, view_mode: str = "weekly", goals: dict = None, custom_metrics: List[dict] = None) -> dict:
     """
     Publisher → Advertiser → Segment → Offer hierarchy.
     Mirrors getPublisherPerformanceData() from Code.gs.
 
     `goals` is an optional {advertiser_name: {goal_type, target_roas, target_cac}}
     map used to attach a Red/Amber/Green status to each advertiser row.
+
+    `custom_metrics` — user-managed metric config; see get_advertiser_performance.
     """
     goals = goals or {}
+    base_customs, derived_customs = _split_custom_metrics(custom_metrics, set(PUB_METRICS))
+    metric_keys = PUB_METRICS + [m["key"] for m in base_customs]
     pub_filter = set(filters.get("publishers", []))
     seg_filter = set(filters.get("segments", []))
     adv_filter = set(filters.get("advertisers", []))
@@ -746,6 +872,15 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
         # Publisher-side spends carried so both spend figures show side by side.
         ("pub_spends", hcol("Publisher_Spends", COL["PUBLISHER_SPENDS"])),
     ]
+    # Custom base metrics read their configured data column; -1 (column not in
+    # the current dataset) keeps the key present with 0s instead of erroring.
+    mcols += [(m["key"], hcol(m.get("source") or m["key"], -1)) for m in base_customs]
+
+    def derive(totals):
+        e = _derive(totals)
+        for m in derived_customs:
+            e[m["key"]] = _safe_formula_eval(m.get("formula") or "", e)
+        return e
 
     def aggregate(dfrom, dto):
         agg = {}
@@ -771,9 +906,9 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
                 if dto and d > dto:
                     continue
             m = (agg.setdefault(pub, {}).setdefault(adv, {})
-                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in PUB_METRICS}))
+                    .setdefault(seg, {}).setdefault(offer, {k: 0 for k in metric_keys}))
             for key, col in mcols:
-                if len(row) > col:
+                if col >= 0 and len(row) > col:
                     m[key] += _to_float(row[col])
         return agg
 
@@ -783,50 +918,50 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     cmp_from = cmp_to = None
     if compare:
         cmp_from, cmp_to = _shift_window(view_mode, date_from, date_to, n_back, explicit_range)
-        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), PUB_METRICS)
+        prev_l1, prev_l2, prev_l3, prev_l4 = _flatten_totals(aggregate(cmp_from, cmp_to), metric_keys)
 
     publishers = []
     for pub, advs in sorted(curr.items()):
-        pub_tot = {k: 0 for k in PUB_METRICS}
+        pub_tot = {k: 0 for k in metric_keys}
         adv_list = []
         for adv, segs in sorted(advs.items()):
-            adv_tot = {k: 0 for k in PUB_METRICS}
+            adv_tot = {k: 0 for k in metric_keys}
             seg_list = []
             for seg, offers in sorted(segs.items()):
-                seg_tot = {k: 0 for k in PUB_METRICS}
+                seg_tot = {k: 0 for k in metric_keys}
                 offer_list = []
                 for offer, m in sorted(offers.items()):
-                    om = _derive(m)
+                    om = derive(m)
                     om["name"] = offer
                     if compare:
-                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((pub, adv, seg, offer)), PUB_METRICS)
+                        om["deltas"] = _deltas(m, (prev_l4 or {}).get((pub, adv, seg, offer)), metric_keys)
                     offer_list.append(om)
                     for k in seg_tot:
                         seg_tot[k] += m[k]
-                rm = _derive(seg_tot)
+                rm = derive(seg_tot)
                 rm["name"] = seg
                 rm["offers"] = offer_list
                 if compare:
-                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((pub, adv, seg)), PUB_METRICS)
+                    rm["deltas"] = _deltas(seg_tot, (prev_l3 or {}).get((pub, adv, seg)), metric_keys)
                 seg_list.append(rm)
                 for k in adv_tot:
                     adv_tot[k] += seg_tot[k]
-            ae = _derive(adv_tot)
+            ae = derive(adv_tot)
             ae["name"] = adv
             ae["segments"] = seg_list
             _goal = goals.get(adv)
             ae["goal"] = _goal
             ae["rag"] = _rag(ae, _goal)
             if compare:
-                ae["deltas"] = _deltas(adv_tot, (prev_l2 or {}).get((pub, adv)), PUB_METRICS)
+                ae["deltas"] = _deltas(adv_tot, (prev_l2 or {}).get((pub, adv)), metric_keys)
             adv_list.append(ae)
             for k in pub_tot:
                 pub_tot[k] += adv_tot[k]
-        pe = _derive(pub_tot)
+        pe = derive(pub_tot)
         pe["name"] = pub
         pe["advertisers"] = adv_list
         if compare:
-            pe["deltas"] = _deltas(pub_tot, (prev_l1 or {}).get(pub), PUB_METRICS)
+            pe["deltas"] = _deltas(pub_tot, (prev_l1 or {}).get(pub), metric_keys)
         publishers.append(pe)
 
     out = {"publishers": publishers, "viewMode": view_mode,

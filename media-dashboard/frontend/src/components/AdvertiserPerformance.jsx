@@ -1,5 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getAdvertiserPerformance, getFilters } from "../api";
+import MetricsManager, { buildColumns, formatCell } from "./MetricsManager";
+
+// Built-in columns (order = display order). Users can hide these or add
+// custom ones via the ⚙ Metrics modal; the effective list comes back from
+// the API as `metric_config` and is merged by buildColumns().
+const BUILTIN_COLUMNS = [
+  { key: "impressions", label: "Impressions", fmt: "number", delta: true },
+  { key: "clicks", label: "Clicks", fmt: "number", delta: true },
+  { key: "ctr", label: "CTR", fmt: "percent", delta: true },
+  { key: "adv_spends", label: "Adv Spends", fmt: "currency", delta: true },
+  { key: "pub_spends", label: "Pub Spends", fmt: "currency", delta: true },
+  { key: "ql", label: "QL", fmt: "number", delta: true },
+  { key: "cpql", label: "CPQL", fmt: "currency2", delta: false },
+  { key: "revenue", label: "Revenue", fmt: "currency", delta: true },
+  { key: "goal", label: "Goal", fmt: "goal", delta: false },
+  { key: "roas", label: "ROAS", fmt: "multiple", delta: false },
+  { key: "cac", label: "CAC", fmt: "currency", delta: false },
+];
 
 function MultiSelect({ options, value, onChange, placeholder = "All" }) {
   const [open, setOpen] = useState(false);
@@ -79,15 +97,6 @@ const s = {
   viewBtnActive: { background: "#2563eb", color: "#fff", borderColor: "#2563eb" },
 };
 
-function fmt(n) {
-  if (n === undefined || n === null || n === "N/A") return "—";
-  if (typeof n === "string") return n;
-  if (n >= 1e7) return `${(n / 1e7).toFixed(1)}Cr`;
-  if (n >= 1e5) return `${(n / 1e5).toFixed(1)}L`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
 const VIEW_TOOLTIPS = {
   weekly: "Current week — Monday to today",
   monthly: "Current month — 1st to today",
@@ -144,17 +153,7 @@ function RagBadge({ status, goal }) {
   );
 }
 
-// ROAS as a "8.5x" multiple; "—" when not computable (no revenue / no spend).
-const fmtRoas = (v) => (v === null || v === undefined ? "—" : `${v}x`);
-
-// The advertiser's configured goal, e.g. "ROAS ≥ 8.5x" or "CAC ≤ ₹100".
-const fmtGoal = (goal) => {
-  if (!goal || !goal.goal_type) return "—";
-  if (goal.goal_type === "CAC") return goal.target_cac != null ? `CAC ≤ ₹${goal.target_cac}` : "CAC";
-  return goal.target_roas != null ? `ROAS ≥ ${goal.target_roas}x` : "ROAS";
-};
-
-function AdvRow({ adv, depth = 0 }) {
+function AdvRow({ adv, columns, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
   const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : depth === 2 ? "#fafafa" : "#f4f6f8";
@@ -174,26 +173,21 @@ function AdvRow({ adv, depth = 0 }) {
           {adv.name}
           <RagBadge status={adv.rag} goal={adv.goal} />
         </td>
-        <td style={s.td}>{fmt(adv.impressions)}<Delta pct={adv.deltas?.impressions} /></td>
-        <td style={s.td}>{fmt(adv.clicks)}<Delta pct={adv.deltas?.clicks} /></td>
-        <td style={s.td}>{adv.ctr}%<Delta pct={adv.deltas?.ctr} /></td>
-        <td style={s.td}>₹{fmt(adv.adv_spends)}<Delta pct={adv.deltas?.adv_spends} /></td>
-        <td style={s.td}>₹{fmt(adv.pub_spends)}<Delta pct={adv.deltas?.pub_spends} /></td>
-        <td style={s.td}>{fmt(adv.ql)}<Delta pct={adv.deltas?.ql} /></td>
-        <td style={s.td}>{adv.cpql ? `₹${adv.cpql}` : "—"}</td>
-        <td style={s.td}>₹{fmt(adv.revenue)}<Delta pct={adv.deltas?.revenue} /></td>
-        <td style={{ ...s.td, whiteSpace: "nowrap", color: "#64748b" }}>{fmtGoal(adv.goal)}</td>
-        <td style={s.td}>{fmtRoas(adv.roas)}</td>
-        <td style={s.td}>{adv.cac != null ? `₹${fmt(adv.cac)}` : "—"}</td>
+        {columns.map((col) => (
+          <td key={col.key} style={col.fmt === "goal" ? { ...s.td, whiteSpace: "nowrap", color: "#64748b" } : s.td}>
+            {formatCell(adv, col)}
+            {col.delta && <Delta pct={adv.deltas?.[col.key]} />}
+          </td>
+        ))}
       </tr>
       {open && children.map((child, i) => (
-        <AdvRow key={i} adv={child} depth={depth + 1} />
+        <AdvRow key={i} adv={child} columns={columns} depth={depth + 1} />
       ))}
     </>
   );
 }
 
-export default function AdvertiserPerformance({ filters }) {
+export default function AdvertiserPerformance({ filters, userRole }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("weekly");
@@ -201,6 +195,8 @@ export default function AdvertiserPerformance({ filters }) {
   const [advOptions, setAdvOptions] = useState([]);
   const [compare, setCompare] = useState(false);
   const [comparePeriods, setComparePeriods] = useState(1);
+  const [showMetricsMgr, setShowMetricsMgr] = useState(false);
+  const [reload, setReload] = useState(0); // bumped after a metric-config save
 
   useEffect(() => {
     getFilters().then(f => setAdvOptions(f.advertisers || [])).catch(() => {});
@@ -222,10 +218,12 @@ export default function AdvertiserPerformance({ filters }) {
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [filters, viewMode, selectedAdv, compare, comparePeriods]);
+  }, [filters, viewMode, selectedAdv, compare, comparePeriods, reload]);
 
   if (loading) return <div style={s.loading}>Loading advertiser performance…</div>;
   const advertisers = data?.advertisers || [];
+  const columns = buildColumns(BUILTIN_COLUMNS, data?.metric_config);
+  const canManageMetrics = userRole === "ADMIN" || userRole === "OPS";
 
   return (
     <div>
@@ -259,6 +257,15 @@ export default function AdvertiserPerformance({ filters }) {
             <option value={3}>vs 3 periods ago</option>
           </select>
         )}
+        {canManageMetrics && (
+          <button
+            title="Add, remove or hide metrics on this table"
+            style={{ ...s.viewBtn, marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }}
+            onClick={() => setShowMetricsMgr(true)}
+          >
+            ⚙ Metrics
+          </button>
+        )}
       </div>
 
       {data?.period && <PeriodLabel period={data.period} compare={data.compare} />}
@@ -271,26 +278,27 @@ export default function AdvertiserPerformance({ filters }) {
             <thead>
               <tr>
                 <th style={s.th}>Name</th>
-                <th style={s.th}>Impressions</th>
-                <th style={s.th}>Clicks</th>
-                <th style={s.th}>CTR</th>
-                <th style={s.th}>Adv Spends</th>
-                <th style={s.th}>Pub Spends</th>
-                <th style={s.th}>QL</th>
-                <th style={s.th}>CPQL</th>
-                <th style={s.th}>Revenue</th>
-                <th style={s.th}>Goal</th>
-                <th style={s.th}>ROAS</th>
-                <th style={s.th}>CAC</th>
+                {columns.map((col) => (
+                  <th key={col.key} style={s.th}>{col.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {advertisers.map((adv, i) => (
-                <AdvRow key={i} adv={adv} depth={0} />
+                <AdvRow key={i} adv={adv} columns={columns} depth={0} />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {showMetricsMgr && (
+        <MetricsManager
+          scope="advertiser"
+          builtins={BUILTIN_COLUMNS}
+          onClose={() => setShowMetricsMgr(false)}
+          onSaved={() => setReload((r) => r + 1)}
+        />
       )}
     </div>
   );

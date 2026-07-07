@@ -1,5 +1,25 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getPublisherPerformance, getFilters } from "../api";
+import MetricsManager, { buildColumns, formatCell } from "./MetricsManager";
+
+// Built-in columns (order = display order). Users can hide these or add
+// custom ones via the ⚙ Metrics modal; the effective list comes back from
+// the API as `metric_config` and is merged by buildColumns().
+// NB: the old static header mislabelled adv_spends/pub_spends as
+// "Spends"/"CPM" — corrected here.
+const BUILTIN_COLUMNS = [
+  { key: "impressions", label: "Impressions", fmt: "number", delta: true },
+  { key: "clicks", label: "Clicks", fmt: "number", delta: true },
+  { key: "ctr", label: "CTR", fmt: "percent", delta: true },
+  { key: "adv_spends", label: "Adv Spends", fmt: "currency", delta: true },
+  { key: "pub_spends", label: "Pub Spends", fmt: "currency", delta: true },
+  { key: "ql", label: "QL", fmt: "number", delta: true },
+  { key: "qqg", label: "QQG", fmt: "number", delta: true },
+  { key: "revenue", label: "Revenue", fmt: "currency", delta: true },
+  { key: "goal", label: "Goal", fmt: "goal", delta: false },
+  { key: "roas", label: "ROAS", fmt: "multiple", delta: false },
+  { key: "cac", label: "CAC", fmt: "currency", delta: false },
+];
 
 function MultiSelect({ options, value, onChange, placeholder = "All" }) {
   const [open, setOpen] = useState(false);
@@ -45,14 +65,6 @@ const s = {
   viewBtn: { padding: "4px 12px", border: "1px solid #d1d5db", borderRadius: 4, cursor: "pointer", fontSize: 12, background: "#f9fafb" },
   viewBtnActive: { background: "#2563eb", color: "#fff", borderColor: "#2563eb" },
 };
-
-function fmt(n) {
-  if (n === undefined || n === null) return "—";
-  if (n >= 1e7) return `${(n / 1e7).toFixed(1)}Cr`;
-  if (n >= 1e5) return `${(n / 1e5).toFixed(1)}L`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
 
 const VIEW_TOOLTIPS = {
   weekly: "Current week — Monday to today",
@@ -109,17 +121,7 @@ function RagBadge({ status, goal }) {
   );
 }
 
-// ROAS as a "8.5x" multiple; "—" when not computable (no revenue / no spend).
-const fmtRoas = (v) => (v === null || v === undefined ? "—" : `${v}x`);
-
-// The advertiser's configured goal, e.g. "ROAS ≥ 8.5x" or "CAC ≤ ₹100".
-const fmtGoal = (goal) => {
-  if (!goal || !goal.goal_type) return "—";
-  if (goal.goal_type === "CAC") return goal.target_cac != null ? `CAC ≤ ₹${goal.target_cac}` : "CAC";
-  return goal.target_roas != null ? `ROAS ≥ ${goal.target_roas}x` : "ROAS";
-};
-
-function PubRow({ item, depth = 0 }) {
+function PubRow({ item, columns, depth = 0 }) {
   const [open, setOpen] = useState(depth === 0);
   const indent = { paddingLeft: depth * 24 };
   const bg = depth === 0 ? "#f8fafc" : depth === 1 ? "#fff" : depth === 2 ? "#fafafa" : "#f4f6f8";
@@ -136,26 +138,21 @@ function PubRow({ item, depth = 0 }) {
           {item.name}
           <RagBadge status={item.rag} goal={item.goal} />
         </td>
-        <td style={s.td}>{fmt(item.impressions)}<Delta pct={item.deltas?.impressions} /></td>
-        <td style={s.td}>{fmt(item.clicks)}<Delta pct={item.deltas?.clicks} /></td>
-        <td style={s.td}>{item.ctr}%<Delta pct={item.deltas?.ctr} /></td>
-        <td style={s.td}>₹{fmt(item.adv_spends)}<Delta pct={item.deltas?.adv_spends} /></td>
-        <td style={s.td}>₹{fmt(item.pub_spends)}<Delta pct={item.deltas?.pub_spends} /></td>
-        <td style={s.td}>{fmt(item.ql)}<Delta pct={item.deltas?.ql} /></td>
-        <td style={s.td}>{fmt(item.qqg)}<Delta pct={item.deltas?.qqg} /></td>
-        <td style={s.td}>₹{fmt(item.revenue)}<Delta pct={item.deltas?.revenue} /></td>
-        <td style={{ ...s.td, whiteSpace: "nowrap", color: "#64748b" }}>{fmtGoal(item.goal)}</td>
-        <td style={s.td}>{fmtRoas(item.roas)}</td>
-        <td style={s.td}>{item.cac != null ? `₹${fmt(item.cac)}` : "—"}</td>
+        {columns.map((col) => (
+          <td key={col.key} style={col.fmt === "goal" ? { ...s.td, whiteSpace: "nowrap", color: "#64748b" } : s.td}>
+            {formatCell(item, col)}
+            {col.delta && <Delta pct={item.deltas?.[col.key]} />}
+          </td>
+        ))}
       </tr>
       {open && children.map((child, i) => (
-        <PubRow key={i} item={child} depth={depth + 1} />
+        <PubRow key={i} item={child} columns={columns} depth={depth + 1} />
       ))}
     </>
   );
 }
 
-export default function PublisherPerformance({ filters }) {
+export default function PublisherPerformance({ filters, userRole }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("weekly");
@@ -163,6 +160,8 @@ export default function PublisherPerformance({ filters }) {
   const [pubOptions, setPubOptions] = useState([]);
   const [compare, setCompare] = useState(false);
   const [comparePeriods, setComparePeriods] = useState(1);
+  const [showMetricsMgr, setShowMetricsMgr] = useState(false);
+  const [reload, setReload] = useState(0); // bumped after a metric-config save
 
   useEffect(() => {
     getFilters().then(f => setPubOptions(f.publishers || [])).catch(() => {});
@@ -184,10 +183,12 @@ export default function PublisherPerformance({ filters }) {
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [filters, viewMode, selectedPub, compare, comparePeriods]);
+  }, [filters, viewMode, selectedPub, compare, comparePeriods, reload]);
 
   if (loading) return <div style={s.loading}>Loading publisher performance…</div>;
   const publishers = data?.publishers || [];
+  const columns = buildColumns(BUILTIN_COLUMNS, data?.metric_config);
+  const canManageMetrics = userRole === "ADMIN" || userRole === "OPS";
 
   return (
     <div>
@@ -211,6 +212,15 @@ export default function PublisherPerformance({ filters }) {
             <option value={3}>vs 3 periods ago</option>
           </select>
         )}
+        {canManageMetrics && (
+          <button
+            title="Add, remove or hide metrics on this table"
+            style={{ ...s.viewBtn, marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }}
+            onClick={() => setShowMetricsMgr(true)}
+          >
+            ⚙ Metrics
+          </button>
+        )}
       </div>
 
       {data?.period && <PeriodLabel period={data.period} compare={data.compare} />}
@@ -223,24 +233,25 @@ export default function PublisherPerformance({ filters }) {
             <thead>
               <tr>
                 <th style={s.th}>Name</th>
-                <th style={s.th}>Impressions</th>
-                <th style={s.th}>Clicks</th>
-                <th style={s.th}>CTR</th>
-                <th style={s.th}>Spends</th>
-                <th style={s.th}>CPM</th>
-                <th style={s.th}>QL</th>
-                <th style={s.th}>QQG</th>
-                <th style={s.th}>Revenue</th>
-                <th style={s.th}>Goal</th>
-                <th style={s.th}>ROAS</th>
-                <th style={s.th}>CAC</th>
+                {columns.map((col) => (
+                  <th key={col.key} style={s.th}>{col.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {publishers.map((pub, i) => <PubRow key={i} item={pub} depth={0} />)}
+              {publishers.map((pub, i) => <PubRow key={i} item={pub} columns={columns} depth={0} />)}
             </tbody>
           </table>
         </div>
+      )}
+
+      {showMetricsMgr && (
+        <MetricsManager
+          scope="publisher"
+          builtins={BUILTIN_COLUMNS}
+          onClose={() => setShowMetricsMgr(false)}
+          onSaved={() => setReload((r) => r + 1)}
+        />
       )}
     </div>
   );

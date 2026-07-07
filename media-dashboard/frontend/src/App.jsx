@@ -290,8 +290,8 @@ export default function App() {
     const props = { filters, dataSource };
     switch (effectiveTab) {
       case "dashboard":      return <Dashboard {...props} />;
-      case "adv-perf":       return <AdvertiserPerformance {...props} />;
-      case "pub-perf":       return <PublisherPerformance {...props} />;
+      case "adv-perf":       return <AdvertiserPerformance {...props} userRole={userRole} />;
+      case "pub-perf":       return <PublisherPerformance {...props} userRole={userRole} />;
       case "sales":          return <SalesPipeline userRole={userRole} userEmail={userEmail} />;
       case "ops":            return <CampaignOps userRole={userRole} />;
       case "pub-allocation": return <BudgetAllocation userRole={userRole} />;

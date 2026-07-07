@@ -801,6 +801,45 @@ function parseTrackingMetrics(raw) {
   try { return JSON.parse(raw || "{}"); } catch { return {}; }
 }
 
+// Slug used as the metric's stable key: "App Installs" → "app_installs".
+const slugifyMetricKey = (label) =>
+  label.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+// Inline "+ Add metric" chip-form shared by the publisher & advertiser metric rows.
+function AddMetricForm({ accent, existingKeys, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [err, setErr] = useState("");
+  const close = () => { setOpen(false); setLabel(""); setErr(""); };
+  const submit = () => {
+    const trimmed = label.trim();
+    const key = slugifyMetricKey(trimmed);
+    if (!key) { setErr("Enter a metric name"); return; }
+    if (existingKeys.includes(key)) { setErr(`"${trimmed}" already exists`); return; }
+    onAdd({ key, label: trimmed });
+    close();
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} title="Add a custom metric to track from the sheet"
+        style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: accent, background: "#fff", border: `1px dashed ${accent}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+        + Add metric
+      </button>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <input autoFocus value={label} onChange={(e) => { setLabel(e.target.value); setErr(""); }}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") close(); }}
+        placeholder="Metric name (e.g. App Installs)"
+        style={{ border: `1px solid ${accent}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, outline: "none", width: 180 }} />
+      <button type="button" onClick={submit} style={{ background: accent, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add</button>
+      <button type="button" onClick={close} style={{ background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+      {err && <span style={{ fontSize: 11, color: c.red }}>{err}</span>}
+    </span>
+  );
+}
+
 function SetupTab({ campaign, segments, canEdit, onReload }) {
   const initialMetrics = parseTrackingMetrics(campaign.metrics_json);
   const [advDataUrl, setAdvDataUrl] = useState(campaign.advertiser_data_url || "");
@@ -820,6 +859,10 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   const [sheetSegments, setSheetSegments] = useState({ advertiser: [], publisher: [] });
   const [pubMetrics, setPubMetrics] = useState(initialMetrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
   const [advMetrics, setAdvMetrics] = useState(initialMetrics.advertiser_metrics || []);
+  // User-defined metrics ([{key,label}]) — synced from the sheet like any other
+  // column and stored in the campaign's dynamic metrics JSON by the ETL.
+  const [customPub, setCustomPub] = useState(initialMetrics.custom_publisher_metrics || []);
+  const [customAdv, setCustomAdv] = useState(initialMetrics.custom_advertiser_metrics || []);
   const [submitting, setSubmitting] = useState(false);
   const [advUrls, setAdvUrls] = useState([]);
   const [pubUrls, setPubUrls] = useState([]);
@@ -838,6 +881,8 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     setSheetSegments({ advertiser: [], publisher: [] });
     setPubMetrics(metrics.publisher_metrics || PUBLISHER_METRICS.filter((m) => m.default).map((m) => m.key));
     setAdvMetrics(metrics.advertiser_metrics || []);
+    setCustomPub(metrics.custom_publisher_metrics || []);
+    setCustomAdv(metrics.custom_advertiser_metrics || []);
     setIsEditingSubmitted(false);
   }, [
     campaign.campaign_id,
@@ -879,7 +924,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
 
   const handleSubmit = async () => {
     if (!pubDataUrl.trim()) { alert("Publisher Data Sheet URL is required"); return; }
-    if (advMetrics.length === 0) { alert("Select at least one advertiser metric"); return; }
+    if (advMetrics.length === 0 && customAdv.length === 0) { alert("Select at least one advertiser metric"); return; }
     if (!segmentPub.trim()) { alert("Segment (Publisher) is required"); return; }
     if (!segmentAdv.trim()) { alert("Segment (Advertiser) is required"); return; }
     // Non-self-targeted segments must exist in the sheet's segment column,
@@ -895,6 +940,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
     setSubmitting(true);
     const metricsPayload = JSON.stringify({
       publisher_metrics: pubMetrics, advertiser_metrics: advMetrics,
+      custom_publisher_metrics: customPub, custom_advertiser_metrics: customAdv,
     });
     try {
       await submitTrackingSetup(campaign.campaign_id, { campaign_type: "Single Campaign Sheet", advertiser_data_url: advDataUrl, publisher_data_url: pubDataUrl, segment_pub: segmentPub, segment_adv: segmentAdv, self_targeted_adv: selfTargeted.advertiser, self_targeted_pub: selfTargeted.publisher, metrics_json: metricsPayload, additional_context: "" });
@@ -906,8 +952,16 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
   };
 
   if (campaign.tracking_submitted && !isEditingSubmitted) {
-    const selectedPubMetrics = (initialMetrics.publisher_metrics || []).map((key) => PUBLISHER_METRICS.find((m) => m.key === key)?.label || key).join(", ");
-    const selectedAdvMetrics = (initialMetrics.advertiser_metrics || []).map((key) => ADVERTISER_METRICS.find((m) => m.key === key)?.label || key).join(", ");
+    const savedCustomPub = initialMetrics.custom_publisher_metrics || [];
+    const savedCustomAdv = initialMetrics.custom_advertiser_metrics || [];
+    const selectedPubMetrics = [
+      ...(initialMetrics.publisher_metrics || []).map((key) => PUBLISHER_METRICS.find((m) => m.key === key)?.label || savedCustomPub.find((m) => m.key === key)?.label || key),
+      ...savedCustomPub.map((m) => `${m.label} (custom)`),
+    ].join(", ");
+    const selectedAdvMetrics = [
+      ...(initialMetrics.advertiser_metrics || []).map((key) => ADVERTISER_METRICS.find((m) => m.key === key)?.label || savedCustomAdv.find((m) => m.key === key)?.label || key),
+      ...savedCustomAdv.map((m) => `${m.label} (custom)`),
+    ].join(", ");
     return (
       <div>
         <div style={{ background: "#E3F6EE", borderRadius: 10, padding: "12px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -1037,22 +1091,43 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
       {/* Metric Selection */}
       <div style={{ border: `1px solid ${c.line}`, borderRadius: 10, padding: "14px", marginBottom: 14 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Publisher Metrics</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "center" }}>
           {PUBLISHER_METRICS.map((m) => (
             <label key={m.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: c.ink, cursor: "pointer", padding: "4px 10px", borderRadius: 6, border: `1px solid ${pubMetrics.includes(m.key) ? c.blue : c.line}`, background: pubMetrics.includes(m.key) ? "#EAF0FF" : "#fff" }}>
               <input type="checkbox" checked={pubMetrics.includes(m.key)} onChange={(e) => setPubMetrics(e.target.checked ? [...pubMetrics, m.key] : pubMetrics.filter((k) => k !== m.key))} style={{ accentColor: c.blue }} />
               {m.label}
             </label>
           ))}
+          {customPub.map((m) => (
+            <span key={m.key} title="Custom metric — mapped from the publisher sheet" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: c.ink, padding: "4px 10px", borderRadius: 6, border: `1px solid ${c.blue}`, background: "#EAF0FF" }}>
+              {m.label}
+              <button type="button" onClick={() => setCustomPub(customPub.filter((x) => x.key !== m.key))} title="Remove custom metric" style={{ border: "none", background: "none", color: c.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+          <AddMetricForm accent={c.blue}
+            existingKeys={[...PUBLISHER_METRICS.map((m) => m.key), ...customPub.map((m) => m.key)]}
+            onAdd={(m) => setCustomPub([...customPub, m])} />
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, color: c.ink, marginBottom: 10 }}>Advertiser Metrics</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           {ADVERTISER_METRICS.map((m) => (
             <label key={m.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: c.ink, cursor: "pointer", padding: "4px 10px", borderRadius: 6, border: `1px solid ${advMetrics.includes(m.key) ? c.green : c.line}`, background: advMetrics.includes(m.key) ? "#E3F6EE" : "#fff" }}>
               <input type="checkbox" checked={advMetrics.includes(m.key)} onChange={(e) => setAdvMetrics(e.target.checked ? [...advMetrics, m.key] : advMetrics.filter((k) => k !== m.key))} style={{ accentColor: c.green }} />
               {m.label}
             </label>
           ))}
+          {customAdv.map((m) => (
+            <span key={m.key} title="Custom metric — mapped from the advertiser sheet" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: c.ink, padding: "4px 10px", borderRadius: 6, border: `1px solid ${c.green}`, background: "#E3F6EE" }}>
+              {m.label}
+              <button type="button" onClick={() => setCustomAdv(customAdv.filter((x) => x.key !== m.key))} title="Remove custom metric" style={{ border: "none", background: "none", color: c.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+          <AddMetricForm accent={c.green}
+            existingKeys={[...ADVERTISER_METRICS.map((m) => m.key), ...customAdv.map((m) => m.key)]}
+            onAdd={(m) => setCustomAdv([...customAdv, m])} />
+        </div>
+        <div style={{ fontSize: 11, color: c.muted, marginTop: 10 }}>
+          Custom metrics get a column slot in the sheet mapping below and sync into this campaign's metrics like any built-in.
         </div>
       </div>
 
@@ -1064,7 +1139,7 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
           sheetUrl={pubDataUrl}
           name={campaign.publisher_name || ""}
           campaignId={campaign.campaign_id}
-          metrics={PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label }))}
+          metrics={[...PUBLISHER_METRICS.filter((m) => pubMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label })), ...customPub]}
           selfTargeted={selfTargeted.publisher}
           onSegmentValues={(vals) => setSheetSegments((prev) => ({ ...prev, publisher: vals }))}
           onSaved={() => {}}
@@ -1072,13 +1147,13 @@ function SetupTab({ campaign, segments, canEdit, onReload }) {
       )}
 
       {/* Advertiser sheet config — shows when metrics are selected */}
-      {advDataUrl && advMetrics.length > 0 && (
+      {advDataUrl && (advMetrics.length > 0 || customAdv.length > 0) && (
         <VisualSheetPicker
           pickerType="advertiser"
           sheetUrl={advDataUrl}
           name={campaign.advertiser_name || ""}
           campaignId={campaign.campaign_id}
-          metrics={ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key))}
+          metrics={[...ADVERTISER_METRICS.filter((m) => advMetrics.includes(m.key)).map((m) => ({ key: m.key, label: m.label })), ...customAdv]}
           selfTargeted={selfTargeted.advertiser}
           onSegmentValues={(vals) => setSheetSegments((prev) => ({ ...prev, advertiser: vals }))}
           onSaved={() => {}}

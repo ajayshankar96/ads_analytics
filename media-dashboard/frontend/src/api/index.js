@@ -356,3 +356,13 @@ export const saveAllocations = (advId, month, allocations) =>
 // ── Metric Recompute ─────────────────────────────────────────────────────────
 export const recomputeMetrics = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/recompute`, { method: "POST" });
+
+// ── Performance metric config (custom/hidden metrics per tab) ────────────────
+export const getMetricConfig = (scope) =>
+  apiFetch(`/api/performance/metric-config${buildQuery({ scope })}`);
+
+export const saveMetricConfig = (payload) =>
+  apiFetch("/api/performance/metric-config", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });

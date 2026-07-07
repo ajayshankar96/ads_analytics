@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache import cache, load_master_report_cache, start_background_refresh, MASTER_CACHE_KEY
 from data_logic import (
+    ADV_METRICS,
     apply_filters,
     calculate_aggregates,
     compute_data_freshness,
@@ -34,6 +35,7 @@ from data_logic import (
     get_publisher_performance,
     get_time_series,
     prepare_table_data,
+    validate_formula,
 )
 from sheets_client import (
     KPI_SPREADSHEET_ID,
@@ -228,6 +230,54 @@ def load_advertiser_goals():
     except Exception as e:
         logger.warning(f"Advertiser goals load failed: {e}")
     return goals
+
+
+# ── Performance metric config (user-managed metrics on the performance tabs) ──
+VALID_METRIC_SCOPES = ("advertiser", "publisher")
+# Keys already rendered by the performance tabs — customs may not reuse them.
+BUILTIN_METRIC_KEYS = set(ADV_METRICS) | {"ctr", "cpql", "roas", "cac", "goal", "name", "rag", "deltas"}
+# Derived formulas may reference any aggregated metric or built-in ratio.
+FORMULA_BASE_NAMES = set(ADV_METRICS) | {"ctr", "cpql", "roas", "cac"}
+METRIC_FMTS = {"number", "currency", "percent", "decimal", "multiple"}
+# Dimension columns from load_from_postgres — not offered as base-metric sources.
+_METRIC_DIMENSION_HEADERS = {
+    "advertiser", "publisher", "advertiser_industry", "date", "week_start_date",
+    "month_start_date", "segment", "advertiser_segment", "cohort_name", "brand", "offer",
+}
+_metric_cfg_cache = {}
+
+
+def load_metric_config(scope: str) -> dict:
+    """Saved metric config for a performance tab: {"hidden": [...], "custom": [...]}.
+
+    Sync loader (the performance endpoints are sync) mirroring
+    load_advertiser_goals. Empty config on any failure — the tabs simply show
+    their built-in columns. Cached 30s; invalidated on save.
+    """
+    import time
+    now = time.time()
+    hit = _metric_cfg_cache.get(scope)
+    if hit and (now - hit["ts"]) < 30:
+        return hit["data"]
+
+    from sqlalchemy import create_engine, text as _text
+    out = {"hidden": [], "custom": []}
+    db_url = os.environ.get("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql+pg8000://").replace("postgresql://", "postgresql+pg8000://")
+    if db_url:
+        try:
+            eng = create_engine(db_url, pool_pre_ping=True)
+            with eng.connect() as conn:
+                row = conn.execute(_text(
+                    "SELECT config FROM rmn_metric_config WHERE scope = :s"
+                ), {"s": scope}).fetchone()
+            if row and row[0]:
+                cfg = json.loads(row[0])
+                out["hidden"] = [str(k) for k in cfg.get("hidden", []) if k]
+                out["custom"] = [m for m in cfg.get("custom", []) if isinstance(m, dict) and m.get("key")]
+        except Exception as e:
+            logger.warning(f"Metric config load failed for {scope}: {e}")
+    _metric_cfg_cache[scope] = {"data": out, "ts": now}
+    return out
 
 
 _active_source = {"value": "postgres"}  # default to postgres
@@ -827,8 +877,12 @@ def advertiser_performance(
         "compare": compare,
         "comparePeriods": comparePeriods,
     }
-    result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals())
+    metric_cfg = load_metric_config("advertiser")
+    result = get_advertiser_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals(), custom_metrics=metric_cfg["custom"])
     result["cacheAge"] = data.get("cache_age", 0)
+    # Column config rides along so the tab renders custom/hidden metrics in
+    # the same round trip that produced the numbers.
+    result["metric_config"] = metric_cfg
     return result
 
 
@@ -853,9 +907,116 @@ def publisher_performance(
         "compare": compare,
         "comparePeriods": comparePeriods,
     }
-    result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals())
+    metric_cfg = load_metric_config("publisher")
+    result = get_publisher_performance(data["rows"], data["headers"], filters, view_mode=viewMode, goals=load_advertiser_goals(), custom_metrics=metric_cfg["custom"])
     result["cacheAge"] = data.get("cache_age", 0)
+    result["metric_config"] = metric_cfg
     return result
+
+
+# ── Performance metric config endpoints ───────────────────────────────────────
+@app.get("/api/performance/metric-config")
+def get_metric_config(scope: str = "advertiser"):
+    """Config for the manage-metrics UI: saved hidden/custom lists plus the
+    data columns available as base-metric sources and the metric keys a
+    derived formula may reference."""
+    if scope not in VALID_METRIC_SCOPES:
+        raise HTTPException(status_code=400, detail="scope must be 'advertiser' or 'publisher'")
+    cfg = load_metric_config(scope)
+    try:
+        headers = load_data().get("headers", [])
+    except Exception:
+        headers = []
+    available = [h for h in headers if h and h.lower() not in _METRIC_DIMENSION_HEADERS]
+    formula_keys = sorted(FORMULA_BASE_NAMES | {
+        m["key"] for m in cfg["custom"] if m.get("kind") != "derived"
+    })
+    return {"scope": scope, **cfg, "available_columns": available, "formula_keys": formula_keys}
+
+
+class MetricConfigRequest(BaseModel):
+    scope: str
+    hidden: List[str] = []
+    custom: List[Dict[str, Any]] = []
+
+
+@app.post("/api/performance/metric-config")
+async def save_metric_config(req: MetricConfigRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """Save the metric config for a performance tab (ADMIN/OPS only).
+
+    Custom metrics are validated here so a bad definition is rejected with a
+    clear message: keys must not clash with built-ins, base metrics need a
+    source column, derived metrics need a formula that parses against the
+    known metric keys (see data_logic.validate_formula)."""
+    import re as _re
+    if req.scope not in VALID_METRIC_SCOPES:
+        raise HTTPException(status_code=400, detail="scope must be 'advertiser' or 'publisher'")
+    email = getattr(request.state, "user_email", None)
+    if auth_enabled():
+        user = await repo.get_user_role(db, (email or "").strip().lower())
+        role = (user.role or "").upper() if user else ""
+        if role not in ("ADMIN", "OPS") and not is_admin(email):
+            raise HTTPException(status_code=403, detail="Only ADMIN/OPS can change metric config")
+
+    # "name" (the hierarchy column) can never be hidden; ratios/goal can.
+    hidden = [str(k).strip().lower() for k in req.hidden if str(k).strip().lower() not in ("", "name")]
+
+    # First pass: base metric keys (a derived formula may reference them).
+    base_keys = set()
+    for m in req.custom:
+        if isinstance(m, dict) and m.get("kind") != "derived":
+            k = str(m.get("key") or m.get("label") or "").strip().lower()
+            if k:
+                base_keys.add(_re.sub(r"[^a-z0-9_]+", "_", k).strip("_"))
+    allowed_formula_names = FORMULA_BASE_NAMES | base_keys
+
+    cleaned, seen = [], set()
+    for m in req.custom:
+        if not isinstance(m, dict):
+            continue
+        label = str(m.get("label") or "").strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="Each custom metric needs a name")
+        key = str(m.get("key") or "").strip().lower() or label.lower()
+        key = _re.sub(r"[^a-z0-9_]+", "_", key).strip("_")
+        if not key:
+            raise HTTPException(status_code=400, detail=f"Could not derive a key for metric '{label}'")
+        if key in BUILTIN_METRIC_KEYS:
+            raise HTTPException(status_code=400, detail=f"'{label}' clashes with the built-in metric '{key}'")
+        if key in seen:
+            raise HTTPException(status_code=400, detail=f"Duplicate metric '{label}'")
+        kind = "derived" if m.get("kind") == "derived" else "base"
+        fmt = m.get("fmt") if m.get("fmt") in METRIC_FMTS else "number"
+        entry = {"key": key, "label": label, "kind": kind, "fmt": fmt}
+        if kind == "base":
+            source = str(m.get("source") or "").strip()
+            if not source:
+                raise HTTPException(status_code=400, detail=f"Metric '{label}' needs a source data column")
+            entry["source"] = source
+        else:
+            formula = str(m.get("formula") or "").strip()
+            if not formula:
+                raise HTTPException(status_code=400, detail=f"Derived metric '{label}' needs a calculation formula")
+            err = validate_formula(formula, allowed_formula_names)
+            if err:
+                raise HTTPException(status_code=400, detail=f"Formula for '{label}': {err}")
+            entry["formula"] = formula
+        seen.add(key)
+        cleaned.append(entry)
+
+    cfg_json = json.dumps({"hidden": hidden, "custom": cleaned})
+    row = (await db.execute(
+        select(models.MetricConfig).where(models.MetricConfig.scope == req.scope)
+    )).scalar_one_or_none()
+    if row:
+        row.config = cfg_json
+        row.updated_by = email
+        row.updated_at = datetime.now(dt_timezone.utc)
+    else:
+        db.add(models.MetricConfig(scope=req.scope, config=cfg_json, updated_by=email))
+    await db.commit()
+    _metric_cfg_cache.pop(req.scope, None)
+    return {"success": True, "scope": req.scope, "hidden": hidden, "custom": cleaned}
 
 
 # ── Data Freshness ────────────────────────────────────────────────────────────

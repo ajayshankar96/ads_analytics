@@ -40,6 +40,14 @@ METRIC_ALIASES = {
 
 SHEET_SPENDS_FLAG = "_has_sheet_spends"
 
+# Publisher-record fields that map to dedicated rmn_campaign_metrics columns
+# (plus bookkeeping keys). Anything else in a publisher record is a custom
+# metric configured in tracking setup — carried in the dynamic JSON blob.
+_STD_PUB_RECORD_FIELDS = {
+    'Date', SHEET_SPENDS_FLAG, 'Impressions', 'Distribution', 'Clicks',
+    'Orders_pub', 'Scratches', 'Coins_Burned', 'Redirections', 'Spends',
+}
+
 # Remembers (formula, missing_variable) pairs already warned about so a config
 # gap is logged once, not once per row. See _evaluate_formula.
 _WARNED_FORMULA_VARS: set = set()
@@ -1882,6 +1890,16 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         for k, v in adv_row.items():
             if k != 'Date':
                 _add_metric_alias(row_data, k, v)
+        # Custom publisher metrics (added via "+ Add metric" in tracking setup)
+        # have no dedicated column on rmn_campaign_metrics — carry them in the
+        # dynamic JSON blob below so they persist and surface as extra columns
+        # in the performance/reporting views, same as advertiser metrics.
+        custom_pub_metrics = {
+            k: _safe_float(v) for k, v in pub_row.items()
+            if k not in _STD_PUB_RECORD_FIELDS
+        }
+        for k, v in custom_pub_metrics.items():
+            _add_metric_alias(row_data, k, v)
 
         pub_billing_config = _active_billing_config(billing_configs, "publisher", date_obj)
         adv_billing_config = _active_billing_config(billing_configs, "advertiser", date_obj)
@@ -1890,6 +1908,7 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
 
         # Auto-compute standard metrics (CPL, CPA, ROAS etc.) based on selected advertiser metrics
         adv_metrics_dict = {k: v for k, v in adv_row.items() if k != 'Date'}
+        adv_metrics_dict.update(custom_pub_metrics)
         row_data['Publisher_Spends'] = pub_spends
         row_data['Advertiser_Spends'] = adv_spends
         computed = _compute_advertiser_metrics(adv_metric_names, row_data)
