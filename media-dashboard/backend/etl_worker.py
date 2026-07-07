@@ -670,6 +670,60 @@ def _billing_spend_from_config(config: Dict[str, Any], row_data: Dict[str, float
     return 0.0
 
 
+def _advertiser_col_cfg(mapping: Dict, advertiser_filter: str = "") -> tuple:
+    """(column_index, match_value) for multi-advertiser publisher sheets.
+
+    The mapping stores advertiser_col_index (which column holds advertiser
+    names) and advertiser_value (the exact cell value the operator clicked).
+    Falls back to the campaign's advertiser name when no value was stored.
+    Returns (None, "") when the sheet isn't multi-advertiser."""
+    col = mapping.get("advertiser_col_index")
+    try:
+        col = int(col) if col is not None else None
+    except (TypeError, ValueError):
+        col = None
+    value = str(mapping.get("advertiser_value") or "").strip() or str(advertiser_filter or "").strip()
+    if col is None or not value:
+        return None, ""
+    return col, value
+
+
+def _row_matches_advertiser(row: List, adv_col: Optional[int], adv_match: str) -> bool:
+    """Row filter for multi-advertiser sheets. Blank advertiser cells never
+    match — those rows belong to some other (unnamed) advertiser, and
+    _matches_segment would treat an empty string as a wildcard."""
+    if adv_col is None or not adv_match:
+        return True
+    cell = str(row[adv_col]).strip() if len(row) > adv_col else ""
+    return bool(cell) and _matches_segment(cell, adv_match)
+
+
+def _aggregate_by_date(records: List[Dict]) -> Dict[str, Dict]:
+    """date → merged record, SUMMING numeric fields across rows that share a
+    date. Multi-advertiser sheets legitimately have several rows per
+    advertiser per day (e.g. one per brand) — last-row-wins would silently
+    drop all but one. The sheet-spends flag ORs across rows."""
+    by_date: Dict[str, Dict] = {}
+    for r in records:
+        d = r.get('Date')
+        agg = by_date.get(d)
+        if agg is None:
+            by_date[d] = dict(r)
+            continue
+        for k, v in r.items():
+            if k == 'Date':
+                continue
+            if k == SHEET_SPENDS_FLAG:
+                agg[k] = bool(agg.get(k)) or bool(v)
+            elif isinstance(v, (int, float)) and not isinstance(v, bool):
+                prev = agg.get(k, 0)
+                prev = prev if isinstance(prev, (int, float)) and not isinstance(prev, bool) else _safe_float(prev)
+                agg[k] = prev + v
+            else:
+                agg.setdefault(k, v)
+    return by_date
+
+
 def _has_sheet_spends(record: Dict[str, Any]) -> bool:
     return bool(record.get(SHEET_SPENDS_FLAG))
 
@@ -844,7 +898,8 @@ def _delete_converted(converted_id: Optional[str]) -> None:
 
 def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                            col_mapping: Dict, segment_filter: str,
-                           is_publisher: bool, metric_names: List[str]) -> List[Dict]:
+                           is_publisher: bool, metric_names: List[str],
+                           advertiser_filter: str = "") -> List[Dict]:
     """Extract using visual format — direct column indices from the UI picker."""
     records = []
     mapping = col_mapping.get("mapping", {})
@@ -855,6 +910,10 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
         seg_col = int(seg_col)
     seg_cell = _segment_cell_cfg(mapping)
     metrics_cfg = mapping.get("metrics", {})
+    # Multi-advertiser publisher sheets (e.g. NAVI) carry every advertiser's
+    # rows in one tab, advertiser name in a column. When the mapping marks
+    # that column, only rows matching this campaign's advertiser are ingested.
+    adv_col, adv_match = _advertiser_col_cfg(mapping, advertiser_filter)
 
     converted_id = None
     try:
@@ -899,7 +958,8 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
             data_rows = rows[data_start - 1:]
             slash_order = _detect_slash_order(
                 row[date_col].strip() for row in data_rows if len(row) > date_col and row[date_col])
-            logger.info(f"  Visual format: tab={tab_name}, date_col={date_col}, data_start={data_start}, metrics={list(metrics_cfg.keys())}, rows={len(data_rows)}, slash_order={slash_order}")
+            logger.info(f"  Visual format: tab={tab_name}, date_col={date_col}, data_start={data_start}, metrics={list(metrics_cfg.keys())}, rows={len(data_rows)}, slash_order={slash_order}"
+                        + (f", advertiser_filter='{adv_match}' (col {adv_col})" if adv_col is not None else ""))
 
             for row in data_rows:
                 if len(row) <= date_col or not row[date_col]:
@@ -910,6 +970,10 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
                     seg_val = row[seg_col].strip() if len(row) > seg_col else ""
                     if not _matches_segment(seg_val, segment_filter):
                         continue
+
+                # Advertiser filter (multi-advertiser sheets)
+                if not _row_matches_advertiser(row, adv_col, adv_match):
+                    continue
 
                 date_str = _parse_date_from_row(row[date_col].strip(), year, month, slash_order)
                 if not date_str:
@@ -951,7 +1015,8 @@ def _extract_visual_format(service, sheet_url: str, sheet_id: str,
 
 def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                         offer_filter: str, metric_names: List[str],
-                        is_publisher: bool, col_mapping: Optional[Dict] = None) -> List[Dict]:
+                        is_publisher: bool, col_mapping: Optional[Dict] = None,
+                        advertiser_filter: str = "") -> List[Dict]:
     """Extract records from a Google Sheet. Uses col_mapping if provided,
     otherwise falls back to legacy RZP-tab segment-block format."""
     match = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', sheet_url)
@@ -965,7 +1030,8 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
     # Handle "visual" format — direct column indices from visual picker
     if col_mapping and col_mapping.get("format_type") == "visual":
         return _extract_visual_format(service, sheet_url, sheet_id, col_mapping,
-                                      segment_filter, is_publisher, metric_names)
+                                      segment_filter, is_publisher, metric_names,
+                                      advertiser_filter=advertiser_filter)
 
     converted_id = None
     try:
@@ -1048,6 +1114,17 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                 seg_idx = col_map.get("Segment")
                 resolved = None
 
+            # Multi-advertiser sheets: filter on the mapped advertiser column.
+            # Only active when the mapping explicitly names it ("advertiser"
+            # in the field_map) — never auto-inferred from headers, so
+            # single-advertiser sheets keep ingesting everything.
+            adv_col, adv_match = None, ""
+            if resolved and resolved.get("advertiser") is not None:
+                adv_col, adv_match = _advertiser_col_cfg({
+                    "advertiser_col_index": resolved["advertiser"],
+                    "advertiser_value": field_map.get("advertiser_value", ""),
+                }, advertiser_filter)
+
             if date_idx is None:
                 logger.warning(f"No Date column found in tab {tab_name}")
                 continue
@@ -1064,6 +1141,10 @@ def _extract_from_sheet(service, sheet_url: str, segment_filter: str,
                     seg_val = row[seg_idx].strip() if len(row) > seg_idx else ""
                     if not _matches_segment(seg_val, segment_filter):
                         continue
+
+                # Advertiser filter (multi-advertiser sheets)
+                if not _row_matches_advertiser(row, adv_col, adv_match):
+                    continue
 
                 date_str = _parse_date_from_row(row[date_idx], year, month, slash_order)
                 if not date_str:
@@ -1244,6 +1325,10 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
         # exists in the sheet instead of free-typing one that silently
         # filters every row out.
         "segment_values": [],
+        # Distinct values in the mapped advertiser column (multi-advertiser
+        # sheets) + the filter this mapping would apply on sync.
+        "advertiser_values": [],
+        "advertiser_filter": "",
         "error": None,
     }
 
@@ -1272,6 +1357,12 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
             seg_col = None
     seg_cell = _segment_cell_cfg(mapping)
     seg_values_seen: set = set()
+    # Multi-advertiser sheets: preview counts only this campaign's rows so the
+    # dry-run can't disagree with ingest. Distinct advertiser values are
+    # surfaced so a wrong pick is obvious.
+    adv_col, adv_match = _advertiser_col_cfg(mapping)
+    report["advertiser_filter"] = adv_match
+    adv_values_seen: set = set()
 
     converted_id = None
     try:
@@ -1345,6 +1436,17 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
             data_rows = rows[data_start - 1:] if len(rows) >= data_start else []
             filled = [r for r in data_rows
                       if len(r) > date_col and str(r[date_col]).strip()]
+            if adv_col is not None:
+                for r in filled:
+                    if len(r) > adv_col and str(r[adv_col]).strip():
+                        adv_values_seen.add(str(r[adv_col]).strip())
+                if adv_match:
+                    total_before = len(filled)
+                    filled = [r for r in filled
+                              if _row_matches_advertiser(r, adv_col, adv_match)]
+                    if total_before and not filled:
+                        entry["note"] = (f"{total_before} dated rows in tab but none "
+                                         f"match advertiser '{adv_match}'")
             entry["data_rows"] = len(filled)
 
             slash_order = _detect_slash_order(
@@ -1370,7 +1472,8 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
 
             if len(filled) == 0:
                 entry["status"] = "awaiting_data"
-                entry["note"] = "no rows filled yet"
+                if not entry["note"]:
+                    entry["note"] = "no rows filled yet"
             elif len(parsed_dates) == 0:
                 entry["status"] = "check_config"
                 entry["note"] = ("date column has values but none parse as dates "
@@ -1383,6 +1486,7 @@ def preview_mapping(service, sheet_url: str, col_mapping: Dict,
             report["matched"].append(entry)
 
         report["segment_values"] = sorted(seg_values_seen)
+        report["advertiser_values"] = sorted(adv_values_seen)
 
     except Exception as e:
         report["error"] = str(e)
@@ -1414,6 +1518,12 @@ def _mapped_columns(mapping: Dict) -> Dict[str, int]:
     if seg is not None:
         try:
             cols["segment"] = int(seg)
+        except (TypeError, ValueError):
+            pass
+    adv = mapping.get("advertiser_col_index")
+    if adv is not None:
+        try:
+            cols["advertiser"] = int(adv)
         except (TypeError, ValueError):
             pass
     for k, v in (mapping.get("metrics", {}) or {}).items():
@@ -1832,6 +1942,10 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         metric_names=[],
         is_publisher=True,
         col_mapping=pub_col_mapping,
+        # Multi-advertiser publisher sheets (advertiser column mapped in
+        # tracking setup): fall back to this campaign's advertiser name when
+        # the mapping stored no explicit advertiser_value.
+        advertiser_filter=(campaign.advertiser_name or "").strip(),
     )
     logger.info(f"  Publisher records: {len(pub_records)}")
 
@@ -1862,9 +1976,11 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     if adv_formula:
         logger.info(f"  Advertiser spends formula: {adv_formula} (billing_model={adv_model}, rate={adv_rate})")
 
-    # Merge on Date (full outer join)
-    adv_by_date = {r['Date']: r for r in adv_records}
-    pub_by_date = {r['Date']: r for r in pub_records}
+    # Merge on Date (full outer join). Rows sharing a date are SUMMED —
+    # multi-advertiser sheets report several rows per advertiser per day
+    # (e.g. one per brand); last-row-wins would silently drop data.
+    adv_by_date = _aggregate_by_date(adv_records)
+    pub_by_date = _aggregate_by_date(pub_records)
     all_dates = sorted(set(list(adv_by_date.keys()) + list(pub_by_date.keys())))
 
     rows_synced = 0

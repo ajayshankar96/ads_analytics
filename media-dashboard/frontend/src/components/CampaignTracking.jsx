@@ -230,6 +230,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   // tab/block; "column" → per-row segment values (rows get filtered);
   // null → user just clicked and must confirm which one it is.
   const [segScope, setSegScope] = useState(null);
+  // Multi-advertiser publisher sheets (one sheet, all advertisers, advertiser
+  // name in a column): ops clicks this campaign's advertiser cell — sync then
+  // ingests only rows whose advertiser column matches that value.
+  const [advCell, setAdvCell] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [open, setOpen] = useState(false);
@@ -271,6 +275,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       setMetricCells({});
       setSegCell(null);
       setSegScope(null);
+      setAdvCell(null);
       setMatchMode("exact");
       setTabPattern("");
       getColumnMappings(name, pickerType, sheetUrl, campaignId).then((d) => {
@@ -293,6 +298,9 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             // tints from where data begins, not the whole column.
             setSegCell({ row: startRow - 1, col: mapping.segment_col_index });
             setSegScope("column");
+          }
+          if (mapping.advertiser_col_index != null) {
+            setAdvCell({ row: startRow - 1, col: mapping.advertiser_col_index, value: mapping.advertiser_value || "" });
           }
           // Saved fingerprint carries the sheet's segment values — surface them
           // so the Setup segment dropdown works without a live sheet read.
@@ -342,6 +350,11 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
       setSegCell({ row: rowIdx, col: colIdx, value: String((rows[rowIdx] || [])[colIdx] ?? "").trim() });
       setSegScope(null);
     }
+    else if (mode === "advertiser") {
+      // Click THIS campaign's advertiser name in the advertiser column — the
+      // cell value becomes the row filter on sync.
+      setAdvCell({ row: rowIdx, col: colIdx, value: String((rows[rowIdx] || [])[colIdx] ?? "").trim() });
+    }
     else setMetricCells((prev) => ({ ...prev, [mode]: { row: rowIdx, col: colIdx } }));
   };
 
@@ -367,8 +380,15 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
     const segCellCfg = !selfTargeted && segCell && segScope === "cell" && segCell.row != null
       ? { row: segCell.row + 1, col: segCell.col, value: segCell.value || "" }
       : null;
+    // advertiser_col_index/value: multi-advertiser publisher sheets (e.g. NAVI)
+    // put every advertiser's rows in one tab — sync keeps only rows whose
+    // Advertiser cell matches, and sums same-date rows after filtering.
     return isPub
-      ? { date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segIdx, segment_cell: segCellCfg, metrics: metricsMapping }
+      ? {
+          date_col_index: dateCell.col, data_start_row: dateCell.row + 1, segment_col_index: segIdx, segment_cell: segCellCfg, metrics: metricsMapping,
+          advertiser_col_index: advCell ? advCell.col : null,
+          advertiser_value: advCell?.value || "",
+        }
       : { date_col_index: dateCell.col, date_start_row: dateCell.row + 1, segment_col_index: segIdx, segment_cell: segCellCfg, metrics: metricsMapping };
   };
 
@@ -463,6 +483,10 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
   // self-targeted sheets have no segment column at all.
   const allModes = [{ key: "date", label: "Date", color: c.blue }]
     .concat(!selfTargeted ? [{ key: "segment", label: "Segment (required)", color: c.amber }] : [])
+    // Multi-advertiser publisher sheets (e.g. NAVI) mix every advertiser's rows
+    // in one tab, tagged by an Advertiser column — optional pick; sync then
+    // keeps only this campaign's advertiser rows.
+    .concat(isPub ? [{ key: "advertiser", label: "Advertiser (multi-adv sheet)", color: "#7C3AED" }] : [])
     .concat(metrics.map((m, i) => ({ key: m.key, label: m.label, color: METRIC_COLORS[i % METRIC_COLORS.length] })));
 
   const getMetricColor = (key) => {
@@ -558,7 +582,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
           <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {allModes.map((m) => {
               const active = mode === m.key;
-              const selected = m.key === "date" ? dateCell : m.key === "segment" ? segCell : metricCells[m.key];
+              const selected = m.key === "date" ? dateCell : m.key === "segment" ? segCell : m.key === "advertiser" ? advCell : metricCells[m.key];
               return (
                 <button key={m.key} onClick={() => setMode(m.key)} style={{ background: active ? `${m.color}15` : "#fff", border: `2px solid ${active ? m.color : c.line}`, borderRadius: 7, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: active ? m.color : c.muted, cursor: "pointer" }}>
                   {m.label} {selected ? "✓" : ""}
@@ -567,7 +591,7 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
             })}
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 10 }}>
-            {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click the segment name in the sheet — either the single label cell that names the segment, or any cell in the per-row Segment column. You'll confirm which one it is after clicking." : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
+            {mode === "date" ? "Click the first cell that has a date" : mode === "segment" ? "Click the segment name in the sheet — either the single label cell that names the segment, or any cell in the per-row Segment column. You'll confirm which one it is after clicking." : mode === "advertiser" ? "Only for sheets that mix multiple advertisers in one tab: click THIS campaign's advertiser name in the Advertiser column — sync will keep only matching rows (rows for the same date are summed)." : `Click the cell where "${metrics.find((m) => m.key === mode)?.label || mode}" data starts`}
             <span style={{ opacity: 0.8 }}> · drag a column header's edge to resize it, hover a cell to see its full value</span>
           </div>
 
@@ -602,6 +626,8 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       // clicked cell downward — same as date/metric columns.
                       const isSegSel = segCell && segCell.row != null && segCell.row === rowIdx && segCell.col === colIdx && segScope !== "column";
                       const isSegCol = segCell && segCell.col === colIdx && segScope !== "cell" && rowIdx >= (segCell.row ?? 0);
+                      const isAdvSel = advCell && advCell.row === rowIdx && advCell.col === colIdx;
+                      const isAdvCol = advCell && advCell.col === colIdx && rowIdx >= advCell.row;
                       let metricMatch = null;
                       let metricColMatch = null;
                       for (const [mk, mc] of Object.entries(metricCells)) {
@@ -614,7 +640,9 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                       if (isDateSel) { bg = "#BFDBFE"; fontW = 700; color = c.blue; }
                       else if (metricMatch) { bg = `${getMetricColor(metricMatch)}20`; fontW = 700; color = getMetricColor(metricMatch); }
                       else if (isSegSel) { bg = "#FBE3B8"; fontW = 700; color = c.amber; }
+                      else if (isAdvSel) { bg = "#DDD6FE"; fontW = 700; color = "#7C3AED"; }
                       else if (isSegCol) { bg = "#FEF3E2"; }
+                      else if (isAdvCol) { bg = "#F3E8FF"; }
                       else if (isDateCol) { bg = "#EFF6FF"; }
                       else if (metricColMatch) { bg = `${getMetricColor(metricColMatch)}08`; }
                       return (
@@ -668,6 +696,12 @@ function VisualSheetPicker({ sheetUrl, name, campaignId, metrics = [], onSaved, 
                     ? `Col ${colLetters[segCell.col]}`
                     : `${colLetters[segCell.col]}${segCell.row != null ? segCell.row + 1 : ""} — confirm cell vs column`}
               </strong></span>
+            )}
+            {isPub && advCell && (
+              <span>
+                Advertiser filter: <strong style={{ color: "#7C3AED" }}>{colLetters[advCell.col]}{advCell.row + 1}{advCell.value ? ` (“${advCell.value}”)` : ""}</strong>
+                <button onClick={() => setAdvCell(null)} title="Remove advertiser filter — sync will read all rows" style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 11, marginLeft: 4, padding: 0 }}>✕</button>
+              </span>
             )}
             {metrics.map((m, i) => {
               const cell = metricCells[m.key];
@@ -748,6 +782,14 @@ function PreviewResults({ preview, onAdoptPattern }) {
       )}
       {preview.converted_office_file && (
         <div style={{ padding: "6px 12px", fontSize: 11, color: c.muted }}>Note: this is an uploaded Excel file — read via a temporary conversion (same as sync).</div>
+      )}
+      {preview.advertiser_filter && (
+        <div style={{ padding: "8px 12px", fontSize: 11, color: "#7C3AED", borderBottom: `1px solid ${c.line}`, background: "#F9F5FF" }}>
+          Advertiser filter: only rows matching <strong>“{preview.advertiser_filter}”</strong> count above.
+          {(preview.advertiser_values || []).length > 0 && (
+            <span style={{ color: c.muted }}> Advertisers seen in the sheet: {preview.advertiser_values.slice(0, 12).join(", ")}{preview.advertiser_values.length > 12 ? " …" : ""}</span>
+          )}
+        </div>
       )}
       {selectable && removed.length === 0 && (
         <div style={{ padding: "8px 12px", fontSize: 11, color: c.sub, borderBottom: `1px solid ${c.line}`, background: "#F8FAFF" }}>
