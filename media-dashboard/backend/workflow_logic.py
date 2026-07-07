@@ -30,6 +30,8 @@ STAGE_ASSETS_RECEIVED    = "ASSETS_RECEIVED"
 STAGE_CREATIVE_REVIEW    = "CREATIVE_REVIEW"
 STAGE_SHARED_TO_PUBLISHER = "SHARED_TO_PUBLISHER"
 STAGE_LIVE               = "LIVE"
+STAGE_PAUSED             = "PAUSED"
+STAGE_STOPPED            = "STOPPED"
 STAGE_NOT_LIVE           = "NOT_LIVE"
 STAGE_COMPLETED          = "COMPLETED"
 STAGE_CANCELLED          = "CANCELLED"
@@ -42,12 +44,19 @@ OPS_STAGES = [
     STAGE_LIVE,
 ]
 
+# Post-live lifecycle: a LIVE campaign can be paused (temporary hold) or
+# stopped; both can be restarted back to LIVE. Kept out of OPS_STAGES so the
+# linear setup checklist is unaffected.
+LIFECYCLE_STAGES = [STAGE_PAUSED, STAGE_STOPPED]
+
 _FORWARD = {
     STAGE_OPS_SETUP:           [STAGE_ASSETS_RECEIVED],
     STAGE_ASSETS_RECEIVED:     [STAGE_CREATIVE_REVIEW],
     STAGE_CREATIVE_REVIEW:     [STAGE_SHARED_TO_PUBLISHER],
     STAGE_SHARED_TO_PUBLISHER: [STAGE_LIVE, STAGE_NOT_LIVE],
-    STAGE_LIVE:                [STAGE_COMPLETED],
+    STAGE_LIVE:                [STAGE_COMPLETED, STAGE_PAUSED, STAGE_STOPPED],
+    STAGE_PAUSED:              [STAGE_LIVE, STAGE_STOPPED],
+    STAGE_STOPPED:             [STAGE_LIVE],
     STAGE_NOT_LIVE:            [],
     STAGE_COMPLETED:           [],
     STAGE_CANCELLED:           [],
@@ -65,6 +74,8 @@ STAGE_LABELS = {
     STAGE_CREATIVE_REVIEW:     "Creative Review",
     STAGE_SHARED_TO_PUBLISHER: "Shared to Publisher",
     STAGE_LIVE:                "Live",
+    STAGE_PAUSED:              "Paused",
+    STAGE_STOPPED:             "Stopped",
     STAGE_NOT_LIVE:            "Not Live",
     STAGE_COMPLETED:           "Completed",
     STAGE_CANCELLED:           "Cancelled",
@@ -91,7 +102,7 @@ def allowed_transitions(from_stage: str) -> List[str]:
 def validate_transition(from_stage: str, to_stage: str) -> Optional[str]:
     """Return None if legal, else an error message."""
     to_norm = normalize_stage(to_stage)
-    if to_norm not in OPS_STAGES + [STAGE_CANCELLED]:
+    if to_norm not in OPS_STAGES + LIFECYCLE_STAGES + [STAGE_COMPLETED, STAGE_CANCELLED]:
         return f"unknown stage {to_stage!r}"
     if to_norm not in allowed_transitions(from_stage):
         return f"illegal transition {normalize_stage(from_stage)} -> {to_norm}"

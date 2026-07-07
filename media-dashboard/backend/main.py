@@ -2115,8 +2115,9 @@ class TransitionRequest(BaseModel):
 def workflow_stages():
     return {
         "stages": wf.OPS_STAGES,
+        "lifecycle_stages": wf.LIFECYCLE_STAGES,
         "labels": wf.STAGE_LABELS,
-        "transitions": {s: wf.allowed_transitions(s) for s in wf.OPS_STAGES},
+        "transitions": {s: wf.allowed_transitions(s) for s in wf.OPS_STAGES + wf.LIFECYCLE_STAGES},
         "handoff_on": wf.HANDOFF_ON,
     }
 
@@ -2830,7 +2831,14 @@ async def workflow_transition(campaign_id: str, req: TransitionRequest, request:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
     from_stage = campaign.current_stage
     actor_email = req.actor_email or getattr(request.state, "user_email", None)
-    if wf.normalize_stage(req.to_stage) == wf.STAGE_LIVE and from_stage != wf.STAGE_LIVE:
+    # Billing defaults are validated/seeded only on the FIRST go-live. A
+    # restart from PAUSED/STOPPED is a resume — re-seeding would open a new
+    # default-rate billing segment today, clobbering any mid-flight rates.
+    first_go_live = (
+        wf.normalize_stage(req.to_stage) == wf.STAGE_LIVE
+        and from_stage not in (wf.STAGE_LIVE, wf.STAGE_PAUSED, wf.STAGE_STOPPED)
+    )
+    if first_go_live:
         await _validate_go_live_billing_defaults(db, campaign)
     try:
         campaign = await repo.transition_campaign(
@@ -2840,7 +2848,7 @@ async def workflow_transition(campaign_id: str, req: TransitionRequest, request:
         raise HTTPException(status_code=400, detail=str(e))
 
     billing_recomputed = 0
-    if campaign.current_stage == wf.STAGE_LIVE and from_stage != wf.STAGE_LIVE:
+    if campaign.current_stage == wf.STAGE_LIVE and first_go_live:
         billing_recomputed = await _seed_go_live_billing_defaults(db, campaign, changed_by=actor_email)
 
     # Fire-and-forget hand-off email: a send failure must not undo the committed

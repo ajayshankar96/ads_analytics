@@ -683,6 +683,14 @@ async def transition_campaign(db: AsyncSession, campaign: models.Campaign, *,
     db.add(models.StageTransition(entity_type="CAMPAIGN", entity_id=campaign.id,
                                   from_stage=from_stage, to_stage=to_norm,
                                   actor_email=actor_email or None))
+    # Mirror into the campaign changelog so stage moves (pause / stop /
+    # restart / go-live) show up in the Change History panel alongside
+    # field edits. rmn_stage_transitions stays the canonical audit trail.
+    db.add(models.CampaignChangelog(
+        campaign_id=campaign.id, field_name="stage",
+        old_value=wf.STAGE_LABELS.get(from_stage, from_stage),
+        new_value=wf.STAGE_LABELS.get(to_norm, to_norm),
+        changed_by=actor_email or None, source="stage_transition"))
     await db.commit()
     await db.refresh(campaign)
     return campaign

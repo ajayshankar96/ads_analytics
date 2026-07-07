@@ -320,8 +320,8 @@ function CampaignCard({ campaign, onClick, onClone }) {
     (campaign.advertiser_name || "").charCodeAt(0) % 6
   ];
   const stage = campaign.current_stage;
-  const badgeColor = stage === "LIVE" ? c.green : stage === "SHARED_TO_PUBLISHER" ? c.blue : c.muted;
-  const badgeLabel = stage === "LIVE" ? "Live" : stage === "SHARED_TO_PUBLISHER" ? "Publisher Emailed" : "Draft";
+  const badgeColor = stage === "LIVE" ? c.green : stage === "PAUSED" ? c.amber : stage === "STOPPED" ? c.red : stage === "SHARED_TO_PUBLISHER" ? c.blue : c.muted;
+  const badgeLabel = stage === "LIVE" ? "Live" : stage === "PAUSED" ? "Paused" : stage === "STOPPED" ? "Stopped" : stage === "SHARED_TO_PUBLISHER" ? "Publisher Emailed" : "Draft";
 
   return (
     <div onClick={onClick} style={{ background: c.bg, border: `1.5px solid ${c.line}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 10, boxShadow: "0 1px 4px rgba(15,23,36,0.06)" }}>
@@ -476,6 +476,25 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
   const isAssetStage = stage === "OPS_SETUP" || stage === "LIVE";
   const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
   const isLive = stage === "LIVE";
+  const isPaused = stage === "PAUSED";
+  const isStopped = stage === "STOPPED";
+
+  // Pause / Stop / Restart — a plain stage transition; the backend audits it
+  // in rmn_stage_transitions and mirrors it into the campaign changelog.
+  const handleLifecycle = async (toStage, confirmMsg) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    try {
+      await transitionCampaign(campaign.campaign_id, { to_stage: toStage });
+      onReload();
+    } catch (e) { alert("Failed: " + e.message); }
+  };
+
+  const stageBadge = isLive ? { bg: "#E3F6EE", color: c.green, label: "Live" }
+    : isPaused ? { bg: "#FEF3E2", color: c.amber, label: "Paused" }
+    : isStopped ? { bg: "#FEE2E2", color: c.red, label: "Stopped" }
+    : { bg: "#EAF0FF", color: c.blue, label: isEmailedStage ? "Publisher Emailed" : "Draft" };
+
+  const lifecycleBtn = (bg) => ({ background: bg, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" });
 
   // Asset completeness — 10 asks: 8 simple fields + promo codes + billing pair.
   const has = (k) => !!String(assets[k] ?? "").trim();
@@ -507,22 +526,52 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
           <button onClick={onBack} style={{ background: "none", border: "none", color: c.blue, cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 6 }}>← Back to queue</button>
           <div style={{ fontSize: 18, fontWeight: 800, color: c.ink }}>
             {campaign.advertiser_name} → {campaign.publisher_name}
-            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 10, background: isLive ? "#E3F6EE" : "#EAF0FF", color: isLive ? c.green : c.blue }}>
-              {isLive ? "Live" : isEmailedStage ? "Publisher Emailed" : "Draft"}
+            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 10, background: stageBadge.bg, color: stageBadge.color }}>
+              {stageBadge.label}
             </span>
           </div>
           <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{campaign.campaign_id} · {campaign.offer_title || ""}</div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {(isEmailedStage || isLive) && canEdit && onClone && (
+          {(isEmailedStage || isLive || isPaused || isStopped) && canEdit && onClone && (
             <button onClick={onClone} title="Clone this campaign into a new Draft"
               style={{ background: "#fff", color: c.blue, border: `1.5px solid ${c.blue}`, borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
               ⧉ Clone
             </button>
           )}
           {isEmailedStage && canEdit && (
-            <button onClick={handleMarkLive} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={handleMarkLive} style={lifecycleBtn(c.green)}>
               ⊙ Mark Live
+            </button>
+          )}
+          {isLive && canEdit && (
+            <>
+              <button onClick={() => handleLifecycle("PAUSED", "Pause this campaign? Metrics stop syncing until it is restarted.")}
+                style={lifecycleBtn(c.amber)} title="Temporarily pause — restart anytime">
+                ⏸ Pause
+              </button>
+              <button onClick={() => handleLifecycle("STOPPED", "Stop this campaign? It moves to Stopped and stops syncing. You can restart it later.")}
+                style={lifecycleBtn(c.red)} title="Stop the campaign — it can still be restarted">
+                ⏹ Stop
+              </button>
+            </>
+          )}
+          {isPaused && canEdit && (
+            <>
+              <button onClick={() => handleLifecycle("LIVE", "Restart this campaign? It moves back to Live and resumes syncing.")}
+                style={lifecycleBtn(c.green)}>
+                ▶ Restart
+              </button>
+              <button onClick={() => handleLifecycle("STOPPED", "Stop this campaign? It moves to Stopped. You can restart it later.")}
+                style={lifecycleBtn(c.red)}>
+                ⏹ Stop
+              </button>
+            </>
+          )}
+          {isStopped && canEdit && (
+            <button onClick={() => handleLifecycle("LIVE", "Restart this campaign? It moves back to Live and resumes syncing.")}
+              style={lifecycleBtn(c.green)}>
+              ▶ Restart
             </button>
           )}
           {isLive && canEdit && (
@@ -722,8 +771,8 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
         </div>
       )}
 
-      {/* Change History */}
-      {isLive && (
+      {/* Change History — includes stage moves (pause/stop/restart) logged by the backend */}
+      {(isLive || isPaused || isStopped) && (
         <div style={{ marginTop: 24 }}>
           <button onClick={() => { setShowChangelog(!showChangelog); if (!showChangelog) loadChangelog(); }}
             style={{ background: "none", border: "none", color: c.blue, cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 }}>
@@ -1018,8 +1067,10 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
   const draft = filtered.filter((c) => c.current_stage === "OPS_SETUP");
   const emailed = filtered.filter((c) => ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(c.current_stage));
   const live = filtered.filter((c) => c.current_stage === "LIVE");
+  const paused = filtered.filter((c) => c.current_stage === "PAUSED");
+  const stopped = filtered.filter((c) => c.current_stage === "STOPPED");
 
-  const colStyle = { flex: 1, minWidth: 280, background: "#fff", border: `1.5px solid ${c.line}`, borderRadius: 12, padding: "14px" };
+  const colStyle = { flex: 1, minWidth: 240, background: "#fff", border: `1.5px solid ${c.line}`, borderRadius: 12, padding: "14px" };
   const colTitle = { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 };
 
   return (
@@ -1040,8 +1091,8 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
 
       <CreateCampaignPanel canEdit={canEdit} onCreated={load} />
 
-      {/* Kanban columns */}
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+      {/* Kanban columns — 5 stages; the row scrolls sideways on narrow screens */}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", overflowX: "auto", paddingBottom: 6 }}>
         <div style={colStyle}>
           <div style={colTitle}>
             <span style={{ fontSize: 14, fontWeight: 700, color: c.ink }}>Draft</span>
@@ -1067,6 +1118,24 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Activated in Campaign Mgmt</div>
           {live.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
+        </div>
+
+        <div style={colStyle}>
+          <div style={colTitle}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: c.amber }}>Paused</span>
+            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{paused.length}</span>
+          </div>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>On hold — restart anytime</div>
+          {paused.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
+        </div>
+
+        <div style={colStyle}>
+          <div style={colTitle}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: c.red }}>Stopped</span>
+            <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{stopped.length}</span>
+          </div>
+          <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Halted — can be restarted</div>
+          {stopped.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
         </div>
       </div>
       {cloneModal}
