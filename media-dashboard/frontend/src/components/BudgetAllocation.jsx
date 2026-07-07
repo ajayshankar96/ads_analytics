@@ -19,7 +19,7 @@ const s = {
   tdRight: { textAlign: "right" },
   advName: { fontWeight: 700, fontSize: 13.5, color: c.ink },
   advId: { fontSize: 11, color: c.muted },
-  input: { border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 80, outline: "none", textAlign: "right", fontFamily: "inherit" },
+  input: { border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 92, outline: "none", textAlign: "right", fontFamily: "inherit", boxSizing: "border-box" },
   saveRow: { background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 },
   pct: (v) => ({ fontSize: 12, fontWeight: 700, color: v >= 100 ? c.green : v >= 70 ? c.amber : c.red }),
   cantLive: { fontSize: 11, color: c.red, fontWeight: 600, cursor: "pointer" },
@@ -47,6 +47,15 @@ function fmtInr(n) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)} Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(1)} L`;
   return `₹${Number(n).toLocaleString("en-IN")}`;
+}
+
+// Live Indian-style digit grouping for allocation inputs: state keeps raw
+// digits ("100000"); the input displays them grouped ("1,00,000"). Commas
+// appear as the user types — 1000 -> 1,000, 100000 -> 1,00,000.
+function fmtGroupInr(v) {
+  const digits = String(v ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("en-IN");
 }
 
 function parseBudget(hint) {
@@ -493,10 +502,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                           ) : (
                             <input
                               style={s.input}
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               placeholder="0"
-                              value={cell.amount}
-                              onChange={(e) => setCell(a.id, p.id, { amount: e.target.value })}
+                              value={fmtGroupInr(cell.amount)}
+                              onChange={(e) => setCell(a.id, p.id, { amount: e.target.value.replace(/\D/g, "") })}
                               onContextMenu={(e) => { e.preventDefault(); toggleStatus(a.id, p.id); }}
                               title="Right-click to mark 'Can't go live'"
                             />
