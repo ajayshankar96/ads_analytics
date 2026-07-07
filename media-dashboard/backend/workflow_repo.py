@@ -487,8 +487,16 @@ async def create_new_campaign(db: AsyncSession, advertiser: models.Advertiser,
     return campaign
 
 
-async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Campaign:
-    """Clone a LIVE campaign into a new draft with all asset fields pre-filled.
+# Fields a clone may override at creation time ("clone with changes").
+CLONEABLE_FIELDS = _ASSET_FIELDS + ["code_validity"]
+
+
+async def clone_campaign(db: AsyncSession, source: models.Campaign,
+                         overrides: Optional[Dict[str, Any]] = None,
+                         changed_by: str = None) -> models.Campaign:
+    """Clone an emailed/LIVE campaign into a new draft with all asset fields
+    pre-filled. `overrides` replaces selected fields (offer_title, targeting,
+    promo_codes, …) on the clone — the changes are logged on the new campaign.
     Always resolves parent_campaign_id to the root of the lineage."""
     # Resolve to root: if source already has a parent, use that; otherwise source is the root
     root_id = source.parent_campaign_id or source.id
@@ -522,13 +530,43 @@ async def clone_campaign(db: AsyncSession, source: models.Campaign) -> models.Ca
         publisher_email_thread_id=source.publisher_email_thread_id,
         publisher_email_message_id=source.publisher_email_message_id,
     )
+
+    # Apply "clone with changes" overrides + log each one on the new campaign.
+    changed_fields = []
+    for field, raw in (overrides or {}).items():
+        if field not in CLONEABLE_FIELDS:
+            continue
+        new_val = _coerce_campaign_asset(field, raw)
+        old_val = getattr(campaign, field, None)
+        if str(old_val or "") == str(new_val or ""):
+            continue
+        setattr(campaign, field, new_val)
+        changed_fields.append(field)
+        db.add(models.CampaignChangelog(
+            campaign_id=campaign.id,
+            field_name=field,
+            old_value=str(old_val) if old_val else None,
+            new_value=str(new_val) if new_val else None,
+            changed_by=changed_by,
+            source="clone",
+        ))
+    # Keep code_validity in sync when promo_codes was replaced with new dates.
+    if "promo_codes" in (overrides or {}) and "code_validity" not in (overrides or {}):
+        try:
+            campaign.code_validity = json.loads(campaign.promo_codes or "{}").get("end_date") or None
+        except (ValueError, TypeError):
+            pass
+
     db.add(campaign)
     for step in wf.OPS_STEPS:
         db.add(models.OpsTask(id=wf.new_id("ops"), campaign_id=campaign.id, step=step, status="PENDING"))
+    note = f"cloned from {source.id} (root: {root_id})"
+    if changed_fields:
+        note += " — changed: " + ", ".join(changed_fields)
     db.add(models.StageTransition(
         entity_type="CAMPAIGN", entity_id=campaign.id,
         from_stage="CREATED", to_stage=wf.STAGE_OPS_SETUP,
-        note=f"cloned from {source.id} (root: {root_id})",
+        note=note,
     ))
     await db.commit()
     await db.refresh(campaign)

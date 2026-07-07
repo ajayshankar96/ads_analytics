@@ -203,8 +203,11 @@ export const getAvailableCombos = () => apiFetch("/api/workflow/available-combos
 export const createCampaign = (payload) =>
   apiFetch("/api/workflow/campaigns", { method: "POST", body: JSON.stringify(payload) });
 
-export const cloneCampaign = (campaignId) =>
-  apiFetch(`/api/workflow/campaigns/${campaignId}/clone`, { method: "POST" });
+export const cloneCampaign = (campaignId, overrides = {}) =>
+  apiFetch(`/api/workflow/campaigns/${campaignId}/clone`, {
+    method: "POST",
+    body: JSON.stringify({ overrides }),
+  });
 
 export const getCampaignChangelog = (campaignId) =>
   apiFetch(`/api/workflow/campaigns/${campaignId}/changelog`);

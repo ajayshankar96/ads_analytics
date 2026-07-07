@@ -1752,12 +1752,24 @@ async def create_campaign(req: CreateCampaignRequest, db: AsyncSession = Depends
     return {"success": True, "campaign": repo.campaign_dict(campaign)}
 
 
+class CloneCampaignRequest(BaseModel):
+    # Optional field overrides for the clone (e.g. new offer_title / targeting).
+    # Keys not in workflow_repo.CLONEABLE_FIELDS are rejected with a 400.
+    overrides: Dict[str, Any] = {}
+
+
 @app.post("/api/workflow/campaigns/{campaign_id}/clone")
-async def clone_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+async def clone_campaign(campaign_id: str, req: Optional[CloneCampaignRequest] = None,
+                         request: Request = None, db: AsyncSession = Depends(get_db)):
     source = await repo.get_campaign(db, campaign_id)
     if not source:
         raise HTTPException(status_code=404, detail=f"campaign {campaign_id} not found")
-    new_camp = await repo.clone_campaign(db, source)
+    overrides = (req.overrides if req else {}) or {}
+    bad = [k for k in overrides if k not in repo.CLONEABLE_FIELDS]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"cannot override field(s): {', '.join(bad)}")
+    changed_by = getattr(request.state, "user_email", None) if request else None
+    new_camp = await repo.clone_campaign(db, source, overrides=overrides, changed_by=changed_by)
     return {"success": True, "campaign": repo.campaign_dict(new_camp), "source_id": campaign_id}
 
 

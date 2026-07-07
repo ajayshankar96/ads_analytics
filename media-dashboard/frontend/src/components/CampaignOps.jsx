@@ -9,6 +9,7 @@ import {
   recordPublisherEmail,
   uploadCampaignAsset,
   createCampaign,
+  cloneCampaign,
   getAdvertisers,
   getPublishers,
   markNotLive,
@@ -313,7 +314,7 @@ function CodesSection({ assets, setAssets }) {
   );
 }
 
-function CampaignCard({ campaign, onClick }) {
+function CampaignCard({ campaign, onClick, onClone }) {
   const avatarColor = ["#B5546F", "#2E5BFF", "#0F8C6A", "#B7791F", "#7C3AED", "#0891B2"][
     (campaign.advertiser_name || "").charCodeAt(0) % 6
   ];
@@ -346,12 +347,19 @@ function CampaignCard({ campaign, onClick }) {
           <span style={{ fontWeight: 600, color: c.ink }}>{campaign.targeting.substring(0, 20)}{campaign.targeting.length > 20 ? "…" : ""}</span>
         </div>
       )}
+      {onClone && (
+        <button onClick={(e) => { e.stopPropagation(); onClone(); }}
+          title="Clone this campaign into a new Draft"
+          style={{ marginTop: 10, width: "100%", background: "#fff", border: `1px dashed ${c.blue}`, color: c.blue, borderRadius: 6, padding: "5px 0", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+          ⧉ Clone campaign
+        </button>
+      )}
     </div>
   );
 }
 
 // ── Detail View (shown when a card is clicked) ───────────────────────────────
-function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
+function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
   const [assets, setAssets] = useState({});
   const [saving, setSaving] = useState(false);
   const hasThread = !!(campaign.publisher_email_thread_id);
@@ -504,14 +512,22 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit }) {
           </div>
           <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>{campaign.campaign_id} · {campaign.offer_title || ""}</div>
         </div>
-        {isEmailedStage && canEdit && (
-          <button onClick={handleMarkLive} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-            ⊙ Mark Live
-          </button>
-        )}
-        {isLive && canEdit && (
-          <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Edit fields directly below ↓</span>
-        )}
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {(isEmailedStage || isLive) && canEdit && onClone && (
+            <button onClick={onClone} title="Clone this campaign into a new Draft"
+              style={{ background: "#fff", color: c.blue, border: `1.5px solid ${c.blue}`, borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+              ⧉ Clone
+            </button>
+          )}
+          {isEmailedStage && canEdit && (
+            <button onClick={handleMarkLive} style={{ background: c.green, color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+              ⊙ Mark Live
+            </button>
+          )}
+          {isLive && canEdit && (
+            <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Edit fields directly below ↓</span>
+          )}
+        </div>
       </div>
 
       {/* Assets: progress header */}
@@ -796,6 +812,152 @@ function CreateCampaignPanel({ canEdit, onCreated }) {
   );
 }
 
+// ── Clone Campaign Modal ─────────────────────────────────────────────────────
+// Emailed/Live campaigns can be cloned into a new Draft. The user picks which
+// fields to change (offer title, segment/targeting, …); everything else is
+// copied as-is from the source campaign.
+const CLONE_FIELDS = [
+  { key: "offer_title", label: "Offer Title", type: "input", placeholder: "e.g. Flat ₹200 off on orders above ₹999" },
+  { key: "targeting", label: "Segment / Targeting", type: "textarea", placeholder: "Audience / cohort this campaign targets…" },
+  { key: "landing_link", label: "Landing Link (UTM)", type: "input", placeholder: "https://brand.com/offer?utm_source=…" },
+  { key: "details_tc", label: "Details / T&C", type: "textarea" },
+  { key: "how_to_redeem", label: "How to Redeem", type: "textarea" },
+  { key: "promo_codes", label: "Promo Code(s)", type: "codes" },
+  { key: "creative_url", label: "Creative URL (600×600)", type: "input", placeholder: "https://…" },
+  { key: "logo_url", label: "Logo URL (300×300)", type: "input", placeholder: "https://…" },
+  { key: "daily_budget", label: "Daily Budget (₹)", type: "number" },
+  { key: "publisher_billing", label: "Publisher Billing", type: "billing" },
+];
+
+function CloneModal({ campaign, onClose, onCloned }) {
+  const [checked, setChecked] = useState({});
+  const [cloning, setCloning] = useState(false);
+  const [draft, setDraft] = useState(() => ({
+    offer_title: campaign.offer_title || "",
+    targeting: campaign.targeting || "",
+    landing_link: campaign.landing_link || "",
+    details_tc: campaign.details_tc || "",
+    how_to_redeem: campaign.how_to_redeem || "",
+    promo_codes: campaign.promo_codes || "",
+    code_validity: campaign.code_validity || "",
+    creative_url: campaign.creative_url || "",
+    logo_url: campaign.logo_url || "",
+    daily_budget: campaign.daily_budget || "",
+    publisher_billing_model: campaign.publisher_billing_model || "cpc",
+    publisher_billing_rate: campaign.publisher_billing_rate || campaign.cpc_cpd || "",
+  }));
+
+  const toggle = (key) => setChecked((prev) => ({ ...prev, [key]: !prev[key] }));
+  const nChanges = CLONE_FIELDS.filter((f) => checked[f.key]).length;
+
+  const handleClone = async () => {
+    setCloning(true);
+    try {
+      const overrides = {};
+      CLONE_FIELDS.forEach(({ key }) => {
+        if (!checked[key]) return;
+        if (key === "publisher_billing") {
+          overrides.publisher_billing_model = draft.publisher_billing_model;
+          overrides.publisher_billing_rate = draft.publisher_billing_rate;
+        } else if (key === "promo_codes") {
+          overrides.promo_codes = draft.promo_codes;
+          overrides.code_validity = draft.code_validity || "";
+        } else {
+          overrides[key] = draft[key];
+        }
+      });
+      const res = await cloneCampaign(campaign.campaign_id, overrides);
+      onCloned(res.campaign);
+    } catch (e) {
+      alert("Clone failed: " + e.message);
+      setCloning(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,36,0.45)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, width: 560, maxWidth: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 12px 40px rgba(15,23,36,0.25)" }}>
+        {/* Header */}
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${c.line}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: c.ink }}>⧉ Clone Campaign</div>
+            <div style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>
+              {campaign.advertiser_name} → {campaign.publisher_name} · {campaign.campaign_id}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: c.muted, cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "14px 20px", overflowY: "auto", flex: 1 }}>
+          <div style={{ background: "#F0F4FF", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: c.sub, marginBottom: 14 }}>
+            The clone is created in <b>Draft</b> with every field copied from this campaign.
+            Tick anything you want to change — offer title, segment, or any other field — and enter the new value.
+          </div>
+          {CLONE_FIELDS.map((f) => (
+            <div key={f.key} style={{ border: `1px solid ${checked[f.key] ? c.blue : c.line}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, background: checked[f.key] ? "#F7FAFF" : "#fff" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, color: c.ink }}>
+                <input type="checkbox" checked={!!checked[f.key]} onChange={() => toggle(f.key)} style={{ cursor: "pointer" }} />
+                {f.label}
+                {!checked[f.key] && (
+                  <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400, color: c.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 220 }}>
+                    {f.key === "promo_codes" ? promoCodesSummary(campaign.promo_codes)
+                      : f.key === "publisher_billing" ? publisherBillingText(campaign)
+                      : f.key === "daily_budget" ? fmtBudget(campaign.daily_budget)
+                      : (campaign[f.key] || "—")}
+                  </span>
+                )}
+              </label>
+              {checked[f.key] && (
+                <div style={{ marginTop: 8 }}>
+                  {f.type === "input" && (
+                    <input style={inputBase} value={draft[f.key]} placeholder={f.placeholder}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                  )}
+                  {f.type === "textarea" && (
+                    <textarea style={{ ...inputBase, minHeight: 80, resize: "vertical", lineHeight: 1.5 }} value={draft[f.key]} placeholder={f.placeholder}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))} />
+                  )}
+                  {f.type === "number" && (
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
+                      <input type="number" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={draft[f.key]}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, [f.key]: e.target.value }))} placeholder="0" />
+                    </div>
+                  )}
+                  {f.type === "codes" && <CodesSection assets={draft} setAssets={setDraft} />}
+                  {f.type === "billing" && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <select style={{ ...inputBase, width: 90, flexShrink: 0 }} value={draft.publisher_billing_model}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, publisher_billing_model: e.target.value }))}>
+                        {PUBLISHER_BILLING_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                      <div style={{ position: "relative", flex: 1 }}>
+                        <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: c.muted }}>₹</span>
+                        <input type="number" step="0.01" min="0" style={{ ...inputBase, paddingLeft: 26 }} value={draft.publisher_billing_rate}
+                          onChange={(e) => setDraft((prev) => ({ ...prev, publisher_billing_rate: e.target.value }))} placeholder="Rate" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 20px", borderTop: `1px solid ${c.line}`, display: "flex", gap: 10, alignItems: "center" }}>
+          <button onClick={handleClone} disabled={cloning}
+            style={{ background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: cloning ? 0.6 : 1 }}>
+            {cloning ? "Cloning…" : nChanges > 0 ? `Create Clone in Draft (${nChanges} change${nChanges === 1 ? "" : "s"})` : "Create Exact Clone in Draft"}
+          </button>
+          <button onClick={onClose} style={{ background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main: Kanban Board ───────────────────────────────────────────────────────
 export default function CampaignOps({ userRole = "VIEWER" }) {
   const canEdit = userRole === "ADMIN" || userRole === "OPS";
@@ -804,22 +966,40 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
   const [selected, setSelected] = useState(null);
   const [pubFilter, setPubFilter] = useState("all");
   const [publishers, setPublishers] = useState([]);
+  const [cloneTarget, setCloneTarget] = useState(null);
 
   const load = () => {
     setLoading(true);
-    Promise.all([getWorkflowCampaigns(), getPublishers()]).then(([cRes, pRes]) => {
+    return Promise.all([getWorkflowCampaigns(), getPublishers()]).then(([cRes, pRes]) => {
       setCampaigns(cRes.campaigns || []);
       setPublishers(pRes.publishers || []);
     }).catch(console.error).finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
+
+  // After a clone: refresh the board and open the new draft for editing.
+  const handleCloned = async (newCamp) => {
+    setCloneTarget(null);
+    await load();
+    if (newCamp && newCamp.campaign_id) setSelected(newCamp.campaign_id);
+  };
+
+  const cloneModal = cloneTarget && (
+    <CloneModal campaign={cloneTarget} onClose={() => setCloneTarget(null)} onCloned={handleCloned} />
+  );
 
   if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#888" }}>Loading…</div>;
 
   // If a campaign is selected, show detail view
   if (selected) {
     const cam = campaigns.find((c) => c.campaign_id === selected);
-    if (cam) return <CampaignDetailView campaign={cam} onBack={() => setSelected(null)} onReload={() => { load(); setSelected(null); }} canEdit={canEdit} />;
+    if (cam) return (
+      <>
+        <CampaignDetailView campaign={cam} onBack={() => setSelected(null)} onReload={() => { load(); setSelected(null); }} canEdit={canEdit}
+          onClone={canEdit ? () => setCloneTarget(cam) : null} />
+        {cloneModal}
+      </>
+    );
   }
 
   // Filter by publisher
@@ -868,7 +1048,7 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
             <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{emailed.length}</span>
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Awaiting confirmation</div>
-          {emailed.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} />)}
+          {emailed.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
         </div>
 
         <div style={colStyle}>
@@ -877,9 +1057,10 @@ export default function CampaignOps({ userRole = "VIEWER" }) {
             <span style={{ fontSize: 12, color: c.muted, background: "#fff", borderRadius: 10, padding: "1px 7px" }}>{live.length}</span>
           </div>
           <div style={{ fontSize: 11, color: c.muted, marginBottom: 12 }}>Activated in Campaign Mgmt</div>
-          {live.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} />)}
+          {live.map((cam) => <CampaignCard key={cam.campaign_id} campaign={cam} onClick={() => setSelected(cam.campaign_id)} onClone={canEdit ? () => setCloneTarget(cam) : null} />)}
         </div>
       </div>
+      {cloneModal}
     </div>
   );
 }
