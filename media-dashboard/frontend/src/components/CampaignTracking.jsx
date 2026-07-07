@@ -26,25 +26,59 @@ const DRIVE_CODES_FOLDER = "https://drive.google.com/drive/folders/1QCcZtxs_Keku
 // ── Left Panel: Campaign List ────────────────────────────────────────────────
 function CampaignList({ campaigns, selected, onSelect }) {
   const [filter, setFilter] = useState("all");
-  const filtered = filter === "all" ? campaigns : filter === "tracked" ? campaigns.filter((c) => c.tracking_submitted) : campaigns.filter((c) => !c.tracking_submitted);
+  const [persona, setPersona] = useState("all");
+
+  // Distinct Targeting / Persona values, filled via Campaign Ops assets and
+  // carried on the campaign as `targeting`. Empty targeting is skipped.
+  const personas = [...new Set(campaigns.map((c) => (c.targeting || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  const filtered = campaigns.filter((cam) => {
+    if (filter === "tracked" && !cam.tracking_submitted) return false;
+    if (filter === "pending" && cam.tracking_submitted) return false;
+    if (persona !== "all" && (cam.targeting || "").trim() !== persona) return false;
+    return true;
+  });
+
+  const truncate = (t, n = 40) => (t.length > n ? t.slice(0, n) + "…" : t);
 
   return (
     <div style={{ width: 320, borderRight: `1px solid ${c.line}`, background: "#fff", overflowY: "auto", flexShrink: 0, height: "calc(100vh - 140px)" }}>
-      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${c.line}`, display: "flex", gap: 6, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
-        {[["all", "All"], ["tracked", "Tracked"], ["pending", "Pending"]].map(([k, label]) => (
-          <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 10px", borderRadius: 14, fontSize: 11, fontWeight: 600, border: `1px solid ${filter === k ? c.blue : c.line}`, background: filter === k ? "#EAF0FF" : "#fff", color: filter === k ? c.blue : c.sub, cursor: "pointer" }}>{label}</button>
-        ))}
+      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${c.line}`, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["all", "All"], ["tracked", "Tracked"], ["pending", "Pending"]].map(([k, label]) => (
+            <button key={k} onClick={() => setFilter(k)} style={{ padding: "5px 10px", borderRadius: 14, fontSize: 11, fontWeight: 600, border: `1px solid ${filter === k ? c.blue : c.line}`, background: filter === k ? "#EAF0FF" : "#fff", color: filter === k ? c.blue : c.sub, cursor: "pointer" }}>{label}</button>
+          ))}
+        </div>
+        {personas.length > 0 && (
+          <select
+            value={persona}
+            onChange={(e) => setPersona(e.target.value)}
+            title="Filter by Targeting / Persona (set in Campaign Ops)"
+            style={{ marginTop: 8, width: "100%", padding: "6px 8px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", color: persona !== "all" ? c.blue : c.sub, border: `1px solid ${persona !== "all" ? c.blue : c.line}`, background: persona !== "all" ? "#EAF0FF" : "#fff" }}
+          >
+            <option value="all">All Targeting / Personas</option>
+            {personas.map((p) => <option key={p} value={p}>{truncate(p)}</option>)}
+          </select>
+        )}
       </div>
+      {filtered.length === 0 && (
+        <div style={{ padding: "24px 14px", fontSize: 12, color: c.muted, textAlign: "center" }}>No campaigns match these filters</div>
+      )}
       {filtered.map((cam) => {
         const isDone = cam.tracking_submitted;
         const isActive = selected === cam.campaign_id;
+        const targeting = (cam.targeting || "").trim();
         return (
           <div key={cam.campaign_id} onClick={() => onSelect(cam.campaign_id)}
             style={{ padding: "12px 14px", borderBottom: `1px solid #F1F5F9`, cursor: "pointer", background: isActive ? "#F0F4FF" : "#fff", borderLeft: isActive ? `3px solid ${c.blue}` : "3px solid transparent" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: c.ink }}>{cam.advertiser_name} → {cam.publisher_name}</div>
             <div style={{ fontSize: 11, color: c.muted, marginTop: 2 }}>{cam.campaign_id} · {cam.offer_title || ""}</div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: isDone ? "#E3F6EE" : "#FEF3E2", color: isDone ? c.green : c.amber }}>{isDone ? "Tracked ✓" : "Pending"}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: isDone ? "#E3F6EE" : "#FEF3E2", color: isDone ? c.green : c.amber, flexShrink: 0 }}>{isDone ? "Tracked ✓" : "Pending"}</span>
+              {targeting && (
+                <span title={targeting} style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: "#F1F5F9", color: c.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 }}>🎯 {targeting}</span>
+              )}
             </div>
           </div>
         );
