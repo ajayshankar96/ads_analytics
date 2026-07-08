@@ -11,10 +11,14 @@ const s = {
   btnRow: { display: "flex", gap: 10 },
   addBtn: { background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
   ghostBtn: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 },
-  wrap: { background: "#fff", border: "1px solid " + c.line, borderRadius: 12, overflow: "hidden", overflowX: "auto", boxShadow: "0 1px 3px rgba(15,23,36,0.05)" },
+  // maxHeight turns the wrap into the vertical scroll container so the sticky
+  // header row pins to its top — page-level scrolling can't pin a header that
+  // lives inside an overflow-x container.
+  wrap: { background: "#fff", border: "1px solid " + c.line, borderRadius: 12, overflow: "auto", maxHeight: "calc(100vh - 110px)", boxShadow: "0 1px 3px rgba(15,23,36,0.05)" },
   // borderCollapse must be "separate" for position:sticky to work reliably on cells
   table: { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 900, fontVariantNumeric: "tabular-nums" },
-  th: { textAlign: "left", fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", padding: "11px 14px", background: c.bg, borderBottom: "1px solid " + c.line, whiteSpace: "nowrap" },
+  // Header row stays pinned while rows scroll vertically (zIndex above body cells)
+  th: { position: "sticky", top: 0, zIndex: 2, textAlign: "left", fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", padding: "11px 14px", background: c.bg, borderBottom: "1px solid " + c.line, whiteSpace: "nowrap" },
   thRight: { textAlign: "right" },
   // First column stays pinned while the publisher matrix scrolls horizontally
   stickyCol: { position: "sticky", left: 0, zIndex: 1, boxShadow: `inset -1px 0 0 ${c.line}` },
@@ -473,7 +477,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={{ ...s.th, ...s.stickyCol, zIndex: 2, background: c.bg, minWidth: 180 }}>Advertiser</th>
+                <th style={{ ...s.th, ...s.stickyCol, zIndex: 3, background: c.bg, minWidth: 180 }}>Advertiser</th>
                 <th style={{ ...s.th, ...s.thRight }}>Budget</th>
                 {visiblePublishers.map((p) => (
                   <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}</th>

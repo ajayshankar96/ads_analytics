@@ -412,6 +412,12 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
   const gisReady = useGisLoaded();
   const stage = campaign.current_stage;
   const emailSent = !!campaign.publisher_email_sent_at;
+  const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
+  // Emailed stages stay editable — publishers often request tweaks before go-live.
+  const isAssetStage = stage === "OPS_SETUP" || stage === "LIVE" || isEmailedStage;
+  const isLive = stage === "LIVE";
+  const isPaused = stage === "PAUSED";
+  const isStopped = stage === "STOPPED";
 
   useEffect(() => {
     const a = {};
@@ -425,7 +431,8 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
     setSaving(true);
     try {
       const res = await updateCampaignAssets(campaign.campaign_id, assets);
-      if (stage === "LIVE" && res.changes && res.changes.length > 0) {
+      // Offer to notify the publisher when details change after they've been emailed
+      if ((stage === "LIVE" || (isEmailedStage && emailSent)) && res.changes && res.changes.length > 0) {
         setLastChanges(res.changes);
         setShowUpdateEmailPrompt(true);
       }
@@ -511,12 +518,6 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
   const [showChangelog, setShowChangelog] = useState(false);
   const [showUpdateEmailPrompt, setShowUpdateEmailPrompt] = useState(false);
   const [lastChanges, setLastChanges] = useState([]);
-
-  const isAssetStage = stage === "OPS_SETUP" || stage === "LIVE";
-  const isEmailedStage = ["ASSETS_RECEIVED", "CREATIVE_REVIEW", "SHARED_TO_PUBLISHER"].includes(stage);
-  const isLive = stage === "LIVE";
-  const isPaused = stage === "PAUSED";
-  const isStopped = stage === "STOPPED";
 
   // Pause / Stop / Restart — a plain stage transition; the backend audits it
   // in rmn_stage_transitions and mirrors it into the campaign changelog.
@@ -613,7 +614,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
               ▶ Restart
             </button>
           )}
-          {isLive && canEdit && (
+          {(isLive || isEmailedStage) && canEdit && (
             <span style={{ fontSize: 12, color: c.green, fontWeight: 600 }}>Edit fields directly below ↓</span>
           )}
         </div>
@@ -622,7 +623,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
       {/* Assets: progress header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em" }}>
-          Assets {stage === "OPS_SETUP" ? "· fill all fields" : stage === "LIVE" ? "· edit directly" : "· received"}
+          Assets {stage === "OPS_SETUP" ? "· fill all fields" : (isAssetStage && canEdit) ? "· edit directly" : "· received"}
         </div>
         {isAssetStage && canEdit && (
           <>
@@ -790,7 +791,7 @@ function CampaignDetailView({ campaign, onBack, onReload, canEdit, onClone }) {
         </div>
       )}
 
-      {/* Update email prompt (LIVE edits) */}
+      {/* Update email prompt (LIVE / emailed-stage edits) */}
       {showUpdateEmailPrompt && (
         <div style={{ background: "#FFF8E1", borderRadius: 8, padding: "14px", marginTop: 16, border: "1px solid #FFE082" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: c.ink, marginBottom: 8 }}>Changes saved! Send update email to publisher?</div>
