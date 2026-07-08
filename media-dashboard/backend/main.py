@@ -681,6 +681,10 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
     # The same sheet+mapping can back several campaigns (parent/child clones);
     # scan each (url, mapping-scope) once and reuse the result.
     scan_cache: Dict[tuple, Dict[str, Any]] = {}
+    # Publisher-side extraction signatures: two active campaigns with the
+    # same signature ingest identical sheet rows (double-counting risk) —
+    # flagged below as duplicate_feed alerts.
+    feed_sigs: Dict[str, List[Dict[str, Any]]] = {}
 
     for r in rows:
         (cid, cname, adv_name, pub_name, adv_url, pub_url,
@@ -698,6 +702,14 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
             }
             cm = await etl_worker._load_column_mapping(
                 db, party or "", side, sheet_url=url, campaign_id=cid)
+            if cm and side == "publisher" and (stage or "").upper() != "COMPLETED":
+                from types import SimpleNamespace
+                sig = etl_worker._feed_signature(SimpleNamespace(
+                    id=cid, advertiser_name=adv_name, publisher_name=pub_name,
+                    publisher_data_url=url, segment_pub=seg_pub,
+                    self_targeted_pub=bool(st_pub)), cm)
+                if sig:
+                    feed_sigs.setdefault(sig, []).append(entry)
             if not cm:
                 entry.update({
                     "freshness": "not_configured", "tabs_matched": [],
@@ -741,6 +753,28 @@ async def sheet_health(refresh: int = 0, db: AsyncSession = Depends(get_db)):
                 scan_cache[cache_key] = health
             entry.update(health)
             sheets.append(entry)
+
+    # Duplicate-feed alerts: identical publisher mappings on active campaigns
+    # extract the same rows regardless of configured offer — only the newest
+    # tracking setup syncs, and reporting must be split at the sheet to track
+    # them separately.
+    for sig, entries in feed_sigs.items():
+        if len(entries) < 2:
+            continue
+        ids = [e["campaign_id"] for e in entries]
+        for e in entries:
+            others = ", ".join(i for i in ids if i != e["campaign_id"])
+            # Copy-on-write: cached health dicts share their alerts list
+            # across entries — never mutate it in place.
+            e["alerts"] = list(e.get("alerts") or []) + [{
+                "type": "duplicate_feed", "severity": "error",
+                "message": (f"Identical publisher mapping to {others} — same "
+                            "sheet, tab, columns and filters extract the SAME "
+                            "rows (double-counting risk). Only the newest "
+                            "tracking setup syncs; to track these separately, "
+                            "the publisher must report them in separate "
+                            "tables (tab/segment) and the mapping redone."),
+            }]
 
     summary = {
         "total": len(sheets),

@@ -833,7 +833,7 @@ async def _load_column_mapping(
     order_sql = "CASE " + " ".join(order_parts + ["ELSE 2"]) + " END, updated_at DESC"
     result = await db.execute(text(
         "SELECT campaign_id, sheet_url, tab_name, header_row, data_start_row, mapping, format_type, "
-        "tab_pattern, tab_match_mode, sheet_fingerprint, id "
+        "tab_pattern, tab_match_mode, sheet_fingerprint, id, updated_at "
         f"FROM rmn_column_mappings WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 1"
     ), params)
     row = result.fetchone()
@@ -855,6 +855,7 @@ async def _load_column_mapping(
         "tab_pattern": row[7],
         "tab_match_mode": row[8],
         "sheet_fingerprint": fingerprint,
+        "updated_at": row[11],
     }
 
 
@@ -1929,6 +1930,99 @@ async def _feed_slice_owner(db: AsyncSession, campaign: models.Campaign) -> Opti
     return row[0] if row else None
 
 
+def _sheet_key(url: str) -> str:
+    """Spreadsheet ID from a URL (so gid/query-param variants compare equal)."""
+    m = re.search(r'/spreadsheets/d/([a-zA-Z0-9-_]+)', url or "")
+    return m.group(1) if m else (url or "").strip()
+
+
+def _feed_signature(campaign, mapping: Optional[Dict]) -> Optional[str]:
+    """Canonical identity of WHAT a publisher-side sync would extract.
+
+    Two campaigns with equal signatures are guaranteed to ingest identical
+    rows — extraction filters on tab + segment + advertiser column only
+    (offer titles filter NOTHING), so same sheet, same tab selection, same
+    column layout and same filters means the same data, even when the
+    campaigns are configured for different offers. Publisher sheets must
+    report different offers/segments in different tables (tabs/segments/
+    columns) for per-offer tracking to be real.
+    """
+    if not mapping:
+        return None
+    cols = mapping.get("mapping") or {}
+    self_pub = bool(getattr(campaign, "self_targeted_pub", False))
+    seg = "" if self_pub else (campaign.segment_pub or "").strip().lower()
+    adv_filter = ""
+    if cols.get("advertiser_col_index") is not None:
+        adv_filter = str(cols.get("advertiser_value")
+                         or campaign.advertiser_name or "").strip().lower()
+    sig = {
+        "sheet": _sheet_key(mapping.get("sheet_url")
+                            or getattr(campaign, "publisher_data_url", "") or ""),
+        "tab_name": (mapping.get("tab_name") or "").strip().lower(),
+        "tab_pattern": (mapping.get("tab_pattern") or "").strip().lower(),
+        "tab_match_mode": (mapping.get("tab_match_mode") or "").strip().lower(),
+        "header_row": mapping.get("header_row"),
+        "data_start_row": mapping.get("data_start_row"),
+        "format_type": (mapping.get("format_type") or "").strip().lower(),
+        "columns": cols,
+        "segment_filter": seg,
+        "advertiser_filter": adv_filter,
+    }
+    return json.dumps(sig, sort_keys=True, default=str)
+
+
+async def _duplicate_feed_owner(
+    db: AsyncSession,
+    campaign: models.Campaign,
+    pub_col_mapping: Optional[Dict],
+) -> Optional[str]:
+    """Detect a live sibling campaign whose publisher extraction is IDENTICAL.
+
+    The slice key trusts campaign config (offer/segment), but nothing in the
+    sheet enforces it: two campaigns for "different offers" can still map the
+    exact same rows. When signatures collide, only the newest tracking setup
+    (mapping updated_at, tie → highest id) syncs. Returns the owning
+    campaign_id when this campaign is NOT the owner, else None.
+    """
+    from types import SimpleNamespace
+    my_sig = _feed_signature(campaign, pub_col_mapping)
+    if not my_sig:
+        return None
+    pub = (campaign.publisher_name or "").strip().lower()
+    result = await db.execute(text("""
+        SELECT id, advertiser_name, publisher_name, publisher_data_url,
+               segment_pub, self_targeted_pub
+        FROM rmn_campaigns
+        WHERE LOWER(TRIM(COALESCE(publisher_name, ''))) = :pub
+          AND id != :cid
+          AND tracking_submitted = TRUE
+          AND is_deleted = FALSE
+          AND current_stage != 'COMPLETED'
+    """), {"pub": pub, "cid": campaign.id})
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+
+    def rank(mapping, cid):
+        ts = (mapping or {}).get("updated_at") or epoch
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (ts, cid)
+
+    contenders = [rank(pub_col_mapping, campaign.id)]
+    for row in result.fetchall():
+        sib = SimpleNamespace(**row._mapping)
+        sib_map = await _load_column_mapping(
+            db, sib.publisher_name or "", "publisher",
+            sheet_url=sib.publisher_data_url, campaign_id=sib.id,
+        )
+        if _feed_signature(sib, sib_map) == my_sig:
+            contenders.append(rank(sib_map, sib.id))
+    if len(contenders) == 1:
+        return None
+    owner = max(contenders)[1]
+    return None if owner == campaign.id else owner
+
+
 async def _sync_skip_reason(
     db: AsyncSession,
     campaign: models.Campaign,
@@ -1955,6 +2049,15 @@ async def _sync_skip_reason(
                 f"segment '{seg_label}') is owned by {owner} (newest tracking "
                 "setup). That campaign syncs the data; this one skips to avoid "
                 "double-counting the same sheet rows.")
+    dup_owner = await _duplicate_feed_owner(db, campaign, pub_col_mapping)
+    if dup_owner:
+        return (f"This campaign's mapping extracts EXACTLY the same sheet rows "
+                f"as {dup_owner} — same sheet, tab, columns, segment and "
+                "advertiser filters. The sheet does not separate these "
+                f"campaigns' data, so {dup_owner} (newest tracking setup) syncs "
+                "it and this campaign skips to avoid double-counting. If these "
+                "are different offers, have the publisher report them in "
+                "separate tables (tab/segment) and remap.")
     return None
 
 
