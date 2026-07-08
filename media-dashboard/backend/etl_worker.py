@@ -2286,6 +2286,13 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         row_data['Coins_Burned'] = _safe_float(pub_row.get('Coins_Burned', 0))
         row_data['Redirections'] = _safe_float(pub_row.get('Redirections', 0))
         row_data['Spends'] = _safe_float(pub_row.get('Spends', 0))
+        # Some publishers (e.g. Navi) report click-equivalents under
+        # 'Redirections' and leave 'Clicks' blank. Treat redirections as
+        # clicks for CPC billing, spend formulas and computed rates — the
+        # stored clicks/redirections columns keep the raw sheet values
+        # (the upsert below binds pub_row, not row_data).
+        if not row_data['Clicks'] and row_data['Redirections']:
+            row_data['Clicks'] = row_data['Redirections']
         # Standard computed publisher metrics
         clicks = row_data['Clicks']
         spends = row_data['Spends']

@@ -90,6 +90,16 @@ def _get_col(headers: List[str], name: str) -> int:
     return -1
 
 
+def _row_clicks(row) -> float:
+    """Effective clicks for a row: some publishers (e.g. Navi) report
+    click-equivalents under 'Redirections' and leave 'Clicks' blank, so
+    fall back per row — Clicks if present, else Redirections."""
+    clk = _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0.0
+    if clk:
+        return clk
+    return _to_float(row[COL["REDIRECTIONS"]]) if len(row) > COL["REDIRECTIONS"] else 0.0
+
+
 # ── Filtering ────────────────────────────────────────────────────────────────
 
 def apply_filters(rows: List, filters: dict) -> List:
@@ -259,7 +269,9 @@ def calculate_aggregates(rows: List, headers: List[str]) -> dict:
 
     for row in rows:
         total_imp += safe_get(row, imp_idx)
-        total_clk += safe_get(row, clk_idx)
+        # Clicks fall back to Redirections per row (Navi-style sheets report
+        # click-equivalents there and leave Clicks blank).
+        total_clk += safe_get(row, clk_idx) or safe_get(row, redir_idx)
         total_spd += safe_get(row, spd_idx)
         total_dist += safe_get(row, dist_idx)
         total_ql += safe_get(row, ql_idx)
@@ -349,7 +361,7 @@ def get_time_series(rows: List, headers: List[str], group_by: str = "day") -> Li
         g = grouped[key]
         g["impressions"] += _to_float(row[COL["IMPRESSIONS"]]) if len(row) > COL["IMPRESSIONS"] else 0
         g["distribution"] += _to_float(row[COL["DISTRIBUTION"]]) if len(row) > COL["DISTRIBUTION"] else 0
-        g["clicks"] += _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0
+        g["clicks"] += _row_clicks(row)
         g["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
         g["ql"] += _to_float(row[COL["QL"]]) if len(row) > COL["QL"] else 0
         g["qqg"] += _to_float(row[COL["QQG"]]) if len(row) > COL["QQG"] else 0
@@ -401,7 +413,7 @@ def get_breakdowns(rows: List, headers: List[str]) -> dict:
                 continue
             key = _safe_str(row[dim_col]) or "Unknown"
             agg[key]["impressions"] += _to_float(row[COL["IMPRESSIONS"]]) if len(row) > COL["IMPRESSIONS"] else 0
-            agg[key]["clicks"] += _to_float(row[COL["CLICKS"]]) if len(row) > COL["CLICKS"] else 0
+            agg[key]["clicks"] += _row_clicks(row)
             spd_idx = _get_col(headers, "Publisher_Spends")
             spd_idx = spd_idx if spd_idx >= 0 else COL["PUBLISHER_SPENDS"]
             agg[key]["spends"] += _to_float(row[spd_idx]) if len(row) > spd_idx else 0
@@ -701,6 +713,7 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
     seg_idx = hcol("Segment", COL["SEGMENT"])
     offer_idx = hcol("Offer", COL["OFFER"])
     date_idx = hcol("Date", COL["DATE"])
+    redir_idx = hcol("Redirections", COL["REDIRECTIONS"])
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
         ("clicks", hcol("Clicks", COL["CLICKS"])),
@@ -752,7 +765,12 @@ def get_advertiser_performance(rows: List, headers: List[str], filters: dict, vi
                     .setdefault(seg, {}).setdefault(offer, {k: 0 for k in metric_keys}))
             for key, col in mcols:
                 if col >= 0 and len(row) > col:
-                    m[key] += _to_float(row[col])
+                    v = _to_float(row[col])
+                    # Clicks fall back to Redirections per row (Navi-style
+                    # sheets report click-equivalents there, Clicks is blank).
+                    if key == "clicks" and not v and len(row) > redir_idx:
+                        v = _to_float(row[redir_idx])
+                    m[key] += v
         return agg
 
     curr = aggregate(date_from, date_to)
@@ -858,6 +876,7 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
     seg_idx = hcol("Segment", COL["SEGMENT"])
     offer_idx = hcol("Offer", COL["OFFER"])
     date_idx = hcol("Date", COL["DATE"])
+    redir_idx = hcol("Redirections", COL["REDIRECTIONS"])
     mcols = [
         ("impressions", hcol("Impressions", COL["IMPRESSIONS"])),
         ("clicks", hcol("Clicks", COL["CLICKS"])),
@@ -909,7 +928,12 @@ def get_publisher_performance(rows: List, headers: List[str], filters: dict, vie
                     .setdefault(seg, {}).setdefault(offer, {k: 0 for k in metric_keys}))
             for key, col in mcols:
                 if col >= 0 and len(row) > col:
-                    m[key] += _to_float(row[col])
+                    v = _to_float(row[col])
+                    # Clicks fall back to Redirections per row (Navi-style
+                    # sheets report click-equivalents there, Clicks is blank).
+                    if key == "clicks" and not v and len(row) > redir_idx:
+                        v = _to_float(row[redir_idx])
+                    m[key] += v
         return agg
 
     curr = aggregate(date_from, date_to)

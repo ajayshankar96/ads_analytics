@@ -9,7 +9,7 @@ import MetricsManager, { buildColumns, formatCell } from "./MetricsManager";
 // "Spends"/"CPM" — corrected here.
 const BUILTIN_COLUMNS = [
   { key: "impressions", label: "Impressions", fmt: "number", delta: true },
-  { key: "clicks", label: "Clicks", fmt: "number", delta: true },
+  { key: "clicks", label: "Clicks / Redirections", fmt: "number", delta: true },
   { key: "ctr", label: "CTR", fmt: "percent", delta: true },
   { key: "adv_spends", label: "Adv Spends", fmt: "currency", delta: true },
   { key: "pub_spends", label: "Pub Spends", fmt: "currency", delta: true },

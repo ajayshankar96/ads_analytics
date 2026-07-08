@@ -132,7 +132,7 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
 
   const METRICS = [
     { key: "impressions", label: "Impressions" },
-    { key: "clicks", label: "Clicks" },
+    { key: "clicks", label: "Clicks / Redirections" },
     { key: "spends", label: "Spends (₹)" },
     { key: "ql", label: "QL" },
     { key: "qqg", label: "QQG" },
@@ -147,7 +147,7 @@ export default function Dashboard({ filters, dataSource = "sheet" }) {
       <div style={s.grid}>
         <KPICard label="Imp + Distribution" value={fmt(aggs.impressionsAndDistribution)} sub={`Imp: ${fmt(aggs.impressions)} | Dist: ${fmt(aggs.distribution)}`} />
         <KPICard
-          label="Clicks"
+          label="Clicks / Redirections"
           value={fmt(aggs.clicks)}
           // Postgres source returns the adv/pub split; sheet source doesn't, so fall back to CTR there.
           sub={aggs.publisher_clicks != null

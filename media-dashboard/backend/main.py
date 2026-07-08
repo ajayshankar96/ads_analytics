@@ -126,6 +126,9 @@ def load_from_postgres(strict: bool = False):
             "WHEN m.advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(m.advertiser_spends, 0) "
             f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
         )
+        # Effective clicks for computed rates: Navi-style sheets report
+        # click-equivalents under 'Redirections' and leave 'Clicks' blank.
+        eff_clicks_expr = "(CASE WHEN COALESCE(m.clicks, 0) > 0 THEN m.clicks ELSE COALESCE(m.redirections, 0) END)"
         eng = create_engine(db_url, pool_pre_ping=True)
         with eng.connect() as conn:
             rows_raw = conn.execute(text(f"""
@@ -137,10 +140,10 @@ def load_from_postgres(strict: bool = False):
                        '' as cohort, m.advertiser as brand,
                        COALESCE(NULLIF(c.offer_title, ''), c.name, '') as offer,
                        m.impressions, m.distribution, m.clicks,
-                       CASE WHEN m.impressions > 0 THEN m.clicks::float/m.impressions*100 ELSE 0 END as ctr,
+                       CASE WHEN m.impressions > 0 THEN {eff_clicks_expr}::float/m.impressions*100 ELSE 0 END as ctr,
                        m.orders_pub, m.scratches, m.coins_burned, m.redirections, m.spends,
                        CASE WHEN m.impressions > 0 THEN ({publisher_spends_expr})/m.impressions*1000 ELSE 0 END as cpm,
-                       CASE WHEN m.clicks > 0 THEN ({publisher_spends_expr})/m.clicks ELSE 0 END as cpc,
+                       CASE WHEN {eff_clicks_expr} > 0 THEN ({publisher_spends_expr})/{eff_clicks_expr} ELSE 0 END as cpc,
                        {publisher_spends_expr} as publisher_spends,
                        {advertiser_spends_expr} as advertiser_spends,
                        m.advertiser_metrics
@@ -1709,16 +1712,16 @@ async def _validate_billing_metrics_if_configured(campaign: models.Campaign, sid
     advertiser_metrics = {str(m).strip().lower() for m in metrics_config.get("advertiser_metrics", [])}
     if not publisher_metrics and not advertiser_metrics:
         return
-    if side == "publisher" and billing_model == "cpc" and "clicks" not in publisher_metrics:
-        raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks in publisher metrics")
+    if side == "publisher" and billing_model == "cpc" and not ({"clicks", "redirections"} & publisher_metrics):
+        raise HTTPException(status_code=400, detail="Publisher CPC requires Clicks (or Redirections) in publisher metrics")
     if side == "publisher" and billing_model == "cpm" and "impressions" not in publisher_metrics:
         raise HTTPException(status_code=400, detail="Publisher CPM requires Impressions in publisher metrics")
     if side == "publisher" and billing_model == "roas" and "revenue" not in advertiser_metrics:
         raise HTTPException(status_code=400, detail="Publisher ROAS requires Revenue in advertiser metrics")
     if side == "advertiser" and billing_model == "roas" and "revenue" not in advertiser_metrics:
         raise HTTPException(status_code=400, detail="Advertiser ROAS requires Revenue in advertiser metrics")
-    if side == "advertiser" and billing_model == "cpc" and "clicks" not in publisher_metrics:
-        raise HTTPException(status_code=400, detail="Advertiser CPC requires Clicks in publisher metrics")
+    if side == "advertiser" and billing_model == "cpc" and not ({"clicks", "redirections"} & publisher_metrics):
+        raise HTTPException(status_code=400, detail="Advertiser CPC requires Clicks (or Redirections) in publisher metrics")
 
 
 async def _get_campaign_advertiser(db: AsyncSession, campaign: models.Campaign) -> Optional[models.Advertiser]:
@@ -2327,6 +2330,9 @@ PG_PUBLISHER_SPENDS_EXPR = (
     "ELSE COALESCE(spends, 0) END"
 )
 PG_ADVERTISER_METRICS_EXPR = "COALESCE(NULLIF(advertiser_metrics, ''), '{}')::jsonb"
+# Effective clicks: some publishers (e.g. Navi) report click-equivalents under
+# 'Redirections' and leave 'Clicks' blank — fall back per row for display.
+PG_CLICKS_EXPR = "(CASE WHEN COALESCE(clicks, 0) > 0 THEN clicks ELSE COALESCE(redirections, 0) END)"
 
 
 @app.get("/api/dashboard/pg/filters")
@@ -2359,7 +2365,7 @@ async def pg_aggregates(
         "WHEN advertiser_spends_source IN ('sheet', 'calculated') THEN COALESCE(advertiser_spends, 0) "
         f"ELSE COALESCE({direct_adv_spends_expr}, 0) END"
     )
-    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM(clicks),0) as clicks, COALESCE(SUM({adv_clicks_expr}),0) as adv_clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
+    sql = f"SELECT COALESCE(SUM(impressions),0) as impressions, COALESCE(SUM({PG_CLICKS_EXPR}),0) as clicks, COALESCE(SUM({adv_clicks_expr}),0) as adv_clicks, COALESCE(SUM(spends),0) as raw_spends, COALESCE(SUM({PG_PUBLISHER_SPENDS_EXPR}),0) as pub_spends, COALESCE(SUM(orders_pub),0) as orders, COALESCE(SUM({adv_spends_expr}),0) as adv_spends, COALESCE(SUM({revenue_expr}),0) as adv_revenue, COUNT(DISTINCT date) as days FROM rmn_campaign_metrics{where}"
     row = (await db.execute(text(sql), params)).one()
     imp, clicks, pub_spends, orders = int(row.impressions), int(row.clicks), float(row.pub_spends), int(row.orders)
     adv_clicks = int(row.adv_clicks)
@@ -2404,7 +2410,7 @@ async def pg_timeseries(
         date_expr = "DATE_TRUNC('month', date)::date"
     else:
         date_expr = "date"
-    sql = f"SELECT {date_expr} as date, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY {date_expr} ORDER BY {date_expr}"
+    sql = f"SELECT {date_expr} as date, SUM(impressions) as impressions, SUM({PG_CLICKS_EXPR}) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends, SUM(orders_pub) as orders FROM rmn_campaign_metrics{where} GROUP BY {date_expr} ORDER BY {date_expr}"
     rows = (await db.execute(text(sql), params)).all()
     return {
         "timeSeries": [{"date": r.date.isoformat(), "impressions": int(r.impressions or 0), "clicks": int(r.clicks or 0), "spends": round(float(r.spends or 0), 2), "orders": int(r.orders or 0)} for r in rows],
@@ -2423,19 +2429,19 @@ async def pg_breakdowns(
 ):
     params_adv = {}
     where_adv = _pg_where(params_adv, advertiser, publisher, dateFrom, dateTo, segment)
-    sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
+    sql_adv = f"SELECT advertiser as name, SUM(impressions) as impressions, SUM({PG_CLICKS_EXPR}) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_adv} GROUP BY advertiser ORDER BY spends DESC"
     adv_rows = (await db.execute(text(sql_adv), params_adv)).all()
 
     params_pub = {}
     where_pub = _pg_where(params_pub, advertiser, publisher, dateFrom, dateTo, segment)
-    sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
+    sql_pub = f"SELECT publisher as name, SUM(impressions) as impressions, SUM({PG_CLICKS_EXPR}) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_pub} GROUP BY publisher ORDER BY spends DESC"
     pub_rows = (await db.execute(text(sql_pub), params_pub)).all()
 
     params_seg = {}
     where_seg = _pg_where(params_seg, advertiser, publisher, dateFrom, dateTo, segment)
     segment_filter = "segment IS NOT NULL AND segment != ''"
     where_seg = f"{where_seg} AND {segment_filter}" if where_seg else f" WHERE {segment_filter}"
-    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM(clicks) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_seg} GROUP BY segment ORDER BY impressions DESC"
+    sql_seg = f"SELECT segment as name, SUM(impressions) as impressions, SUM({PG_CLICKS_EXPR}) as clicks, SUM({PG_PUBLISHER_SPENDS_EXPR}) as spends FROM rmn_campaign_metrics{where_seg} GROUP BY segment ORDER BY impressions DESC"
     seg_rows = (await db.execute(text(sql_seg), params_seg)).all()
 
     return {
