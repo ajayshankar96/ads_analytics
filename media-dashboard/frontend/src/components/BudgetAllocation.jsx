@@ -12,17 +12,26 @@ const s = {
   addBtn: { background: c.blue, color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
   ghostBtn: { background: "#fff", color: c.sub, border: `1px solid ${c.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 },
   wrap: { background: "#fff", border: "1px solid " + c.line, borderRadius: 12, overflow: "hidden", overflowX: "auto", boxShadow: "0 1px 3px rgba(15,23,36,0.05)" },
-  table: { width: "100%", borderCollapse: "collapse", minWidth: 900 },
-  th: { textAlign: "left", fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", padding: "12px 14px", background: c.bg, borderBottom: "1px solid " + c.line, whiteSpace: "nowrap", position: "sticky", top: 0 },
+  // borderCollapse must be "separate" for position:sticky to work reliably on cells
+  table: { width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 900, fontVariantNumeric: "tabular-nums" },
+  th: { textAlign: "left", fontSize: 11, fontWeight: 700, color: c.muted, textTransform: "uppercase", letterSpacing: ".04em", padding: "11px 14px", background: c.bg, borderBottom: "1px solid " + c.line, whiteSpace: "nowrap" },
   thRight: { textAlign: "right" },
-  td: { padding: "10px 14px", fontSize: 13, color: c.ink, borderBottom: "1px solid #F1F5F9", verticalAlign: "middle" },
+  // First column stays pinned while the publisher matrix scrolls horizontally
+  stickyCol: { position: "sticky", left: 0, zIndex: 1, boxShadow: `inset -1px 0 0 ${c.line}` },
+  td: { padding: "9px 14px", fontSize: 13, color: c.ink, borderBottom: "1px solid #F1F5F9", verticalAlign: "middle" },
   tdRight: { textAlign: "right" },
-  advName: { fontWeight: 700, fontSize: 13.5, color: c.ink },
-  advId: { fontSize: 11, color: c.muted },
-  input: { border: `1px solid ${c.line}`, borderRadius: 6, padding: "6px 8px", fontSize: 12, width: 92, outline: "none", textAlign: "right", fontFamily: "inherit", boxSizing: "border-box" },
+  advName: { fontWeight: 700, fontSize: 13, color: c.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 170 },
+  advId: { fontSize: 10, color: "#94A6B8", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", letterSpacing: ".03em", marginTop: 1 },
+  // Quiet input: near-invisible at rest, blue ring on focus (handlers on the element)
+  input: { border: "1px solid #E3E8EF", borderRadius: 7, padding: "6px 9px", fontSize: 12.5, width: 100, outline: "none", textAlign: "right", fontFamily: "inherit", boxSizing: "border-box", background: "transparent", transition: "border-color .15s ease, box-shadow .15s ease, background .15s ease" },
   saveRow: { background: c.blue, color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 },
-  pct: (v) => ({ fontSize: 12, fontWeight: 700, color: v >= 100 ? c.green : v >= 70 ? c.amber : c.red }),
-  cantLive: { fontSize: 11, color: c.red, fontWeight: 600, cursor: "pointer" },
+  pct: (v) => {
+    const over = v > 100.5; // matches the OVER row-status band
+    const color = v <= 0 ? c.muted : over ? c.red : v >= 99.5 ? c.green : v >= 70 ? c.amber : c.red;
+    const bg = v <= 0 ? "#F1F5F9" : over ? "#FDEBE8" : v >= 99.5 ? "#E5F5EF" : v >= 70 ? "#FBF3E1" : "#FDEBE8";
+    return { display: "inline-block", minWidth: 42, padding: "3px 8px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, color, background: bg };
+  },
+  cantLive: { display: "inline-block", fontSize: 10.5, color: "#B42318", fontWeight: 700, cursor: "pointer", background: "#FDECEA", padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" },
   totalRow: { background: "#F0F4FF", fontWeight: 800 },
   totalTd: { padding: "12px 14px", fontSize: 13, fontWeight: 800, color: c.ink, borderTop: `2px solid ${c.blue}` },
   loading: { textAlign: "center", padding: 40, color: "#888" },
@@ -464,38 +473,42 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={{ ...s.th, minWidth: 150 }}>Advertiser</th>
-                <th style={{ ...s.th, ...s.thRight }}>Total Budget</th>
+                <th style={{ ...s.th, ...s.stickyCol, zIndex: 2, background: c.bg, minWidth: 180 }}>Advertiser</th>
+                <th style={{ ...s.th, ...s.thRight }}>Budget</th>
                 {visiblePublishers.map((p) => (
                   <th key={p.id} style={{ ...s.th, textAlign: "center" }}>{p.name}</th>
                 ))}
                 <th style={{ ...s.th, ...s.thRight }}>Allocated</th>
                 <th style={{ ...s.th, textAlign: "center" }}>%</th>
-                <th style={{ ...s.th, textAlign: "center" }}></th>
+                <th style={{ ...s.th, width: 64 }}></th>
               </tr>
             </thead>
             <tbody>
-              {visibleAdvertisers.map((a) => {
+              {visibleAdvertisers.map((a, idx) => {
                 const budget = budgetForMonth(a, month);
                 const allocated = rowTotal(a.id);
                 const pct = budget > 0 ? (allocated / budget) * 100 : 0;
                 const isDirty = !!dirty[a.id];
+                const rowBg = idx % 2 === 1 ? "#FBFCFE" : "#fff"; // zebra keeps wide rows scannable
                 return (
-                  <tr key={a.id}>
-                    <td style={s.td}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: 7, background: avatarColor(a.name), display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{(a.name || "?").charAt(0).toUpperCase()}</div>
-                        <div><div style={s.advName}>{a.name}</div><div style={s.advId}>{a.id}</div></div>
+                  <tr key={a.id} style={{ background: rowBg }}>
+                    <td style={{ ...s.td, ...s.stickyCol, background: rowBg }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <div style={{ width: 24, height: 24, borderRadius: 6, background: `${avatarColor(a.name)}1F`, display: "flex", alignItems: "center", justifyContent: "center", color: avatarColor(a.name), fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{(a.name || "?").charAt(0).toUpperCase()}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={s.advName} title={`${a.name} · ${a.id}`}>{a.name}</div>
+                          <div style={s.advId}>{a.id}</div>
+                        </div>
                       </div>
                     </td>
-                    <td style={{ ...s.td, ...s.tdRight, fontWeight: 700 }}>{fmtInr(budget)}</td>
+                    <td style={{ ...s.td, ...s.tdRight, fontWeight: 600, color: c.sub }}>{fmtInr(budget)}</td>
                     {visiblePublishers.map((p) => {
                       const cell = getCell(a.id, p.id);
                       const cantLive = cell.status === "CANT_GO_LIVE";
                       const hasValue = parseInt(cell.amount, 10) > 0;
-                      const cellBg = cantLive ? "#F3F4F6" : hasValue ? "#E3F6EE" : "transparent";
+                      const cellBg = cantLive ? "#F5F6F8" : hasValue ? "#E9F7F0" : "transparent";
                       return (
-                        <td key={p.id} style={{ ...s.td, textAlign: "center", padding: "6px 6px", background: cellBg }}>
+                        <td key={p.id} style={{ ...s.td, textAlign: "center", padding: "5px 6px", background: cellBg }}>
                           {cantLive ? (
                             <span style={s.cantLive} onClick={() => toggleStatus(a.id, p.id)} title="Click to enable">
                               Can't go live
@@ -505,9 +518,11 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                               style={s.input}
                               type="text"
                               inputMode="numeric"
-                              placeholder="0"
+                              placeholder="—"
                               value={fmtGroupInr(cell.amount)}
                               onChange={(e) => setCell(a.id, p.id, { amount: e.target.value.replace(/\D/g, "") })}
+                              onFocus={(e) => { e.target.select(); e.target.style.borderColor = c.blue; e.target.style.boxShadow = "0 0 0 3px rgba(46,91,255,0.12)"; e.target.style.background = "#fff"; }}
+                              onBlur={(e) => { e.target.style.borderColor = "#E3E8EF"; e.target.style.boxShadow = "none"; e.target.style.background = "transparent"; }}
                               onContextMenu={(e) => { e.preventDefault(); toggleStatus(a.id, p.id); }}
                               title="Right-click to mark 'Can't go live'"
                             />
@@ -530,7 +545,7 @@ export default function BudgetAllocation({ userRole = "VIEWER" }) {
                 );
               })}
               <tr style={s.totalRow}>
-                <td style={s.totalTd}>TOTAL</td>
+                <td style={{ ...s.totalTd, ...s.stickyCol, background: "#F0F4FF" }}>TOTAL</td>
                 <td style={{ ...s.totalTd, textAlign: "right" }}>{fmtInr(tableBudgetTotal)}</td>
                 {visiblePublishers.map((p) => (
                   <td key={p.id} style={{ ...s.totalTd, textAlign: "center" }}>{fmtInr(pubTotals[p.id])}</td>
