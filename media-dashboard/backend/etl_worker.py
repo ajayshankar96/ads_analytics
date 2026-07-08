@@ -1855,44 +1855,76 @@ def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
     return out
 
 
-# ── Sync guards: one feed per advertiser×publisher pair ─────────────────────
+# ── Sync guards: one feed per advertiser×publisher×offer×segment slice ──────
 #
-# Publisher sheets report at ADVERTISER level (there is no campaign column),
-# so when several campaigns share the same advertiser×publisher pair, each
-# would ingest the same sheet rows and the advertiser rollup would multiply
-# reality (the MCaffeine×Navi 3× incident). Exactly ONE campaign per pair —
-# the one with the newest campaign-scoped publisher mapping (i.e. the newest
-# tracking setup) — owns the sheet feed; siblings skip sync. Campaigns with
-# no publisher column mapping at all are also skipped: the legacy whole-sheet
-# fallback ingests every advertiser's rows unfiltered, which is how the junk
-# was created in the first place.
+# Publisher sheets report advertiser-level rows (there is no campaign
+# column); the granular feed identity is advertiser × publisher × offer ×
+# segment. The same advertiser legitimately runs several campaigns with the
+# same publisher for DIFFERENT offers/segments — each tracking setup maps its
+# own slice of the sheet, and all of those must sync. But when two campaigns
+# point at the SAME slice (e.g. tracking setup redone on a new campaign),
+# each would ingest the same sheet rows and the advertiser rollup would
+# multiply reality (the MCaffeine×Navi 3× incident). Exactly ONE campaign per
+# slice — the one with the newest campaign-scoped publisher mapping (i.e. the
+# newest tracking setup) — owns the feed; same-slice siblings skip sync.
+# Campaigns with no publisher column mapping at all are also skipped: the
+# legacy whole-sheet fallback ingests every advertiser's rows unfiltered,
+# which is how the junk was created in the first place.
 
-async def _pair_feed_owner(db: AsyncSession, campaign: models.Campaign) -> Optional[str]:
-    """Return the campaign_id that owns the publisher sheet feed for this
-    campaign's advertiser×publisher pair, or None when the pair can't be keyed.
+# Predicate matching campaigns (aliased c) on the same feed slice. Segment
+# collapses to '' for publisher-side self-targeted campaigns: their sheet has
+# no segment column, so they read the advertiser's whole feed.
+_FEED_SLICE_SQL = """
+    LOWER(TRIM(COALESCE(c.advertiser_name, ''))) = :adv
+    AND LOWER(TRIM(COALESCE(c.publisher_name, ''))) = :pub
+    AND LOWER(TRIM(COALESCE(c.offer_title, ''))) = :offer
+    AND (CASE WHEN c.self_targeted_pub THEN ''
+         ELSE LOWER(TRIM(COALESCE(c.segment_pub, ''))) END) = :seg
+"""
 
-    Owner = the pair campaign (tracking submitted, not COMPLETED, not deleted)
-    whose campaign-scoped publisher mapping was updated most recently — i.e.
-    the newest tracking setup wins. Campaigns without a campaign-scoped
-    mapping rank last (fallback: highest id).
+
+def _feed_slice_key(campaign) -> Optional[Dict[str, str]]:
+    """Identity of the sheet slice this campaign ingests, or None if unkeyable.
+
+    Works for both ORM Campaign objects and plain rows exposing
+    advertiser_name / publisher_name / offer_title / segment_pub /
+    self_targeted_pub.
     """
     adv = (campaign.advertiser_name or "").strip().lower()
     pub = (campaign.publisher_name or "").strip().lower()
     if not adv or not pub:
         return None
-    result = await db.execute(text("""
+    self_pub = bool(getattr(campaign, "self_targeted_pub", False))
+    seg = "" if self_pub else (campaign.segment_pub or "").strip().lower()
+    offer = (campaign.offer_title or "").strip().lower()
+    return {"adv": adv, "pub": pub, "offer": offer, "seg": seg}
+
+
+async def _feed_slice_owner(db: AsyncSession, campaign: models.Campaign) -> Optional[str]:
+    """Return the campaign_id that owns the publisher sheet feed for this
+    campaign's advertiser×publisher×offer×segment slice, or None when the
+    slice can't be keyed.
+
+    Owner = the same-slice campaign (tracking submitted, not COMPLETED, not
+    deleted) whose campaign-scoped publisher mapping was updated most
+    recently — i.e. the newest tracking setup wins. Campaigns without a
+    campaign-scoped mapping rank last (fallback: highest id).
+    """
+    key = _feed_slice_key(campaign)
+    if not key:
+        return None
+    result = await db.execute(text(f"""
         SELECT c.id
         FROM rmn_campaigns c
         LEFT JOIN rmn_column_mappings m
                ON m.campaign_id = c.id AND m.type = 'publisher'
-        WHERE LOWER(TRIM(c.advertiser_name)) = :adv
-          AND LOWER(TRIM(c.publisher_name)) = :pub
+        WHERE {_FEED_SLICE_SQL}
           AND c.tracking_submitted = TRUE
           AND c.is_deleted = FALSE
           AND c.current_stage != 'COMPLETED'
         ORDER BY m.updated_at DESC NULLS LAST, c.id DESC
         LIMIT 1
-    """), {"adv": adv, "pub": pub})
+    """), key)
     row = result.fetchone()
     return row[0] if row else None
 
@@ -1914,40 +1946,45 @@ async def _sync_skip_reason(
                 "syncing without one would ingest the entire sheet "
                 "(every advertiser's rows). Complete the tracking setup "
                 "column mapping first.")
-    owner = await _pair_feed_owner(db, campaign)
+    owner = await _feed_slice_owner(db, campaign)
     if owner and owner != campaign.id:
-        return (f"The {campaign.advertiser_name} × {campaign.publisher_name} "
-                f"publisher feed is owned by {owner} (newest tracking setup). "
-                "This campaign does not sync from the sheet — the pair's data "
-                "lives on the owning campaign.")
+        seg_label = ("self-targeted" if getattr(campaign, "self_targeted_pub", False)
+                     else (campaign.segment_pub or "—"))
+        return (f"This sheet feed ({campaign.advertiser_name} × "
+                f"{campaign.publisher_name}, offer '{campaign.offer_title or '—'}', "
+                f"segment '{seg_label}') is owned by {owner} (newest tracking "
+                "setup). That campaign syncs the data; this one skips to avoid "
+                "double-counting the same sheet rows.")
     return None
 
 
-async def transfer_pair_feed_history(db: AsyncSession, new_owner_id: str) -> Dict[str, Any]:
-    """Re-attribute the pair's metric history to a new feed owner.
+async def transfer_feed_slice_history(db: AsyncSession, new_owner_id: str) -> Dict[str, Any]:
+    """Re-attribute a feed slice's metric history to a new owner campaign.
 
     Called when a campaign-scoped PUBLISHER mapping is saved: that campaign
-    becomes the pair's feed owner, so sibling campaigns' metric rows move to
-    it (best row per date; owner's own rows win). Remaining sibling rows are
-    deleted — they are duplicates of the same advertiser-level sheet feed.
+    becomes its slice's feed owner. Siblings on the SAME advertiser ×
+    publisher × offer × segment slice hold duplicate rows of the same sheet
+    feed, so the freshest row per date moves to the new owner (its own rows
+    win) and remaining duplicates are deleted. Campaigns on OTHER slices
+    (different offer/segment) are never touched.
     """
-    camp_result = await db.execute(text(
-        "SELECT advertiser_name, publisher_name FROM rmn_campaigns WHERE id = :id"
-    ), {"id": new_owner_id})
+    camp_result = await db.execute(text("""
+        SELECT id, advertiser_name, publisher_name, offer_title,
+               segment_pub, self_targeted_pub
+        FROM rmn_campaigns WHERE id = :id
+    """), {"id": new_owner_id})
     camp = camp_result.fetchone()
     if not camp:
         return {"moved": 0, "dropped": 0, "siblings": []}
-    adv = (camp[0] or "").strip().lower()
-    pub = (camp[1] or "").strip().lower()
-    if not adv or not pub:
+    key = _feed_slice_key(camp)
+    if not key:
         return {"moved": 0, "dropped": 0, "siblings": []}
 
-    sib_result = await db.execute(text("""
-        SELECT id FROM rmn_campaigns
-        WHERE LOWER(TRIM(advertiser_name)) = :adv
-          AND LOWER(TRIM(publisher_name)) = :pub
-          AND id != :owner_id
-    """), {"adv": adv, "pub": pub, "owner_id": new_owner_id})
+    sib_result = await db.execute(text(f"""
+        SELECT c.id FROM rmn_campaigns c
+        WHERE {_FEED_SLICE_SQL}
+          AND c.id != :owner_id
+    """), {**key, "owner_id": new_owner_id})
     sibling_ids = [r[0] for r in sib_result.fetchall()]
     if not sibling_ids:
         return {"moved": 0, "dropped": 0, "siblings": []}
@@ -1979,8 +2016,8 @@ async def transfer_pair_feed_history(db: AsyncSession, new_owner_id: str) -> Dic
     moved = moved_result.rowcount or 0
     dropped = dropped_result.rowcount or 0
     logger.info(
-        f"Feed transfer to {new_owner_id}: moved {moved} rows, dropped {dropped} "
-        f"duplicate rows from siblings {sibling_ids}"
+        f"Feed slice transfer to {new_owner_id}: moved {moved} rows, dropped "
+        f"{dropped} duplicate rows from same-slice siblings {sibling_ids}"
     )
     return {"moved": moved, "dropped": dropped, "siblings": sibling_ids}
 

@@ -564,15 +564,17 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
     await db.commit()
 
     # A campaign-scoped PUBLISHER mapping makes this campaign the feed owner
-    # for its advertiser×publisher pair (publisher sheets report at advertiser
-    # level — one feed per pair). Re-attribute sibling campaigns' metric
-    # history to the new owner so the pair's data follows the newest tracking
-    # setup. Best-effort: a transfer hiccup must never block saving the mapping.
+    # for its advertiser×publisher×offer×segment slice (publisher sheets
+    # report advertiser-level rows — one feed per slice; different offers/
+    # segments on the same pair are separate feeds and are never touched).
+    # Re-attribute same-slice siblings' metric history to the new owner so
+    # the slice's data follows the newest tracking setup. Best-effort: a
+    # transfer hiccup must never block saving the mapping.
     feed_transfer = None
     if campaign_id and map_type == "publisher":
         try:
             import etl_worker
-            feed_transfer = await etl_worker.transfer_pair_feed_history(db, campaign_id)
+            feed_transfer = await etl_worker.transfer_feed_slice_history(db, campaign_id)
             await db.commit()
         except Exception as e:
             logger.warning(f"feed history transfer failed for {campaign_id}: {e}")
