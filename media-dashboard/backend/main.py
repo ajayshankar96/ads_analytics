@@ -562,11 +562,32 @@ async def save_column_mapping(request: Request, db: AsyncSession = Depends(get_d
         "sheet_fingerprint": json.dumps(fingerprint) if fingerprint else None,
     })
     await db.commit()
+
+    # A campaign-scoped PUBLISHER mapping makes this campaign the feed owner
+    # for its advertiser×publisher pair (publisher sheets report at advertiser
+    # level — one feed per pair). Re-attribute sibling campaigns' metric
+    # history to the new owner so the pair's data follows the newest tracking
+    # setup. Best-effort: a transfer hiccup must never block saving the mapping.
+    feed_transfer = None
+    if campaign_id and map_type == "publisher":
+        try:
+            import etl_worker
+            feed_transfer = await etl_worker.transfer_pair_feed_history(db, campaign_id)
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"feed history transfer failed for {campaign_id}: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            feed_transfer = {"error": str(e)}
+
     # segment_values lets the Setup form immediately offer sheet-driven
     # segment selection after the picker is saved.
     return {"success": True,
             "fingerprint_captured": fingerprint is not None,
-            "segment_values": (fingerprint or {}).get("segment_values", [])}
+            "segment_values": (fingerprint or {}).get("segment_values", []),
+            "feed_transfer": feed_transfer}
 
 
 @app.post("/api/column-mappings/preview")
@@ -2456,6 +2477,8 @@ async def sync_campaign_endpoint(campaign_id: str, db: AsyncSession = Depends(ge
     result = await etl_worker.sync_campaign(db, campaign)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    if result.get("skipped"):
+        raise HTTPException(status_code=400, detail=result.get("reason", "Sync skipped"))
     return {"success": True, **result}
 
 

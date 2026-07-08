@@ -1855,6 +1855,136 @@ def check_sheet_health(service, sheet_url: str, col_mapping: Dict,
     return out
 
 
+# ── Sync guards: one feed per advertiser×publisher pair ─────────────────────
+#
+# Publisher sheets report at ADVERTISER level (there is no campaign column),
+# so when several campaigns share the same advertiser×publisher pair, each
+# would ingest the same sheet rows and the advertiser rollup would multiply
+# reality (the MCaffeine×Navi 3× incident). Exactly ONE campaign per pair —
+# the one with the newest campaign-scoped publisher mapping (i.e. the newest
+# tracking setup) — owns the sheet feed; siblings skip sync. Campaigns with
+# no publisher column mapping at all are also skipped: the legacy whole-sheet
+# fallback ingests every advertiser's rows unfiltered, which is how the junk
+# was created in the first place.
+
+async def _pair_feed_owner(db: AsyncSession, campaign: models.Campaign) -> Optional[str]:
+    """Return the campaign_id that owns the publisher sheet feed for this
+    campaign's advertiser×publisher pair, or None when the pair can't be keyed.
+
+    Owner = the pair campaign (tracking submitted, not COMPLETED, not deleted)
+    whose campaign-scoped publisher mapping was updated most recently — i.e.
+    the newest tracking setup wins. Campaigns without a campaign-scoped
+    mapping rank last (fallback: highest id).
+    """
+    adv = (campaign.advertiser_name or "").strip().lower()
+    pub = (campaign.publisher_name or "").strip().lower()
+    if not adv or not pub:
+        return None
+    result = await db.execute(text("""
+        SELECT c.id
+        FROM rmn_campaigns c
+        LEFT JOIN rmn_column_mappings m
+               ON m.campaign_id = c.id AND m.type = 'publisher'
+        WHERE LOWER(TRIM(c.advertiser_name)) = :adv
+          AND LOWER(TRIM(c.publisher_name)) = :pub
+          AND c.tracking_submitted = TRUE
+          AND c.is_deleted = FALSE
+          AND c.current_stage != 'COMPLETED'
+        ORDER BY m.updated_at DESC NULLS LAST, c.id DESC
+        LIMIT 1
+    """), {"adv": adv, "pub": pub})
+    row = result.fetchone()
+    return row[0] if row else None
+
+
+async def _sync_skip_reason(
+    db: AsyncSession,
+    campaign: models.Campaign,
+    pub_col_mapping: Optional[Dict],
+) -> Optional[str]:
+    """Return a human-readable reason to skip syncing this campaign, or None."""
+    if (campaign.current_stage or "").upper() == "COMPLETED":
+        return ("Campaign is COMPLETED — its historical data is frozen and no "
+                "longer synced from sheets.")
+    # A shared (sheet/name-scoped) mapping is fine — it defines columns and an
+    # advertiser filter — but NO mapping at all would fall back to legacy
+    # whole-sheet ingestion (every advertiser's rows, unfiltered).
+    if not pub_col_mapping:
+        return ("No publisher column mapping is set up for this campaign — "
+                "syncing without one would ingest the entire sheet "
+                "(every advertiser's rows). Complete the tracking setup "
+                "column mapping first.")
+    owner = await _pair_feed_owner(db, campaign)
+    if owner and owner != campaign.id:
+        return (f"The {campaign.advertiser_name} × {campaign.publisher_name} "
+                f"publisher feed is owned by {owner} (newest tracking setup). "
+                "This campaign does not sync from the sheet — the pair's data "
+                "lives on the owning campaign.")
+    return None
+
+
+async def transfer_pair_feed_history(db: AsyncSession, new_owner_id: str) -> Dict[str, Any]:
+    """Re-attribute the pair's metric history to a new feed owner.
+
+    Called when a campaign-scoped PUBLISHER mapping is saved: that campaign
+    becomes the pair's feed owner, so sibling campaigns' metric rows move to
+    it (best row per date; owner's own rows win). Remaining sibling rows are
+    deleted — they are duplicates of the same advertiser-level sheet feed.
+    """
+    camp_result = await db.execute(text(
+        "SELECT advertiser_name, publisher_name FROM rmn_campaigns WHERE id = :id"
+    ), {"id": new_owner_id})
+    camp = camp_result.fetchone()
+    if not camp:
+        return {"moved": 0, "dropped": 0, "siblings": []}
+    adv = (camp[0] or "").strip().lower()
+    pub = (camp[1] or "").strip().lower()
+    if not adv or not pub:
+        return {"moved": 0, "dropped": 0, "siblings": []}
+
+    sib_result = await db.execute(text("""
+        SELECT id FROM rmn_campaigns
+        WHERE LOWER(TRIM(advertiser_name)) = :adv
+          AND LOWER(TRIM(publisher_name)) = :pub
+          AND id != :owner_id
+    """), {"adv": adv, "pub": pub, "owner_id": new_owner_id})
+    sibling_ids = [r[0] for r in sib_result.fetchall()]
+    if not sibling_ids:
+        return {"moved": 0, "dropped": 0, "siblings": []}
+
+    # Move the freshest sibling row per date onto the owner, but only for
+    # dates the owner doesn't already have (its own synced rows are canonical).
+    moved_result = await db.execute(text("""
+        WITH ranked AS (
+            SELECT id, date,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY date
+                       ORDER BY synced_at DESC NULLS LAST, id DESC
+                   ) AS rn
+            FROM rmn_campaign_metrics
+            WHERE campaign_id = ANY(:sibling_ids)
+        )
+        UPDATE rmn_campaign_metrics m
+        SET campaign_id = :owner_id
+        FROM ranked r
+        WHERE m.id = r.id AND r.rn = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM rmn_campaign_metrics o
+              WHERE o.campaign_id = :owner_id AND o.date = r.date
+          )
+    """), {"sibling_ids": sibling_ids, "owner_id": new_owner_id})
+    dropped_result = await db.execute(text(
+        "DELETE FROM rmn_campaign_metrics WHERE campaign_id = ANY(:sibling_ids)"
+    ), {"sibling_ids": sibling_ids})
+    moved = moved_result.rowcount or 0
+    dropped = dropped_result.rowcount or 0
+    logger.info(
+        f"Feed transfer to {new_owner_id}: moved {moved} rows, dropped {dropped} "
+        f"duplicate rows from siblings {sibling_ids}"
+    )
+    return {"moved": moved, "dropped": dropped, "siblings": sibling_ids}
+
+
 async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str, Any]:
     """Sync one campaign: pull sheets → merge → store in Postgres."""
     from sheets_client import _get_service
@@ -1874,8 +2004,6 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
     adv_metric_names = metrics_config.get('advertiser_metrics', [])
     direct_metrics = adv_metric_names
 
-    service = _get_service()
-
     # Load configurable column mappings from DB (if saved via Column Mapper UI)
     pub_col_mapping = await _load_column_mapping(
         db, campaign.publisher_name or "", "publisher",
@@ -1885,6 +2013,15 @@ async def sync_campaign(db: AsyncSession, campaign: models.Campaign) -> Dict[str
         db, campaign.advertiser_name or "", "advertiser",
         sheet_url=campaign.advertiser_data_url, campaign_id=campaign.id,
     )
+
+    # Guards: never whole-sheet-ingest, never double-ingest a pair's feed.
+    skip = await _sync_skip_reason(db, campaign, pub_col_mapping)
+    if skip:
+        logger.info(f"Skipping sync for {campaign.id}: {skip}")
+        return {"campaign_id": campaign.id, "skipped": True, "reason": skip, "rows": 0}
+
+    service = _get_service()
+
     if pub_col_mapping:
         logger.info(f"  Using saved column mapping for publisher '{campaign.publisher_name}'")
     if adv_col_mapping:
